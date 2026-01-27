@@ -2,7 +2,7 @@ import Link from "next/link";
 
 export default function CTASection() {
   return (
-    <section id="contact" className="bg-white py-20">
+    <section id="contact" className="bg-white py-20 scroll-mt-24">
       <div className="mx-auto max-w-6xl px-4">
         <div className="overflow-hidden rounded-3xl bg-gradient-to-r from-[#1e3a5f] to-[#0ea5e9] p-12 text-white shadow-xl">
           <div className="text-center">

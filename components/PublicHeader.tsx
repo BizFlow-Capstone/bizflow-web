@@ -3,19 +3,66 @@
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 
 export default function PublicHeader() {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
+  const [activeHash, setActiveHash] = useState(() =>
+    typeof window !== "undefined" ? window.location.hash : "",
+  );
+
+  useEffect(() => {
+    // Listen for hash changes
+    const handleHashChange = () => {
+      setActiveHash(window.location.hash);
+    };
+
+    window.addEventListener("hashchange", handleHashChange);
+
+    // Intersection Observer to track visible sections
+    const observerOptions = {
+      root: null,
+      rootMargin: "-20% 0px -60% 0px",
+      threshold: 0,
+    };
+
+    const observerCallback = (entries: IntersectionObserverEntry[]) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) {
+          const id = entry.target.getAttribute("id");
+          if (id) {
+            setActiveHash(`#${id}`);
+            // Update URL without triggering navigation
+            window.history.replaceState(null, "", `/#${id}`);
+          }
+        }
+      });
+    };
+
+    const observer = new IntersectionObserver(
+      observerCallback,
+      observerOptions,
+    );
+
+    // Observe all sections
+    const sections = document.querySelectorAll("section[id]");
+    sections.forEach((section) => observer.observe(section));
+
+    return () => {
+      window.removeEventListener("hashchange", handleHashChange);
+      observer.disconnect();
+    };
+  }, []);
 
   const menuItems = useMemo(
     () => [
-      { href: "#home", label: "Trang Chủ" },
-      { href: "#features", label: "Tính Năng" },
-      { href: "#pricing", label: "Gói Trả Phí" },
-      { href: "#why", label: "Về Chúng Tôi" },
-      { href: "#contact", label: "Liên Hệ" },
+      { href: "/#home", label: "Trang Chủ" },
+      { href: "/#features", label: "Tính Năng" },
+      { href: "/#pricing", label: "Gói Trả Phí" },
+      // { href: "/#why", label: "Về Chúng Tôi" },
+      { href: "/#testimonials", label: "Đánh Giá" },
+      { href: "/#contact", label: "Liên Hệ" },
     ],
     [],
   );
@@ -24,7 +71,7 @@ export default function PublicHeader() {
     <header
       className={`sticky top-0 z-50 border-b border-gray-200 bg-white/80 backdrop-blur shadow`}
     >
-      <div className="mx-auto max-w-7xl py-4">
+      <div className="mx-20 py-4">
         <div className="flex h-16 items-center justify-between">
           <Link href="/" className="flex items-center gap-2">
             <Image
@@ -40,7 +87,9 @@ export default function PublicHeader() {
             aria-label="Primary"
           >
             {menuItems.map((item) => {
-              const isActive = pathname === "/" && item.href === "#home";
+              const currentHash = activeHash || "#home";
+              const isActive =
+                pathname === "/" && item.href === `/${currentHash}`;
               return (
                 <a
                   key={item.href}

@@ -10,18 +10,18 @@ type Plan = {
 
 const plans: Plan[] = [
   {
-    name: "Free",
+    name: "Cơ bản",
     price: "0đ",
     note: "Bắt đầu nhanh",
     features: [
       "Ghi chép cơ bản",
-      "Báo cáo doanh thu",
+      "Nhập/xuất báo cáo",
       "1 người dùng",
-      "Hỗ trợ email",
+      "Xem thống kê đơn giản",
     ],
   },
   {
-    name: "Personal",
+    name: "Gói phổ biến",
     price: "299.000đ",
     note: "Phù hợp cửa hàng nhỏ",
     highlighted: true,
@@ -34,7 +34,7 @@ const plans: Plan[] = [
     ],
   },
   {
-    name: "Organization",
+    name: "Gói nâng cao",
     price: "699.000đ",
     note: "Mở rộng nhiều chi nhánh",
     features: [
@@ -49,7 +49,7 @@ const plans: Plan[] = [
 
 export default function PricingSection() {
   return (
-    <section id="pricing" className="bg-white">
+    <section id="pricing" className="bg-white scroll-mt-24">
       <div className="mx-auto max-w-6xl px-4 py-16 md:py-20">
         <div className="text-center">
           <h2 className="text-3xl font-semibold tracking-tight text-slate-900 md:text-4xl">

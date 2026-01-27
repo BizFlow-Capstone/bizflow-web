@@ -15,7 +15,7 @@ export default function HeroSection() {
   return (
     <section
       id="home"
-      className="relative h-[800px] overflow-hidden bg-cover bg-center"
+      className="relative h-[800px] overflow-hidden bg-cover bg-center scroll-mt-24"
     >
       {/* Background Image with Overlay */}
       <div
