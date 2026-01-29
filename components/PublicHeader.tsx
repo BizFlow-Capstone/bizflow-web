@@ -13,14 +13,12 @@ export default function PublicHeader() {
   );
 
   useEffect(() => {
-    // Listen for hash changes
     const handleHashChange = () => {
       setActiveHash(window.location.hash);
     };
 
     window.addEventListener("hashchange", handleHashChange);
 
-    // Intersection Observer to track visible sections
     const observerOptions = {
       root: null,
       rootMargin: "-20% 0px -60% 0px",
@@ -33,7 +31,7 @@ export default function PublicHeader() {
           const id = entry.target.getAttribute("id");
           if (id) {
             setActiveHash(`#${id}`);
-            // Update URL without triggering navigation
+
             window.history.replaceState(null, "", `/#${id}`);
           }
         }
@@ -45,7 +43,6 @@ export default function PublicHeader() {
       observerOptions,
     );
 
-    // Observe all sections
     const sections = document.querySelectorAll("section[id]");
     sections.forEach((section) => observer.observe(section));
 
