@@ -17,7 +17,6 @@ export default function HeroSection() {
       id="home"
       className="relative h-[800px] overflow-hidden bg-cover bg-center scroll-mt-24"
     >
-      {/* Background Image with Overlay */}
       <div
         className="absolute inset-0 bg-cover bg-center"
         style={{

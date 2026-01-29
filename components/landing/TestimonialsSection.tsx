@@ -3,7 +3,6 @@
 import React, { useState, useEffect } from "react";
 import { Quote } from "lucide-react";
 
-// Dữ liệu mẫu đã cập nhật: Người Việt & Ngữ cảnh buôn bán lẻ
 const testimonials = [
   {
     id: 1,
@@ -38,18 +37,16 @@ export default function TestimonialsSection() {
   const [activeIndex, setActiveIndex] = useState(0);
   const [isAnimating, setIsAnimating] = useState(false);
 
-  // Hàm xử lý khi chuyển slide để tạo hiệu ứng mượt mà
   const handleDotClick = (index) => {
     if (index !== activeIndex) {
       setIsAnimating(true);
       setTimeout(() => {
         setActiveIndex(index);
         setIsAnimating(false);
-      }, 300); // Thời gian chờ khớp với transition
+      }, 300);
     }
   };
 
-  // Tự động chuyển slide sau mỗi 5 giây
   useEffect(() => {
     const interval = setInterval(() => {
       setIsAnimating(true);
@@ -68,7 +65,6 @@ export default function TestimonialsSection() {
   return (
     <section id="testimonials" className="bg-slate-50 py-24 font-sans">
       <div className="mx-auto max-w-6xl px-4">
-        {/* Header Section */}
         <div className="text-center mb-16">
           <h2 className="text-4xl font-bold tracking-tight text-[#1e3a5f] mb-4">
             Khách Hàng Nói Gì Về Chúng Tôi
@@ -80,9 +76,7 @@ export default function TestimonialsSection() {
         </div>
 
         <div className="mt-12 grid gap-8">
-          {/* Card Container */}
           <div className="mx-auto w-full max-w-4xl rounded-2xl bg-white p-8 md:p-12 shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-100 relative overflow-hidden transition-all duration-300 hover:shadow-lg">
-            {/* Decorative Quote Icon */}
             <div className="absolute top-6 right-8 text-slate-100">
               <Quote size={80} fill="currentColor" />
             </div>
@@ -90,7 +84,6 @@ export default function TestimonialsSection() {
             <div
               className={`flex flex-col md:flex-row items-center md:items-start gap-8 relative z-10 transition-opacity duration-300 ${isAnimating ? "opacity-0" : "opacity-100"}`}
             >
-              {/* Image */}
               <div className="flex-shrink-0 relative group">
                 <div className="absolute inset-0 bg-[#1e3a5f] rounded-xl rotate-6 opacity-10 group-hover:rotate-12 transition-transform duration-300"></div>
                 <img
@@ -100,7 +93,6 @@ export default function TestimonialsSection() {
                 />
               </div>
 
-              {/* Content */}
               <div className="text-center md:text-left flex-1">
                 <p className="text-lg md:text-xl leading-relaxed text-slate-700 italic font-medium">
                   &quot;{activeTestimonial.quote}&quot;
@@ -118,7 +110,6 @@ export default function TestimonialsSection() {
             </div>
           </div>
 
-          {/* Navigation Dots */}
           <div className="mt-8 flex items-center justify-center gap-3">
             {testimonials.map((_, index) => (
               <button

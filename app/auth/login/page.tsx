@@ -1,25 +1,23 @@
-'use client';
+"use client";
 
-import PublicHeader from '@/components/PublicHeader';
-import PublicFooter from '@/components/PublicFooter';
-import Link from 'next/link';
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import PublicHeader from "@/components/PublicHeader";
+import PublicFooter from "@/components/PublicFooter";
+import Link from "next/link";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
 
 export default function LoginPage() {
   const router = useRouter();
   const [formData, setFormData] = useState({
-    phone: '',
-    password: '',
+    phone: "",
+    password: "",
   });
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    // Handle login logic here
-    console.log('Login:', formData);
-    
-    // Redirect to dashboard after login
-    router.push('/dashboard');
+    console.log("Login:", formData);
+
+    router.push("/dashboard");
   };
 
   return (
@@ -33,7 +31,6 @@ export default function LoginPage() {
             </h2>
 
             <form onSubmit={handleSubmit} className="space-y-6">
-              {/* Phone Number */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Số điện thoại
@@ -42,12 +39,13 @@ export default function LoginPage() {
                   type="tel"
                   placeholder="Nhập số điện thoại của bạn"
                   value={formData.phone}
-                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent outline-none"
+                  onChange={(e) =>
+                    setFormData({ ...formData, phone: e.target.value })
+                  }
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#23C4C1] focus:border-transparent outline-none"
                 />
               </div>
 
-              {/* Password */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Mật khẩu
@@ -56,28 +54,27 @@ export default function LoginPage() {
                   type="password"
                   placeholder="Nhập mật khẩu"
                   value={formData.password}
-                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent outline-none"
+                  onChange={(e) =>
+                    setFormData({ ...formData, password: e.target.value })
+                  }
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#23C4C1] focus:border-transparent outline-none"
                 />
               </div>
 
-              {/* Submit Button */}
               <button
                 type="submit"
-                className="w-full bg-cyan-500 text-white py-3 rounded-lg font-semibold hover:bg-cyan-600 transition-colors"
+                className="w-full bg-[#23C4C1] text-white py-3 rounded-lg font-semibold hover:bg-[#1a9b99] transition-colors"
               >
                 Đăng nhập
               </button>
             </form>
 
-            {/* Divider */}
             <div className="my-6 flex items-center">
               <div className="flex-1 border-t border-gray-300"></div>
               <span className="px-4 text-sm text-gray-500">Hoặc</span>
               <div className="flex-1 border-t border-gray-300"></div>
             </div>
 
-            {/* Google Login */}
             <button className="w-full border border-gray-300 py-3 rounded-lg font-medium hover:bg-gray-50 transition-colors flex items-center justify-center gap-2">
               <svg className="w-5 h-5" viewBox="0 0 24 24">
                 <path
@@ -97,14 +94,16 @@ export default function LoginPage() {
                   d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
                 />
               </svg>
-              Đăng ký với Google
+              Đăng nhập với Google
             </button>
 
-            {/* Register Link */}
             <div className="mt-6 text-center">
               <span className="text-gray-600">Bạn đã có tài khoản? </span>
-              <Link href="/auth/register" className="text-cyan-500 font-medium hover:text-cyan-600">
-                Đi đến đăng nhập
+              <Link
+                href="/auth/register"
+                className="text-[#23C4C1] font-medium hover:text-[#1a9b99]"
+              >
+                Tạo tài khoản mới
               </Link>
             </div>
           </div>

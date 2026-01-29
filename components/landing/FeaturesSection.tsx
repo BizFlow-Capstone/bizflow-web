@@ -70,7 +70,6 @@ export default function FeaturesSection() {
                   isEven ? "md:flex-row" : "md:flex-row-reverse"
                 }`}
               >
-                {/* Illustration Side */}
                 <div className="flex-1 flex justify-center">
                   <div
                     className={`rounded-3xl p-12  w-full max-w-md flex items-center justify-center`}
@@ -86,7 +85,6 @@ export default function FeaturesSection() {
                   </div>
                 </div>
 
-                {/* Content Side */}
                 <div className="flex-1 space-y-6 w-full max-w-md">
                   <div>
                     <h3 className="text-2xl font-bold text-[#1e3a5f] md:text-3xl leading-tight">
