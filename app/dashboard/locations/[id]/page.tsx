@@ -318,8 +318,9 @@ export default function LocationDetailPage() {
                         <DropdownMenuContent align="end" className="w-48">
                           <DropdownMenuItem
                             onClick={() => {
-                              // Handle edit
-                              console.log("Edit product:", product.id);
+                              router.push(
+                                `/dashboard/locations/${location.id}/products/new?productId=${product.id}`,
+                              );
                             }}
                             className="cursor-pointer"
                           >
