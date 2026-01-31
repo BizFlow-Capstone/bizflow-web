@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import {
@@ -19,8 +19,11 @@ import {
   Eye,
   Info,
   ScanLine,
+  AlertTriangle,
+  FileText,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -59,6 +62,7 @@ interface Product {
   costPrice: number;
   sellPrice: number;
   isActive: boolean;
+  minStock?: number;
 }
 
 export default function LocationDetailPage() {
@@ -91,6 +95,35 @@ export default function LocationDetailPage() {
     manager: "Lê Văn A",
   };
 
+  const [draftCount, setDraftCount] = useState(0);
+
+  useEffect(() => {
+    const key = `bizflow:inventoryDraft:${location.id}`;
+
+    const refresh = () => {
+      try {
+        const raw = window.localStorage.getItem(key);
+        setDraftCount(raw ? 1 : 0);
+      } catch {
+        setDraftCount(0);
+      }
+    };
+
+    refresh();
+
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === key) refresh();
+    };
+
+    window.addEventListener("storage", onStorage);
+    window.addEventListener("focus", refresh);
+
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener("focus", refresh);
+    };
+  }, [location.id]);
+
   const [products, setProducts] = useState<Product[]>([
     {
       id: 1,
@@ -103,6 +136,7 @@ export default function LocationDetailPage() {
       costPrice: 8000,
       sellPrice: 10000,
       isActive: true,
+      minStock: 50,
     },
     {
       id: 2,
@@ -115,6 +149,7 @@ export default function LocationDetailPage() {
       costPrice: 9500,
       sellPrice: 12000,
       isActive: true,
+      minStock: 200,
     },
   ]);
 
@@ -133,6 +168,10 @@ export default function LocationDetailPage() {
       product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       product.barcode.includes(searchQuery),
   );
+
+  const lowStockCount = products.filter(
+    (product) => product.isActive && product.stock <= (product.minStock || 0),
+  ).length;
 
   return (
     <div className="flex-1 flex flex-col">
@@ -223,6 +262,9 @@ export default function LocationDetailPage() {
             <Button
               variant="outline"
               className="border-blue-500 text-blue-600 hover:bg-blue-50"
+              onClick={() =>
+                router.push(`/dashboard/locations/${location.id}/inventory/new`)
+              }
             >
               <Upload className="w-4 h-4 mr-2" />
               Nhập Kho
@@ -238,6 +280,57 @@ export default function LocationDetailPage() {
             </Button>
           </div>
         </div>
+
+        {/* Low Stock Alert */}
+        {lowStockCount > 0 && (
+          <div className="mb-4 rounded-lg border border-orange-200 bg-orange-50 p-4">
+            <div className="flex items-center gap-3">
+              <AlertTriangle className="h-5 w-5 text-[#BB4D00] shrink-0" />
+              <div className="flex-1">
+                <span className="text-sm font-medium text-[#7B3306]">
+                  {lowStockCount} sản phẩm sắp hết hàng
+                </span>
+                <button
+                  className="ml-2 text-sm text-[#BB4D00] hover:text-[#996600] underline font-normal"
+                  onClick={() => {
+                    const lowStockProducts = products.filter(
+                      (p) => p.isActive && p.stock <= (p.minStock || 0),
+                    );
+                    if (lowStockProducts.length > 0) {
+                      setSearchQuery(lowStockProducts[0].name);
+                    }
+                  }}
+                >
+                  Tạo phiếu nhập kho
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Draft Import Note Alert */}
+        {draftCount > 0 && (
+          <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 p-4">
+            <div className="flex items-center gap-3">
+              <FileText className="h-5 w-5 text-blue-600 shrink-0" />
+              <div className="flex-1">
+                <span className="text-sm font-medium text-blue-900">
+                  1 phiếu nhập kho nháp
+                </span>
+                <button
+                  className="ml-2 text-sm text-blue-700 hover:text-blue-900 underline font-normal"
+                  onClick={() =>
+                    router.push(
+                      `/dashboard/locations/${location.id}/inventory/new?draft=1`,
+                    )
+                  }
+                >
+                  Xem và chỉnh sửa
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Products Table */}
         <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
@@ -303,17 +396,25 @@ export default function LocationDetailPage() {
                       {product.unit}
                     </TableCell>
                     <TableCell>
-                      <span
-                        className={`font-medium ${
-                          product.stock < 100
-                            ? "text-red-600"
-                            : product.stock < 200
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={`font-medium ${
+                            product.stock <= (product.minStock || 0)
                               ? "text-orange-600"
                               : "text-gray-900"
-                        }`}
-                      >
-                        {product.stock}
-                      </span>
+                          }`}
+                        >
+                          {product.stock}
+                        </span>
+                        {product.stock <= (product.minStock || 0) && (
+                          <Badge
+                            variant="secondary"
+                            className="bg-orange-100 text-[#BB4D00] hover:bg-orange-100 text-xs"
+                          >
+                            Sắp hết
+                          </Badge>
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell className="text-gray-900">
                       {product.costPrice.toLocaleString()}đ

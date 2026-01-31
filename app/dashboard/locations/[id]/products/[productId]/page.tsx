@@ -1,8 +1,15 @@
 import Image from "next/image";
 import Link from "next/link";
-import { ArrowLeft, Building2, Pencil } from "lucide-react";
+import {
+  ArrowLeft,
+  Building2,
+  Pencil,
+  AlertTriangle,
+  Package,
+} from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 
 type ProductDetail = {
   id: string;
@@ -71,7 +78,7 @@ function getMockProduct(productId: string): ProductDetail {
     },
     imageUrl:
       "https://lavievietnam.vn/wp-content/uploads/2018/04/lavie-350ml.jpg",
-    stockCurrent: 240,
+    stockCurrent: 20,
     stockMin: 50,
     pricing: {
       cost: 5000,
@@ -101,6 +108,7 @@ export default function ProductDetailPage({
   params: { id: string; productId: string };
 }) {
   const product = getMockProduct(params.productId);
+  const isLowStock = product.stockCurrent <= product.stockMin;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -118,6 +126,14 @@ export default function ProductDetailPage({
             <h1 className="text-lg font-semibold text-gray-900">
               {product.name}
             </h1>
+            {isLowStock && (
+              <Badge
+                variant="secondary"
+                className="bg-[#FEF3C6] text-[#BB4D00] hover:bg-[#FEF3C6]"
+              >
+                Sắp hết
+              </Badge>
+            )}
           </div>
 
           <Button variant="outline" className="gap-2" asChild>
@@ -134,6 +150,33 @@ export default function ProductDetailPage({
       </header>
 
       <main className="mx-auto w-full px-6 py-6">
+        {isLowStock && (
+          <div className="mb-4 rounded-lg border border-[#FEF3C6] bg-[#FEF3C6] p-4">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="h-5 w-5 text-[#BB4D00] mt-0.5 shrink-0" />
+              <div className="flex-1">
+                <h3 className="text-sm font-semibold text-[#BB4D00]">
+                  Sản phẩm sắp hết hàng
+                </h3>
+                <p className="mt-1 text-sm text-[#BB4D00]">
+                  Tồn kho hiện tại ({product.stockCurrent}) đã đạt ngưỡng tối
+                  thiểu ({product.stockMin}). Bạn nên tạo phiếu nhập kho để bổ
+                  sung hàng hóa.
+                </p>
+              </div>
+              <Button
+                size="sm"
+                className="bg-[#BB4D00] hover:bg-[#996600] text-white shrink-0"
+                asChild
+              >
+                <Link href={`/dashboard/locations/${params.id}/inventory/new`}>
+                  <Package className="h-4 w-4 mr-2" />
+                  Tạo phiếu nhập
+                </Link>
+              </Button>
+            </div>
+          </div>
+        )}
         <div className="rounded-xl border bg-white p-6">
           <div className="grid gap-8 lg:grid-cols-12">
             {/* Left */}
