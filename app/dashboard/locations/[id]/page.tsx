@@ -17,8 +17,8 @@ import {
   Pencil,
   EyeOff,
   Eye,
+  Info,
   ScanLine,
-  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -47,6 +47,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { BarcodeScanModal } from "@/components/BarcodeScanModal";
 
 interface Product {
   id: number;
@@ -64,6 +65,10 @@ export default function LocationDetailPage() {
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState("");
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+  const [scanOpen, setScanOpen] = useState(false);
+  const [scanTarget, setScanTarget] = useState<"search" | "newProductBarcode">(
+    "search",
+  );
   const [newProduct, setNewProduct] = useState({
     name: "",
     image: "",
@@ -191,8 +196,20 @@ export default function LocationDetailPage() {
                 placeholder="Tìm kiếm sản phẩm hoặc quét mã vạch..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10"
+                className="pl-10 pr-12"
               />
+
+              <button
+                type="button"
+                className="absolute right-2 top-1/2 -translate-y-1/2 p-1 hover:bg-gray-100 rounded"
+                onClick={() => {
+                  setScanTarget("search");
+                  setScanOpen(true);
+                }}
+                title="Quét mã để tìm kiếm"
+              >
+                <ScanLine className="w-5 h-5 text-gray-500" />
+              </button>
             </div>
 
             {/* Action Buttons */}
@@ -319,6 +336,18 @@ export default function LocationDetailPage() {
                           <DropdownMenuItem
                             onClick={() => {
                               router.push(
+                                `/dashboard/locations/${location.id}/products/${product.id}`,
+                              );
+                            }}
+                            className="cursor-pointer"
+                          >
+                            <Info className="w-4 h-4 mr-2" />
+                            <span>Xem chi tiết</span>
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            onClick={() => {
+                              router.push(
                                 `/dashboard/locations/${location.id}/products/new?productId=${product.id}`,
                               );
                             }}
@@ -327,7 +356,6 @@ export default function LocationDetailPage() {
                             <Pencil className="w-4 h-4 mr-2" />
                             <span>Sửa sản phẩm</span>
                           </DropdownMenuItem>
-                          <DropdownMenuSeparator />
                           <DropdownMenuItem
                             onClick={() => toggleProductActive(product.id)}
                             className={`cursor-pointer ${
@@ -442,6 +470,11 @@ export default function LocationDetailPage() {
                   <button
                     type="button"
                     className="absolute right-2 top-1/2 -translate-y-1/2 p-1 hover:bg-gray-100 rounded"
+                    onClick={() => {
+                      setScanTarget("newProductBarcode");
+                      setScanOpen(true);
+                    }}
+                    title="Quét mã sản phẩm"
                   >
                     <ScanLine className="w-5 h-5 text-gray-500" />
                   </button>
@@ -681,6 +714,21 @@ export default function LocationDetailPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <BarcodeScanModal
+        open={scanOpen}
+        onOpenChange={setScanOpen}
+        title="Quét mã vạch"
+        description="Quét xong sẽ tự điền vào ô đang chọn."
+        onScanned={(code) => {
+          if (scanTarget === "search") {
+            setSearchQuery(code);
+            return;
+          }
+
+          setNewProduct((prev) => ({ ...prev, barcode: code }));
+        }}
+      />
     </div>
   );
 }

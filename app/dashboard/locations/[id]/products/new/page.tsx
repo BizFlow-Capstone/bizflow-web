@@ -8,6 +8,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { BarcodeScanModal } from "@/components/BarcodeScanModal";
+import { useProductSearch } from "@/lib/hooks/useProductSearch";
 
 export default function AddProductPage() {
   const router = useRouter();
@@ -17,6 +19,7 @@ export default function AddProductPage() {
 
   const [imagePreview, setImagePreview] = useState<string>("");
   const [isLoading, setIsLoading] = useState(false);
+  const [scanOpen, setScanOpen] = useState(false);
   const [formData, setFormData] = useState({
     name: "",
     barcode: "",
@@ -33,13 +36,49 @@ export default function AddProductPage() {
     priceList: [{ name: "Giá bán 1", unit: "", quantity: "", price: "" }],
   });
 
+  // Hook tìm kiếm sản phẩm theo barcode
+  const { searchByBarcode, isSearching } = useProductSearch({
+    onProductFound: (product) => {
+      // Điền thông tin sản phẩm vào form
+      setFormData({
+        name: product.name,
+        barcode: product.barcode,
+        isActive: product.isActive,
+        trackInventory: product.trackInventory,
+        costPrice: product.costPrice,
+        sellPrice: product.sellPrice,
+        stock: product.stock,
+        unit: product.unit,
+        minStock: product.minStock,
+        supplierName: product.supplierName || "",
+        contactPerson: product.contactPerson || "",
+        address: product.address || "",
+        priceList: product.priceList || [
+          { name: "Giá bán 1", unit: "", quantity: "", price: "" },
+        ],
+      });
+      if (product.imageUrl) {
+        setImagePreview(product.imageUrl);
+      }
+    },
+    onProductNotFound: (barcode) => {
+      // Chỉ điền mã barcode, để người dùng nhập thông tin khác
+      setFormData((prev) => ({
+        ...prev,
+        barcode: barcode,
+      }));
+    },
+  });
+
   // Load product data khi ở chế độ edit
   useEffect(() => {
     if (isEditMode && productId) {
-      setIsLoading(true);
+      const loadingTimer = window.setTimeout(() => {
+        setIsLoading(true);
+      }, 0);
       // TODO: Thay bằng API call thực tế
       // Giả lập load data từ API
-      setTimeout(() => {
+      const fetchTimer = window.setTimeout(() => {
         const mockProductData = {
           name: "Nước khoáng Lavie",
           barcode: "8934588020016",
@@ -65,6 +104,11 @@ export default function AddProductPage() {
         setFormData(mockProductData);
         setIsLoading(false);
       }, 500);
+
+      return () => {
+        window.clearTimeout(loadingTimer);
+        window.clearTimeout(fetchTimer);
+      };
     }
   }, [isEditMode, productId]);
 
@@ -222,12 +266,19 @@ export default function AddProductPage() {
                           setFormData({ ...formData, barcode: e.target.value })
                         }
                         className="pr-12 h-10"
+                        disabled={isSearching}
                       />
                       <button
                         type="button"
+                        onClick={() => {
+                          setScanOpen(true);
+                        }}
                         className="absolute right-3 top-1/2 -translate-y-1/2 p-1 hover:bg-gray-100 rounded transition-colors"
+                        title="Quét mã sản phẩm"
                       >
-                        <ScanLine className="w-5 h-5 text-gray-600" />
+                        <ScanLine
+                          className={`w-5 h-5 ${isSearching ? "text-blue-600 animate-pulse" : "text-gray-600"}`}
+                        />
                       </button>
                     </div>
                   </div>
@@ -545,6 +596,17 @@ export default function AddProductPage() {
           </div>
         </div>
       </main>
+
+      <BarcodeScanModal
+        open={scanOpen}
+        onOpenChange={setScanOpen}
+        title="Quét mã sản phẩm"
+        description="Quét xong sẽ tự điền vào ô Mã vạch."
+        onScanned={async (code) => {
+          setFormData((prev) => ({ ...prev, barcode: code }));
+          await searchByBarcode(code);
+        }}
+      />
     </div>
   );
 }
