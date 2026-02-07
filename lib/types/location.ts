@@ -25,5 +25,5 @@ export interface NewLocationForm {
   city: string;
   phone: string;
   taxCode: string;
-  employeeIds: number[];
+  employeeIds: string[];
 }

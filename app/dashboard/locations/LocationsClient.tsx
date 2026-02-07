@@ -8,6 +8,7 @@ import {
   Settings,
   MapPin,
   User,
+  Users,
   Plus,
   Search,
   Phone,
@@ -17,6 +18,8 @@ import {
   Loader2,
   RefreshCw,
   Pencil,
+  X,
+  ChevronDown,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -32,7 +35,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import type { Location, NewLocationForm } from "@/lib/types/location";
+import { useEmployees } from "@/hooks/useEmployees";
 import {
   useLocations,
   useCreateLocation,
@@ -102,6 +107,13 @@ export default function LocationsClient() {
   const createMutation = useCreateLocation();
   const updateStatusMutation = useUpdateLocationStatus();
   const updateMutation = useUpdateLocation();
+
+  // Fetch employees for dropdown
+  const { data: employees = [], isLoading: isLoadingEmployees } =
+    useEmployees();
+
+  // Employee dropdown state
+  const [isEmployeeDropdownOpen, setIsEmployeeDropdownOpen] = useState(false);
 
   // Filtered locations based on tab and search
   const filteredLocations = useMemo(() => {
@@ -612,6 +624,123 @@ export default function LocationsClient() {
                 }
                 className="w-full"
               />
+            </div>
+
+            {/* Employee Selection */}
+            <div className="space-y-2">
+              <Label className="text-sm font-medium text-gray-700">
+                <div className="flex items-center gap-2">
+                  <Users className="w-4 h-4" />
+                  Nhân viên phụ trách
+                </div>
+              </Label>
+
+              {/* Selected employees chips */}
+              {newLocation.employeeIds.length > 0 && (
+                <div className="flex flex-wrap gap-2 mb-2">
+                  {newLocation.employeeIds.map((empId) => {
+                    const emp = employees.find((e) => e.userId === empId);
+                    return (
+                      <span
+                        key={empId}
+                        className="inline-flex items-center gap-1 px-2 py-1 bg-[#23C4C1]/10 text-[#23C4C1] rounded-md text-sm"
+                      >
+                        {emp?.userName || empId}
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setNewLocation({
+                              ...newLocation,
+                              employeeIds: newLocation.employeeIds.filter(
+                                (id) => id !== empId,
+                              ),
+                            })
+                          }
+                          className="hover:bg-[#23C4C1]/20 rounded p-0.5"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Dropdown trigger */}
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setIsEmployeeDropdownOpen(!isEmployeeDropdownOpen)
+                  }
+                  className="w-full flex items-center justify-between px-3 py-2 border border-gray-300 rounded-md bg-white hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-[#23C4C1] focus:border-transparent"
+                >
+                  <span className="text-sm text-gray-500">
+                    {isLoadingEmployees
+                      ? "Đang tải..."
+                      : newLocation.employeeIds.length > 0
+                        ? `Đã chọn ${newLocation.employeeIds.length} nhân viên`
+                        : "Chọn nhân viên..."}
+                  </span>
+                  <ChevronDown
+                    className={`w-4 h-4 text-gray-400 transition-transform ${
+                      isEmployeeDropdownOpen ? "rotate-180" : ""
+                    }`}
+                  />
+                </button>
+
+                {/* Dropdown menu */}
+                {isEmployeeDropdownOpen && (
+                  <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-48 overflow-y-auto">
+                    {isLoadingEmployees ? (
+                      <div className="px-3 py-2 text-sm text-gray-500 flex items-center gap-2">
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Đang tải danh sách nhân viên...
+                      </div>
+                    ) : employees.length === 0 ? (
+                      <div className="px-3 py-2 text-sm text-gray-500">
+                        Không có nhân viên nào
+                      </div>
+                    ) : (
+                      employees.map((emp) => (
+                        <label
+                          key={emp.userId}
+                          className="flex items-center gap-3 px-3 py-2 hover:bg-gray-50 cursor-pointer"
+                        >
+                          <Checkbox
+                            checked={newLocation.employeeIds.includes(
+                              emp.userId,
+                            )}
+                            onCheckedChange={(
+                              checked: boolean | "indeterminate",
+                            ) => {
+                              if (checked === true) {
+                                setNewLocation({
+                                  ...newLocation,
+                                  employeeIds: [
+                                    ...newLocation.employeeIds,
+                                    emp.userId,
+                                  ],
+                                });
+                              } else {
+                                setNewLocation({
+                                  ...newLocation,
+                                  employeeIds: newLocation.employeeIds.filter(
+                                    (id) => id !== emp.userId,
+                                  ),
+                                });
+                              }
+                            }}
+                          />
+                          <span className="text-sm text-gray-700">
+                            {emp.userName}
+                          </span>
+                        </label>
+                      ))
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
