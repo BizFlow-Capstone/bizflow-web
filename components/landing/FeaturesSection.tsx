@@ -71,7 +71,7 @@ function FeatureItem({
     >
       <div className="flex-1 flex justify-center">
         <div
-          className={`rounded-3xl p-12 w-full max-w-md flex items-center justify-center bg-linear-to-br ${feature.accent}`}
+          className={`rounded-3xl p-12 w-full max-w-md flex items-center justify-center bg-transparent`}
         >
           <motion.div
             whileHover={{ scale: 1.08, rotate: 2 }}
@@ -128,7 +128,7 @@ export default function FeaturesSection() {
   return (
     <section id="features" className="bg-white py-20 scroll-mt-24">
       <div className="mx-auto max-w-7xl px-4">
-        <div className="text-center mb-20">
+        <div className="text-center mb-20 flex flex-col items-center">
           <BlurText
             text="Về Tính Năng"
             delay={100}
@@ -142,7 +142,7 @@ export default function FeaturesSection() {
             alt="Underline"
             width={300}
             height={60}
-            className="h-auto mx-auto"
+            className="h-auto mt-2"
           />
         </div>
 
