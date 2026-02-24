@@ -11,6 +11,7 @@ import {
   BarChart3,
   Settings,
   LogOut,
+  PackagePlus,
 } from "lucide-react";
 import Image from "next/image";
 import { Separator } from "@/components/ui/separator";
@@ -21,6 +22,7 @@ export default function DashboardSidebar() {
   const menuItems = [
     { href: "/dashboard", label: "Trang Chủ", icon: Home },
     { href: "/dashboard/orders", label: "Đơn Hàng", icon: ShoppingCart },
+    { href: "/dashboard/imports", label: "Nhập Kho", icon: PackagePlus },
     { href: "/dashboard/debt", label: "Quản Lý Nợ", icon: CreditCard },
     {
       href: "/dashboard/locations",

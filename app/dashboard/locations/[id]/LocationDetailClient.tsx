@@ -267,7 +267,9 @@ export default function LocationDetailClient({
               variant="outline"
               className="border-blue-500 text-blue-600 hover:bg-blue-50"
               onClick={() =>
-                router.push(`/dashboard/locations/${locationId}/inventory/new`)
+                router.push(
+                  `/dashboard/imports/create?locationId=${locationId}`,
+                )
               }
             >
               <Upload className="w-4 h-4 mr-2" />
