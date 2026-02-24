@@ -1,7 +1,9 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Quote } from "lucide-react";
+import BlurText from "@/components/reactbits/BlurText";
+import { motion, useInView, AnimatePresence } from "motion/react";
 
 const testimonials = [
   {
@@ -35,27 +37,20 @@ const testimonials = [
 
 export default function TestimonialsSection() {
   const [activeIndex, setActiveIndex] = useState(0);
-  const [isAnimating, setIsAnimating] = useState(false);
+  const sectionRef = useRef(null);
+  const isInView = useInView(sectionRef, { once: true, margin: "-100px" });
 
-  const handleDotClick = (index) => {
+  const handleDotClick = (index: number) => {
     if (index !== activeIndex) {
-      setIsAnimating(true);
-      setTimeout(() => {
-        setActiveIndex(index);
-        setIsAnimating(false);
-      }, 300);
+      setActiveIndex(index);
     }
   };
 
   useEffect(() => {
     const interval = setInterval(() => {
-      setIsAnimating(true);
-      setTimeout(() => {
-        setActiveIndex((current) =>
-          current === testimonials.length - 1 ? 0 : current + 1,
-        );
-        setIsAnimating(false);
-      }, 300);
+      setActiveIndex((current) =>
+        current === testimonials.length - 1 ? 0 : current + 1,
+      );
     }, 5000);
     return () => clearInterval(interval);
   }, []);
@@ -63,51 +58,85 @@ export default function TestimonialsSection() {
   const activeTestimonial = testimonials[activeIndex];
 
   return (
-    <section id="testimonials" className="bg-slate-50 py-24 font-sans">
+    <section
+      id="testimonials"
+      className="bg-slate-50 py-24 font-sans"
+      ref={sectionRef}
+    >
       <div className="mx-auto max-w-6xl px-4">
         <div className="text-center mb-16">
-          <h2 className="text-4xl font-bold tracking-tight text-[#1e3a5f] mb-4">
-            Khách Hàng Nói Gì Về Chúng Tôi
-          </h2>
-          <p className="text-slate-500 text-lg max-w-2xl mx-auto">
+          <BlurText
+            text="Khách Hàng Nói Gì Về Chúng Tôi"
+            delay={80}
+            animateBy="words"
+            direction="top"
+            stepDuration={0.35}
+            className="text-4xl font-bold tracking-tight text-[#1e3a5f] mb-4"
+          />
+          <motion.p
+            initial={{ opacity: 0, y: 10 }}
+            animate={isInView ? { opacity: 1, y: 0 } : {}}
+            transition={{ delay: 0.5, duration: 0.5 }}
+            className="text-slate-500 text-lg max-w-2xl mx-auto"
+          >
             Niềm tin từ hơn 1000+ đối tác, tiểu thương và hộ kinh doanh trên
             toàn quốc.
-          </p>
+          </motion.p>
         </div>
 
-        <div className="mt-12 grid gap-8">
+        <motion.div
+          initial={{ opacity: 0, y: 30 }}
+          animate={isInView ? { opacity: 1, y: 0 } : {}}
+          transition={{ duration: 0.6, delay: 0.3 }}
+          className="mt-12 grid gap-8"
+        >
           <div className="mx-auto w-full max-w-4xl rounded-2xl bg-white p-8 md:p-12 shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-100 relative overflow-hidden transition-all duration-300 hover:shadow-lg">
             <div className="absolute top-6 right-8 text-slate-100">
               <Quote size={80} fill="currentColor" />
             </div>
 
-            <div
-              className={`flex flex-col md:flex-row items-center md:items-start gap-8 relative z-10 transition-opacity duration-300 ${isAnimating ? "opacity-0" : "opacity-100"}`}
-            >
-              <div className="flex-shrink-0 relative group">
-                <div className="absolute inset-0 bg-[#1e3a5f] rounded-xl rotate-6 opacity-10 group-hover:rotate-12 transition-transform duration-300"></div>
-                <img
-                  src={activeTestimonial.image}
-                  alt={activeTestimonial.name}
-                  className="h-24 w-24 md:h-28 md:w-28 rounded-xl object-cover shadow-md relative z-10 border-2 border-white"
-                />
-              </div>
-
-              <div className="text-center md:text-left flex-1">
-                <p className="text-lg md:text-xl leading-relaxed text-slate-700 italic font-medium">
-                  &quot;{activeTestimonial.quote}&quot;
-                </p>
-
-                <div className="mt-6 border-t border-slate-100 pt-6">
-                  <h4 className="text-xl font-bold text-[#1e3a5f]">
-                    {activeTestimonial.name}
-                  </h4>
-                  <p className="text-sm font-medium text-slate-500 mt-1 uppercase tracking-wide">
-                    {activeTestimonial.role}
-                  </p>
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={activeTestimonial.id}
+                initial={{ opacity: 0, x: 30 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -30 }}
+                transition={{ duration: 0.4, ease: "easeInOut" }}
+                className="flex flex-col md:flex-row items-center md:items-start gap-8 relative z-10"
+              >
+                <div className="shrink-0 relative group">
+                  <motion.div
+                    className="absolute inset-0 bg-[#1e3a5f] rounded-xl opacity-10"
+                    animate={{ rotate: [6, 12, 6] }}
+                    transition={{
+                      duration: 3,
+                      repeat: Infinity,
+                      ease: "easeInOut",
+                    }}
+                  />
+                  <img
+                    src={activeTestimonial.image}
+                    alt={activeTestimonial.name}
+                    className="h-24 w-24 md:h-28 md:w-28 rounded-xl object-cover shadow-md relative z-10 border-2 border-white"
+                  />
                 </div>
-              </div>
-            </div>
+
+                <div className="text-center md:text-left flex-1">
+                  <p className="text-lg md:text-xl leading-relaxed text-slate-700 italic font-medium">
+                    &quot;{activeTestimonial.quote}&quot;
+                  </p>
+
+                  <div className="mt-6 border-t border-slate-100 pt-6">
+                    <h4 className="text-xl font-bold text-[#1e3a5f]">
+                      {activeTestimonial.name}
+                    </h4>
+                    <p className="text-sm font-medium text-slate-500 mt-1 uppercase tracking-wide">
+                      {activeTestimonial.role}
+                    </p>
+                  </div>
+                </div>
+              </motion.div>
+            </AnimatePresence>
           </div>
 
           <div className="mt-8 flex items-center justify-center gap-3">
@@ -124,7 +153,7 @@ export default function TestimonialsSection() {
               />
             ))}
           </div>
-        </div>
+        </motion.div>
       </div>
     </section>
   );
