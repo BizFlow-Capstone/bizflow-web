@@ -25,6 +25,7 @@ import {
   Building2,
   ChevronDown,
   ChevronUp,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -64,6 +65,13 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { BarcodeScanModal } from "@/components/BarcodeScanModal";
 import {
   useProducts,
@@ -71,6 +79,7 @@ import {
   useUpdateProductStatus,
   useDeleteProduct,
 } from "@/hooks/useProducts";
+import { useBusinessTypes } from "@/hooks/useBusinessTypes";
 import type { ProductFilters } from "@/lib/types/product";
 import { useLocationDetail } from "@/hooks/useLocations";
 
@@ -90,6 +99,23 @@ export default function LocationDetailClient({
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [isInfoExpanded, setIsInfoExpanded] = useState(true);
 
+  // Filter state
+  const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const [filterMinPrice, setFilterMinPrice] = useState<string>("");
+  const [filterMaxPrice, setFilterMaxPrice] = useState<string>("");
+  const [filterBusinessTypeIds, setFilterBusinessTypeIds] = useState<string[]>(
+    [],
+  );
+  const [filterStatus, setFilterStatus] = useState<string>("");
+
+  // Applied filters (only apply when user clicks "Áp dụng")
+  const [appliedFilters, setAppliedFilters] = useState<{
+    minCostPrice?: number;
+    maxCostPrice?: number;
+    businessTypeIds?: string[];
+    status?: string;
+  }>({});
+
   // Fetch location detail
   const { data: location, isLoading: isLocationLoading } = useLocationDetail(
     Number(locationId),
@@ -99,19 +125,19 @@ export default function LocationDetailClient({
   const [scanTarget, setScanTarget] = useState<"search" | "newProductBarcode">(
     "search",
   );
-  const [newProduct, setNewProduct] = useState({
+  const EMPTY_NEW_PRODUCT = {
     name: "",
-    image: "",
-    barcode: "",
+    sku: "",
+    businessTypeId: "",
     unit: "cái",
     stock: 0,
     costPrice: 0,
-    sellPrice: 0,
-    isActive: true,
-    canSell: true,
-    minStock: 10,
-    supplier: "",
-  });
+    trackInventory: true,
+    manufacturer: "",
+    priceTiers: [{ unit: "cái", quantity: 1, price: 0 }],
+  };
+  const [newProduct, setNewProduct] = useState(EMPTY_NEW_PRODUCT);
+  const [createError, setCreateError] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<{
     productId: number;
     name: string;
@@ -121,6 +147,9 @@ export default function LocationDetailClient({
   const createProductMutation = useCreateProduct();
   const updateStatusMutation = useUpdateProductStatus();
   const deleteProductMutation = useDeleteProduct();
+
+  // Fetch business types for filter tags
+  const { data: businessTypes = [] } = useBusinessTypes();
 
   // Debounce search
   useEffect(() => {
@@ -135,8 +164,16 @@ export default function LocationDetailClient({
     () => ({
       locationId: Number(locationId),
       name: debouncedSearch || undefined,
+      minCostPrice: appliedFilters.minCostPrice,
+      maxCostPrice: appliedFilters.maxCostPrice,
+      businessTypeIds:
+        appliedFilters.businessTypeIds &&
+        appliedFilters.businessTypeIds.length > 0
+          ? appliedFilters.businessTypeIds
+          : undefined,
+      status: appliedFilters.status || undefined,
     }),
-    [locationId, debouncedSearch],
+    [locationId, debouncedSearch, appliedFilters],
   );
 
   // Fetch products from API via TanStack Query
@@ -193,6 +230,53 @@ export default function LocationDetailClient({
       ).length,
     [products],
   );
+
+  // Count active filters
+  const activeFilterCount = useMemo(() => {
+    let count = 0;
+    if (appliedFilters.minCostPrice !== undefined) count++;
+    if (appliedFilters.maxCostPrice !== undefined) count++;
+    if (
+      appliedFilters.businessTypeIds &&
+      appliedFilters.businessTypeIds.length > 0
+    )
+      count++;
+    if (appliedFilters.status) count++;
+    return count;
+  }, [appliedFilters]);
+
+  // Toggle a business type in the multi-select array
+  const toggleBusinessType = (id: string) => {
+    setFilterBusinessTypeIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
+  };
+
+  // Apply preset price range
+  const applyPricePreset = (min: string, max: string) => {
+    setFilterMinPrice(min);
+    setFilterMaxPrice(max);
+  };
+
+  // Apply filters
+  const handleApplyFilters = () => {
+    setAppliedFilters({
+      minCostPrice: filterMinPrice ? Number(filterMinPrice) : undefined,
+      maxCostPrice: filterMaxPrice ? Number(filterMaxPrice) : undefined,
+      businessTypeIds:
+        filterBusinessTypeIds.length > 0 ? filterBusinessTypeIds : undefined,
+      status: filterStatus || undefined,
+    });
+  };
+
+  // Reset filters
+  const handleResetFilters = () => {
+    setFilterMinPrice("");
+    setFilterMaxPrice("");
+    setFilterBusinessTypeIds([]);
+    setFilterStatus("");
+    setAppliedFilters({});
+  };
 
   return (
     <div className="flex-1 flex flex-col">
@@ -274,11 +358,21 @@ export default function LocationDetailClient({
 
             {/* Action Buttons */}
             <Button
-              variant="outline"
-              className="border-gray-300 text-gray-700 hover:bg-gray-50"
+              variant={isFilterOpen ? "default" : "outline"}
+              className={
+                isFilterOpen
+                  ? "bg-[#23C4C1] hover:bg-[#1da8a5] text-white"
+                  : "border-gray-300 text-gray-700 hover:bg-gray-50"
+              }
+              onClick={() => setIsFilterOpen(!isFilterOpen)}
             >
               <Filter className="w-4 h-4 mr-2" />
               Lọc
+              {activeFilterCount > 0 && (
+                <span className="ml-1.5 inline-flex items-center justify-center w-5 h-5 text-xs font-bold rounded-full bg-white text-[#23C4C1]">
+                  {activeFilterCount}
+                </span>
+              )}
             </Button>
             <Button
               variant="outline"
@@ -303,6 +397,352 @@ export default function LocationDetailClient({
             </Button>
           </div>
         </div>
+
+        {/* Filter Panel */}
+        {isFilterOpen && (
+          <div className="bg-white rounded-xl border border-gray-100 shadow-md shadow-gray-200/50 p-6 mb-6 animate-in fade-in slide-in-from-top-4 duration-300">
+            <div className="flex items-center justify-between mb-5 border-b border-gray-100 pb-3">
+              <h3 className="text-sm font-bold text-gray-800 flex items-center gap-2">
+                <Filter className="w-4 h-4 text-[#23C4C1]" />
+                Bộ lọc nâng cao
+              </h3>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleResetFilters}
+                className="text-gray-400 hover:text-red-500 hover:bg-red-50 h-8 px-2 text-xs font-medium transition-colors"
+                title="Xóa toàn bộ bộ lọc"
+              >
+                Làm mới
+              </Button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+              {/* Option 1: Price Range */}
+              <div className="space-y-3">
+                <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1 block">
+                  Khoảng giá vốn
+                </Label>
+
+                {/* Preset chips */}
+                <div className="flex flex-wrap gap-1.5">
+                  {[
+                    { label: "Dưới 50k", min: "0", max: "49999" },
+                    { label: "50k – 100k", min: "50000", max: "100000" },
+                    { label: "100k – 500k", min: "100000", max: "500000" },
+                    { label: "Trên 500k", min: "500000", max: "" },
+                  ].map((preset) => {
+                    const isActive =
+                      filterMinPrice === preset.min &&
+                      filterMaxPrice === preset.max;
+                    return (
+                      <button
+                        key={preset.label}
+                        type="button"
+                        onClick={() =>
+                          isActive
+                            ? applyPricePreset("", "")
+                            : applyPricePreset(preset.min, preset.max)
+                        }
+                        className={`px-2.5 py-1 text-xs font-medium rounded-md border transition-all duration-150 active:scale-95 ${
+                          isActive
+                            ? "bg-[#23C4C1] text-white border-[#23C4C1] shadow-sm"
+                            : "bg-white text-gray-500 border-gray-200 hover:border-[#23C4C1]/60 hover:text-[#23C4C1]"
+                        }`}
+                      >
+                        {preset.label}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Custom range */}
+                <div className="flex items-center gap-2 bg-gray-50/50 p-3 rounded-lg border border-gray-100">
+                  <div className="flex-1 relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs font-medium pointer-events-none">
+                      ₫
+                    </span>
+                    <Input
+                      type="number"
+                      placeholder="Từ"
+                      min={0}
+                      value={filterMinPrice}
+                      onChange={(e) => setFilterMinPrice(e.target.value)}
+                      className="pl-7 h-9 text-sm bg-white border-gray-200 focus-visible:ring-[#23C4C1]/20 focus-visible:border-[#23C4C1] transition-all text-right pr-2"
+                    />
+                  </div>
+                  <span className="text-gray-300 text-sm font-light">—</span>
+                  <div className="flex-1 relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs font-medium pointer-events-none">
+                      ₫
+                    </span>
+                    <Input
+                      type="number"
+                      placeholder="Đến"
+                      min={0}
+                      value={filterMaxPrice}
+                      onChange={(e) => setFilterMaxPrice(e.target.value)}
+                      className="pl-7 h-9 text-sm bg-white border-gray-200 focus-visible:ring-[#23C4C1]/20 focus-visible:border-[#23C4C1] transition-all text-right pr-2"
+                    />
+                  </div>
+                </div>
+
+                {filterMinPrice &&
+                  filterMaxPrice &&
+                  Number(filterMinPrice) > Number(filterMaxPrice) && (
+                    <p className="text-[10px] text-red-500 font-medium flex items-center gap-1 animate-pulse">
+                      <AlertTriangle className="w-3 h-3" />
+                      Giá tối thiểu không được lớn hơn tối đa
+                    </p>
+                  )}
+              </div>
+
+              {/* Option 2: Business Type Tags - multi-select */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wider block">
+                    Loại hình kinh doanh
+                  </Label>
+                  {filterBusinessTypeIds.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setFilterBusinessTypeIds([])}
+                      className="text-[10px] text-gray-400 hover:text-red-500 transition-colors flex items-center gap-0.5"
+                    >
+                      <X className="w-2.5 h-2.5" /> Bỏ chọn
+                    </button>
+                  )}
+                </div>
+                <div className="flex flex-wrap gap-2 p-3 bg-gray-50/50 rounded-lg border border-gray-100 min-h-[82px] content-start">
+                  {businessTypes.map((bt) => {
+                    const isSelected = filterBusinessTypeIds.includes(
+                      bt.businessTypeId,
+                    );
+                    return (
+                      <button
+                        key={bt.businessTypeId}
+                        type="button"
+                        onClick={() => toggleBusinessType(bt.businessTypeId)}
+                        className={`px-3 py-1.5 text-xs font-medium rounded-md border transition-all duration-200 active:scale-95 flex items-center gap-1.5 ${
+                          isSelected
+                            ? "bg-[#23C4C1] text-white border-[#23C4C1] shadow-sm shadow-[#23C4C1]/30"
+                            : "bg-white text-gray-600 border-gray-200 hover:border-[#23C4C1]/50 hover:bg-[#23C4C1]/5"
+                        }`}
+                      >
+                        {isSelected && (
+                          <span className="inline-block w-3.5 h-3.5 rounded-full bg-white/30 flex items-center justify-center">
+                            ✓
+                          </span>
+                        )}
+                        {bt.name}
+                      </button>
+                    );
+                  })}
+                </div>
+                {filterBusinessTypeIds.length > 0 && (
+                  <p className="text-[10px] text-[#23C4C1] font-medium">
+                    Đã chọn {filterBusinessTypeIds.length} loại hình
+                  </p>
+                )}
+              </div>
+
+              {/* Option 3: Status Filter */}
+              <div className="space-y-3">
+                <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1 block">
+                  Trạng thái
+                </Label>
+                <div className="flex bg-gray-100 p-1 rounded-lg border border-gray-200/50 relative">
+                  {[
+                    { value: "", label: "Tất cả" },
+                    { value: "active", label: "Đang bán" },
+                    { value: "inactive", label: "Ngừng bán" },
+                  ].map((opt) => {
+                    const isActive = filterStatus === opt.value;
+                    return (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => setFilterStatus(opt.value)}
+                        className={`flex-1 py-2 text-xs font-medium rounded-md transition-all duration-200 relative z-10 ${
+                          isActive
+                            ? "text-[#23C4C1] bg-white shadow-sm ring-1 ring-gray-200"
+                            : "text-gray-500 hover:text-gray-700 hover:bg-gray-200/50"
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            {/* Filter Actions */}
+            <div className="flex items-center justify-end gap-3 mt-6 pt-4 border-t border-gray-100">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setIsFilterOpen(false);
+                  /* Optional: revert changes if cancel */
+                }}
+                className="text-gray-500 border-gray-200 hover:bg-gray-50 hover:text-gray-800 px-5"
+              >
+                Đóng
+              </Button>
+              <Button
+                size="sm"
+                onClick={handleApplyFilters}
+                disabled={
+                  !!(
+                    filterMinPrice &&
+                    filterMaxPrice &&
+                    Number(filterMinPrice) > Number(filterMaxPrice)
+                  )
+                }
+                className="bg-[#23C4C1] hover:bg-[#1da8a5] text-white px-8 shadow-md shadow-[#23C4C1]/20 transition-all hover:scale-[1.02] active:scale-[0.98]"
+              >
+                Áp dụng bộ lọc
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Active Filters Summary - Chips */}
+        {activeFilterCount > 0 && !isFilterOpen && (
+          <div className="flex items-center gap-2 mb-6 flex-wrap animate-in fade-in duration-300 pl-1">
+            <span className="text-xs font-medium text-gray-400 mr-1 flex items-center gap-1">
+              <Filter className="w-3 h-3" />
+              Đang áp dụng:
+            </span>
+
+            {appliedFilters.minCostPrice !== undefined && (
+              <Badge
+                variant="outline"
+                className="bg-blue-50 text-blue-700 border-blue-200 text-xs py-1 px-2.5 font-normal flex items-center gap-1.5 shadow-sm"
+              >
+                <span>
+                  Giá từ:{" "}
+                  <span className="font-semibold">
+                    {appliedFilters.minCostPrice.toLocaleString()}đ
+                  </span>
+                </span>
+                <button
+                  onClick={() => {
+                    setFilterMinPrice("");
+                    setAppliedFilters((prev) => ({
+                      ...prev,
+                      minCostPrice: undefined,
+                    }));
+                  }}
+                  className="hover:bg-blue-100 rounded-full p-0.5 transition-colors"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </Badge>
+            )}
+
+            {appliedFilters.maxCostPrice !== undefined && (
+              <Badge
+                variant="outline"
+                className="bg-blue-50 text-blue-700 border-blue-200 text-xs py-1 px-2.5 font-normal flex items-center gap-1.5 shadow-sm"
+              >
+                <span>
+                  Giá đến:{" "}
+                  <span className="font-semibold">
+                    {appliedFilters.maxCostPrice.toLocaleString()}đ
+                  </span>
+                </span>
+                <button
+                  onClick={() => {
+                    setFilterMaxPrice("");
+                    setAppliedFilters((prev) => ({
+                      ...prev,
+                      maxCostPrice: undefined,
+                    }));
+                  }}
+                  className="hover:bg-blue-100 rounded-full p-0.5 transition-colors"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </Badge>
+            )}
+
+            {appliedFilters.businessTypeIds &&
+              appliedFilters.businessTypeIds.length > 0 && (
+                <Badge
+                  variant="outline"
+                  className="bg-purple-50 text-purple-700 border-purple-200 text-xs py-1 px-2.5 font-normal flex items-center gap-1.5 shadow-sm"
+                >
+                  <span>
+                    Loại:{" "}
+                    <span className="font-semibold">
+                      {appliedFilters.businessTypeIds
+                        .map(
+                          (id) =>
+                            businessTypes.find((bt) => bt.businessTypeId === id)
+                              ?.name,
+                        )
+                        .filter(Boolean)
+                        .join(", ")}
+                    </span>
+                  </span>
+                  <button
+                    onClick={() => {
+                      setFilterBusinessTypeIds([]);
+                      setAppliedFilters((prev) => ({
+                        ...prev,
+                        businessTypeIds: undefined,
+                      }));
+                    }}
+                    className="hover:bg-purple-100 rounded-full p-0.5 transition-colors"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </Badge>
+              )}
+
+            {appliedFilters.status && (
+              <Badge
+                variant="outline"
+                className="bg-green-50 text-green-700 border-green-200 text-xs py-1 px-2.5 font-normal flex items-center gap-1.5 shadow-sm"
+              >
+                <span>
+                  Trạng thái:{" "}
+                  <span className="font-semibold">
+                    {appliedFilters.status === "active"
+                      ? "Đang bán"
+                      : "Ngừng bán"}
+                  </span>
+                </span>
+                <button
+                  onClick={() => {
+                    setFilterStatus("");
+                    setAppliedFilters((prev) => ({
+                      ...prev,
+                      status: undefined,
+                    }));
+                  }}
+                  className="hover:bg-green-100 rounded-full p-0.5 transition-colors"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </Badge>
+            )}
+
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                handleResetFilters();
+                setIsFilterOpen(false);
+              }}
+              className="h-6 text-xs text-gray-500 hover:text-red-600 hover:bg-red-50 ml-2 px-2"
+            >
+              Xóa tất cả
+            </Button>
+          </div>
+        )}
 
         {/* Low Stock Alert */}
         {lowStockCount > 0 && (
@@ -565,321 +1005,388 @@ export default function LocationDetailClient({
       </main>
 
       {/* Dialog Thêm Sản Phẩm */}
-      <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <Dialog
+        open={isAddDialogOpen}
+        onOpenChange={(open) => {
+          setIsAddDialogOpen(open);
+          if (!open) {
+            setNewProduct(EMPTY_NEW_PRODUCT);
+            setCreateError(null);
+          }
+        }}
+      >
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader className="border-b pb-4">
-            <DialogTitle className="text-xl font-bold text-gray-900">
+            <DialogTitle className="text-xl font-bold text-gray-900 flex items-center gap-2">
+              <Package className="w-5 h-5 text-[#23C4C1]" />
               Thêm sản phẩm mới
             </DialogTitle>
           </DialogHeader>
 
-          <div className="space-y-6 py-4">
-            {/* Hình ảnh sản phẩm */}
-            <div className="space-y-2">
-              <Label className="text-sm font-medium text-gray-700">
-                Hình ảnh sản phẩm
+          <div className="space-y-5 py-4">
+            {/* Error */}
+            {createError && (
+              <div className="flex items-start gap-2 rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-700">
+                <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                <span>{createError}</span>
+              </div>
+            )}
+
+            {/* Tên sản phẩm */}
+            <div className="space-y-1.5">
+              <Label
+                htmlFor="np-name"
+                className="text-sm font-medium text-gray-700"
+              >
+                Tên sản phẩm <span className="text-red-500">*</span>
               </Label>
-              <div className="flex items-center justify-center w-full">
-                <label className="flex flex-col items-center justify-center w-full h-48 border-2 border-gray-300 border-dashed rounded-lg cursor-pointer bg-gray-50 hover:bg-gray-100 transition-colors">
-                  <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                    <Upload className="w-10 h-10 mb-3 text-gray-400" />
-                    <p className="mb-2 text-sm text-gray-500">
-                      <span className="font-semibold">Kéo thả ảnh vào đây</span>
-                    </p>
-                    <p className="text-xs text-gray-500">
-                      hoặc nhấn để chọn ảnh
-                    </p>
-                  </div>
-                  <input type="file" className="hidden" accept="image/*" />
-                </label>
-              </div>
+              <Input
+                id="np-name"
+                placeholder="VD: Nước suối Lavie 500ml"
+                value={newProduct.name}
+                onChange={(e) =>
+                  setNewProduct({ ...newProduct, name: e.target.value })
+                }
+              />
             </div>
 
-            {/* Thông tin cơ bản */}
-            <div className="space-y-4">
-              <h3 className="text-sm font-semibold text-gray-700">
-                Thông tin cơ bản
-              </h3>
-
-              {/* Tên sản phẩm */}
-              <div className="space-y-2">
-                <Label htmlFor="productName" className="text-sm text-gray-700">
-                  Tên sản phẩm <span className="text-red-500">*</span>
-                </Label>
+            {/* SKU / Mã vạch */}
+            <div className="space-y-1.5">
+              <Label
+                htmlFor="np-sku"
+                className="text-sm font-medium text-gray-700"
+              >
+                SKU / Mã vạch
+              </Label>
+              <div className="relative">
                 <Input
-                  id="productName"
-                  placeholder="Nhập tên sản phẩm"
-                  value={newProduct.name}
+                  id="np-sku"
+                  placeholder="Nhập hoặc quét mã vạch"
+                  value={newProduct.sku}
                   onChange={(e) =>
-                    setNewProduct({ ...newProduct, name: e.target.value })
+                    setNewProduct({ ...newProduct, sku: e.target.value })
                   }
+                  className="pr-10"
                 />
-              </div>
-
-              {/* Mã vạch */}
-              <div className="space-y-2">
-                <Label htmlFor="barcode" className="text-sm text-gray-700">
-                  Mã vạch <span className="text-red-500">*</span>
-                </Label>
-                <div className="relative">
-                  <Input
-                    id="barcode"
-                    placeholder="Nhập hoặc quét mã vạch"
-                    value={newProduct.barcode}
-                    onChange={(e) =>
-                      setNewProduct({ ...newProduct, barcode: e.target.value })
-                    }
-                    className="pr-10"
-                  />
-                  <button
-                    type="button"
-                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1 hover:bg-gray-100 rounded"
-                    onClick={() => {
-                      setScanTarget("newProductBarcode");
-                      setScanOpen(true);
-                    }}
-                    title="Quét mã sản phẩm"
-                  >
-                    <ScanLine className="w-5 h-5 text-gray-500" />
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 p-1 hover:bg-gray-100 rounded"
+                  onClick={() => {
+                    setScanTarget("newProductBarcode");
+                    setScanOpen(true);
+                  }}
+                  title="Quét mã vạch"
+                >
+                  <ScanLine className="w-5 h-5 text-gray-500" />
+                </button>
               </div>
             </div>
 
-            {/* Trạng thái */}
-            <div className="space-y-4">
-              <h3 className="text-sm font-semibold text-gray-700">
-                Trạng thái
-              </h3>
-
-              <div className="flex items-center justify-between py-2">
-                <div>
-                  <Label className="text-sm font-medium text-gray-900">
-                    Kích hoạt
-                  </Label>
-                  <p className="text-xs text-gray-500">
-                    Sản phẩm có thể được bán
-                  </p>
-                </div>
-                <Switch
-                  checked={newProduct.isActive}
-                  onCheckedChange={(checked) =>
-                    setNewProduct({ ...newProduct, isActive: checked })
-                  }
-                  className="data-[state=checked]:bg-[#23C4C1]"
-                />
-              </div>
-
-              <div className="flex items-center justify-between py-2">
-                <div>
-                  <Label className="text-sm font-medium text-gray-900">
-                    Tồn kho
-                  </Label>
-                  <p className="text-xs text-gray-500">
-                    Quản lí tồn kho sản phẩm này
-                  </p>
-                </div>
-                <Switch
-                  checked={newProduct.canSell}
-                  onCheckedChange={(checked) =>
-                    setNewProduct({ ...newProduct, canSell: checked })
-                  }
-                  className="data-[state=checked]:bg-[#23C4C1]"
-                />
-              </div>
+            {/* Loại hình kinh doanh */}
+            <div className="space-y-1.5">
+              <Label className="text-sm font-medium text-gray-700">
+                Loại hình kinh doanh <span className="text-red-500">*</span>
+              </Label>
+              <Select
+                value={newProduct.businessTypeId}
+                onValueChange={(val) =>
+                  setNewProduct({ ...newProduct, businessTypeId: val })
+                }
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Chọn loại hình kinh doanh" />
+                </SelectTrigger>
+                <SelectContent>
+                  {businessTypes.map((bt) => (
+                    <SelectItem
+                      key={bt.businessTypeId}
+                      value={bt.businessTypeId}
+                    >
+                      {bt.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
-            {/* Giá & Tồn kho */}
-            <div className="space-y-4">
-              <h3 className="text-sm font-semibold text-gray-700">
-                Giá & Tồn kho
-              </h3>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="costPrice" className="text-sm text-gray-700">
-                    Giá vốn
-                  </Label>
-                  <Input
-                    id="costPrice"
-                    type="number"
-                    placeholder="0"
-                    value={newProduct.costPrice}
-                    onChange={(e) =>
-                      setNewProduct({
-                        ...newProduct,
-                        costPrice: Number(e.target.value),
-                      })
-                    }
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="sellPrice" className="text-sm text-gray-700">
-                    Giá bán
-                  </Label>
-                  <Input
-                    id="sellPrice"
-                    type="number"
-                    placeholder="0"
-                    value={newProduct.sellPrice}
-                    onChange={(e) =>
-                      setNewProduct({
-                        ...newProduct,
-                        sellPrice: Number(e.target.value),
-                      })
-                    }
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="stock" className="text-sm text-gray-700">
-                    Số lượng
-                  </Label>
-                  <Input
-                    id="stock"
-                    type="number"
-                    placeholder="0"
-                    value={newProduct.stock}
-                    onChange={(e) =>
-                      setNewProduct({
-                        ...newProduct,
-                        stock: Number(e.target.value),
-                      })
-                    }
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="unit" className="text-sm text-gray-700">
-                    Đơn vị có bán <span className="text-red-500">*</span>
-                  </Label>
-                  <Input
-                    id="unit"
-                    placeholder="cái"
-                    value={newProduct.unit}
-                    onChange={(e) =>
-                      setNewProduct({ ...newProduct, unit: e.target.value })
-                    }
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="minStock" className="text-sm text-gray-700">
-                  Tồn tối thiểu
+            {/* Đơn vị & Tồn kho */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <Label
+                  htmlFor="np-unit"
+                  className="text-sm font-medium text-gray-700"
+                >
+                  Đơn vị <span className="text-red-500">*</span>
                 </Label>
                 <Input
-                  id="minStock"
+                  id="np-unit"
+                  placeholder="cái"
+                  value={newProduct.unit}
+                  onChange={(e) =>
+                    setNewProduct({ ...newProduct, unit: e.target.value })
+                  }
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label
+                  htmlFor="np-stock"
+                  className="text-sm font-medium text-gray-700"
+                >
+                  Tồn kho ban đầu
+                </Label>
+                <Input
+                  id="np-stock"
                   type="number"
-                  placeholder="10"
-                  value={newProduct.minStock}
+                  min={0}
+                  placeholder="0"
+                  value={newProduct.stock}
                   onChange={(e) =>
                     setNewProduct({
                       ...newProduct,
-                      minStock: Number(e.target.value),
+                      stock: Number(e.target.value),
                     })
                   }
                 />
               </div>
             </div>
 
-            {/* Nhà sản xuất */}
-            <div className="space-y-4">
-              <h3 className="text-sm font-semibold text-gray-700">
-                Nhà sản xuất
-              </h3>
-
-              <div className="space-y-2">
-                <Label htmlFor="supplier" className="text-sm text-gray-700">
-                  Thêm nhà cung cấp mới
-                </Label>
-                <Input
-                  id="supplier"
-                  placeholder="Tên nhà cung cấp (VD: Anh Tuấn)"
-                  value={newProduct.supplier}
-                  onChange={(e) =>
-                    setNewProduct({ ...newProduct, supplier: e.target.value })
-                  }
-                />
-              </div>
-
-              <Button
-                variant="outline"
-                className="w-full border-gray-300 text-gray-700"
+            {/* Giá vốn */}
+            <div className="space-y-1.5">
+              <Label
+                htmlFor="np-cost"
+                className="text-sm font-medium text-gray-700"
               >
-                Thêm nhà cung cấp
-              </Button>
+                Giá vốn (₫)
+              </Label>
+              <Input
+                id="np-cost"
+                type="number"
+                min={0}
+                placeholder="0"
+                value={newProduct.costPrice}
+                onChange={(e) =>
+                  setNewProduct({
+                    ...newProduct,
+                    costPrice: Number(e.target.value),
+                  })
+                }
+              />
+            </div>
+
+            {/* Bảng giá bán (PriceTiers) */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label className="text-sm font-medium text-gray-700">
+                  Bảng giá bán <span className="text-red-500">*</span>
+                </Label>
+                <button
+                  type="button"
+                  className="text-xs text-[#23C4C1] hover:text-[#1da8a5] font-medium"
+                  onClick={() =>
+                    setNewProduct({
+                      ...newProduct,
+                      priceTiers: [
+                        ...newProduct.priceTiers,
+                        { unit: newProduct.unit, quantity: 1, price: 0 },
+                      ],
+                    })
+                  }
+                >
+                  + Thêm giá bán
+                </button>
+              </div>
+              <div className="rounded-lg border border-gray-200 overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="text-left py-2 px-3 font-medium text-gray-600 text-xs">
+                        Đơn vị
+                      </th>
+                      <th className="text-left py-2 px-3 font-medium text-gray-600 text-xs">
+                        SL tối thiểu
+                      </th>
+                      <th className="text-left py-2 px-3 font-medium text-gray-600 text-xs">
+                        Giá (₫)
+                      </th>
+                      <th className="w-8"></th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {newProduct.priceTiers.map((tier, idx) => (
+                      <tr key={idx}>
+                        <td className="py-1.5 px-2">
+                          <Input
+                            placeholder={newProduct.unit || "cái"}
+                            className="h-8 text-sm"
+                            value={tier.unit}
+                            onChange={(e) => {
+                              const updated = [...newProduct.priceTiers];
+                              updated[idx] = {
+                                ...updated[idx],
+                                unit: e.target.value,
+                              };
+                              setNewProduct({
+                                ...newProduct,
+                                priceTiers: updated,
+                              });
+                            }}
+                          />
+                        </td>
+                        <td className="py-1.5 px-2">
+                          <Input
+                            type="number"
+                            min={1}
+                            className="h-8 text-sm"
+                            value={tier.quantity}
+                            onChange={(e) => {
+                              const updated = [...newProduct.priceTiers];
+                              updated[idx] = {
+                                ...updated[idx],
+                                quantity: Number(e.target.value),
+                              };
+                              setNewProduct({
+                                ...newProduct,
+                                priceTiers: updated,
+                              });
+                            }}
+                          />
+                        </td>
+                        <td className="py-1.5 px-2">
+                          <Input
+                            type="number"
+                            min={0}
+                            className="h-8 text-sm"
+                            value={tier.price}
+                            onChange={(e) => {
+                              const updated = [...newProduct.priceTiers];
+                              updated[idx] = {
+                                ...updated[idx],
+                                price: Number(e.target.value),
+                              };
+                              setNewProduct({
+                                ...newProduct,
+                                priceTiers: updated,
+                              });
+                            }}
+                          />
+                        </td>
+                        <td className="py-1.5 px-1 text-center">
+                          {newProduct.priceTiers.length > 1 && (
+                            <button
+                              type="button"
+                              className="p-1 hover:bg-red-50 rounded text-gray-400 hover:text-red-500"
+                              onClick={() => {
+                                const updated = newProduct.priceTiers.filter(
+                                  (_, i) => i !== idx,
+                                );
+                                setNewProduct({
+                                  ...newProduct,
+                                  priceTiers: updated,
+                                });
+                              }}
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Nhà sản xuất */}
+            <div className="space-y-1.5">
+              <Label
+                htmlFor="np-manufacturer"
+                className="text-sm font-medium text-gray-700"
+              >
+                Nhà sản xuất / Thương hiệu
+              </Label>
+              <Input
+                id="np-manufacturer"
+                placeholder="VD: Nestlé, Vinamilk..."
+                value={newProduct.manufacturer}
+                onChange={(e) =>
+                  setNewProduct({ ...newProduct, manufacturer: e.target.value })
+                }
+              />
+            </div>
+
+            {/* Theo dõi tồn kho */}
+            <div className="flex items-center justify-between rounded-lg border border-gray-200 bg-gray-50/50 px-4 py-3">
+              <div>
+                <p className="text-sm font-medium text-gray-800">
+                  Theo dõi tồn kho
+                </p>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Hệ thống sẽ cảnh báo khi hàng sắp hết
+                </p>
+              </div>
+              <Switch
+                checked={newProduct.trackInventory}
+                onCheckedChange={(checked) =>
+                  setNewProduct({ ...newProduct, trackInventory: checked })
+                }
+                className="data-[state=checked]:bg-[#23C4C1]"
+              />
             </div>
           </div>
 
-          <DialogFooter className="border-t pt-4">
+          <DialogFooter className="border-t pt-4 gap-2">
             <Button
               variant="outline"
               onClick={() => {
                 setIsAddDialogOpen(false);
-                setNewProduct({
-                  name: "",
-                  image: "",
-                  barcode: "",
-                  unit: "cái",
-                  stock: 0,
-                  costPrice: 0,
-                  sellPrice: 0,
-                  isActive: true,
-                  canSell: true,
-                  minStock: 10,
-                  supplier: "",
-                });
+                setNewProduct(EMPTY_NEW_PRODUCT);
+                setCreateError(null);
               }}
+              disabled={createProductMutation.isPending}
             >
-              Quay lại
+              Hủy
             </Button>
             <Button
-              disabled={createProductMutation.isPending}
-              onClick={() => {
-                if (!newProduct.name || !newProduct.unit) return;
-                createProductMutation.mutate(
-                  {
+              disabled={
+                createProductMutation.isPending ||
+                !newProduct.name.trim() ||
+                !newProduct.unit.trim() ||
+                !newProduct.businessTypeId ||
+                newProduct.priceTiers.length === 0 ||
+                newProduct.priceTiers.every((t) => t.price <= 0)
+              }
+              onClick={async () => {
+                setCreateError(null);
+                try {
+                  const result = await createProductMutation.mutateAsync({
                     locationId: Number(locationId),
-                    businessTypeId: "650e8400-e29b-41d4-a716-446655440001",
-                    name: newProduct.name,
-                    sku: newProduct.barcode,
-                    trackInventory: newProduct.canSell,
-                    unit: newProduct.unit,
+                    businessTypeId: newProduct.businessTypeId,
+                    name: newProduct.name.trim(),
+                    sku: newProduct.sku.trim() || undefined,
+                    trackInventory: newProduct.trackInventory,
+                    unit: newProduct.unit.trim(),
                     costPrice: newProduct.costPrice,
                     stock: newProduct.stock,
-                    imageUrl: newProduct.image || undefined,
-                    manufacturer: newProduct.supplier || undefined,
-                    priceTiers: [
-                      {
-                        unit: newProduct.unit,
-                        quantity: 1,
-                        price: newProduct.sellPrice,
-                      },
-                    ],
-                  },
-                  {
-                    onSuccess: () => {
-                      setIsAddDialogOpen(false);
-                      setNewProduct({
-                        name: "",
-                        image: "",
-                        barcode: "",
-                        unit: "cái",
-                        stock: 0,
-                        costPrice: 0,
-                        sellPrice: 0,
-                        isActive: true,
-                        canSell: true,
-                        minStock: 10,
-                        supplier: "",
-                      });
-                    },
-                  },
-                );
+                    manufacturer: newProduct.manufacturer.trim() || undefined,
+                    priceTiers: newProduct.priceTiers.map((t) => ({
+                      unit: t.unit || newProduct.unit.trim(),
+                      quantity: t.quantity,
+                      price: t.price,
+                    })),
+                  });
+                  if (result.success) {
+                    setIsAddDialogOpen(false);
+                    setNewProduct(EMPTY_NEW_PRODUCT);
+                  } else {
+                    setCreateError(result.message || "Không thể tạo sản phẩm");
+                  }
+                } catch (err) {
+                  setCreateError(
+                    err instanceof Error
+                      ? err.message
+                      : "Đã xảy ra lỗi khi tạo sản phẩm",
+                  );
+                }
               }}
               className="bg-[#23C4C1] hover:bg-[#1da8a5] text-white"
             >
@@ -906,8 +1413,7 @@ export default function LocationDetailClient({
             setSearchQuery(code);
             return;
           }
-
-          setNewProduct((prev) => ({ ...prev, barcode: code }));
+          setNewProduct((prev) => ({ ...prev, sku: code }));
         }}
       />
 

@@ -29,6 +29,10 @@ export async function getProducts(
   // Optional filters
   if (filters.name) params.append("Name", filters.name);
   if (filters.sku) params.append("Sku", filters.sku);
+  if (filters.businessTypeIds && filters.businessTypeIds.length > 0)
+    filters.businessTypeIds.forEach((id) =>
+      params.append("BusinessTypeIds", id),
+    );
   if (filters.minCostPrice !== undefined)
     params.append("MinCostPrice", String(filters.minCostPrice));
   if (filters.maxCostPrice !== undefined)

@@ -35,6 +35,7 @@ export interface ProductFilters {
   locationId: number;
   name?: string;
   sku?: string;
+  businessTypeIds?: string[];
   minCostPrice?: number;
   maxCostPrice?: number;
   minStock?: number;
