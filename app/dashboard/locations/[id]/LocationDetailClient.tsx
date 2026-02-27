@@ -19,6 +19,12 @@ import {
   AlertTriangle,
   FileText,
   Loader2,
+  MapPin,
+  Phone,
+  User,
+  Building2,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -66,6 +72,7 @@ import {
   useDeleteProduct,
 } from "@/hooks/useProducts";
 import type { ProductFilters } from "@/lib/types/product";
+import { useLocationDetail } from "@/hooks/useLocations";
 
 /**
  * LocationDetailClient - Client Component for Location Detail
@@ -81,6 +88,12 @@ export default function LocationDetailClient({
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [isInfoExpanded, setIsInfoExpanded] = useState(true);
+
+  // Fetch location detail
+  const { data: location, isLoading: isLocationLoading } = useLocationDetail(
+    Number(locationId),
+  );
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [scanOpen, setScanOpen] = useState(false);
   const [scanTarget, setScanTarget] = useState<"search" | "newProductBarcode">(
@@ -197,7 +210,9 @@ export default function LocationDetailClient({
             </Button>
             <div>
               <h1 className="text-2xl font-bold text-gray-800">
-                Địa điểm #{locationId}
+                {isLocationLoading
+                  ? `Địa điểm #${locationId}`
+                  : location?.name || `Địa điểm #${locationId}`}
               </h1>
               <p className="text-sm text-gray-600 mt-1">
                 Quản lý sản phẩm tại địa điểm kinh doanh
@@ -228,6 +243,8 @@ export default function LocationDetailClient({
 
       {/* Main Content */}
       <main className="flex-1 p-8 bg-gray-50">
+        {/* Location Info Card */}
+
         {/* Search and Actions Bar */}
         <div className="bg-white rounded-lg border border-gray-200 p-4 mb-6">
           <div className="flex items-center gap-4">

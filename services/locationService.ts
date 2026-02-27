@@ -8,6 +8,7 @@ import type {
   Location,
   ApiResponse,
   NewLocationForm,
+  LocationEmployeesResponse,
 } from "@/lib/types/location";
 
 /**
@@ -97,6 +98,25 @@ export async function deleteLocation(id: number): Promise<ApiResponse<null>> {
 
   if (!response.ok) {
     throw new Error(`Failed to delete location: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+/**
+ * Get employees assigned to a location
+ */
+export async function getLocationEmployees(
+  locationId: number,
+): Promise<ApiResponse<LocationEmployeesResponse>> {
+  const response = await fetch(`/api/locations/${locationId}/employees`, {
+    method: "GET",
+    headers: { accept: "*/*" },
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch location employees: ${response.status}`);
   }
 
   return response.json();

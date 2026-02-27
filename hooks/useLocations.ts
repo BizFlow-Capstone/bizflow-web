@@ -11,6 +11,7 @@ import {
   updateLocationStatus,
   updateLocation,
   deleteLocation,
+  getLocationEmployees,
 } from "@/services/locationService";
 import type { Location, NewLocationForm } from "@/lib/types/location";
 
@@ -22,6 +23,7 @@ export const locationKeys = {
     [...locationKeys.lists(), filters] as const,
   details: () => [...locationKeys.all, "detail"] as const,
   detail: (id: number) => [...locationKeys.details(), id] as const,
+  employees: (id: number) => [...locationKeys.all, "employees", id] as const,
 };
 
 /**
@@ -38,6 +40,45 @@ export function useLocations() {
       }
       return result.data;
     },
+  });
+}
+
+/**
+ * Hook to fetch a single location by ID
+ * Reuses the locations list cache to avoid extra API calls
+ */
+export function useLocationDetail(id: number) {
+  return useQuery({
+    queryKey: locationKeys.detail(id),
+    queryFn: async () => {
+      const result = await getLocations();
+      if (!result.success) {
+        throw new Error(result.message);
+      }
+      const location = result.data.find((loc) => loc.id === id);
+      if (!location) {
+        throw new Error("Location not found");
+      }
+      return location;
+    },
+  });
+}
+
+/**
+ * Hook to fetch employees for a specific location
+ * Only fetches when enabled (dialog is open)
+ */
+export function useLocationEmployees(locationId: number, enabled = false) {
+  return useQuery({
+    queryKey: locationKeys.employees(locationId),
+    queryFn: async () => {
+      const result = await getLocationEmployees(locationId);
+      if (!result.success) {
+        throw new Error(result.message);
+      }
+      return result.data.employees;
+    },
+    enabled,
   });
 }
 
