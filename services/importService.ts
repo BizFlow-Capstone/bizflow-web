@@ -28,6 +28,8 @@ export async function getImports(
 
   if (filters.Status) params.append("Status", filters.Status);
   if (filters.ImportType) params.append("ImportType", filters.ImportType);
+  if (filters.HasInvoice !== undefined)
+    params.append("HasInvoice", String(filters.HasInvoice));
   if (filters.BusinessLocationId)
     params.append("BusinessLocationId", String(filters.BusinessLocationId));
   if (filters.FromDate) params.append("FromDate", filters.FromDate);

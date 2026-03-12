@@ -20,6 +20,12 @@ import {
   Pencil,
   X,
   ChevronDown,
+  Trash2,
+  AlertTriangle,
+  MoreVertical,
+  Info,
+  Eye,
+  ArrowRight,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -34,6 +40,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import type { Location, NewLocationForm } from "@/lib/types/location";
@@ -43,6 +56,8 @@ import {
   useCreateLocation,
   useUpdateLocationStatus,
   useUpdateLocation,
+  useDeleteLocation,
+  useLocationEmployees,
 } from "@/hooks/useLocations";
 
 // Status Badge Component
@@ -94,6 +109,16 @@ export default function LocationsClient() {
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [editingLocation, setEditingLocation] = useState<Location | null>(null);
 
+  // Delete dialog state
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [deletingLocation, setDeletingLocation] = useState<Location | null>(
+    null,
+  );
+
+  // Detail dialog state
+  const [isDetailDialogOpen, setIsDetailDialogOpen] = useState(false);
+  const [detailLocation, setDetailLocation] = useState<Location | null>(null);
+
   // TanStack Query hooks for data fetching
   const {
     data: locations = [],
@@ -107,10 +132,18 @@ export default function LocationsClient() {
   const createMutation = useCreateLocation();
   const updateStatusMutation = useUpdateLocationStatus();
   const updateMutation = useUpdateLocation();
+  const deleteMutation = useDeleteLocation();
 
   // Fetch employees for dropdown
   const { data: employees = [], isLoading: isLoadingEmployees } =
     useEmployees();
+
+  // Fetch employees for detail dialog
+  const { data: detailEmployees = [], isLoading: isLoadingDetailEmployees } =
+    useLocationEmployees(
+      detailLocation?.id ?? 0,
+      isDetailDialogOpen && !!detailLocation,
+    );
 
   // Employee dropdown state
   const [isEmployeeDropdownOpen, setIsEmployeeDropdownOpen] = useState(false);
@@ -194,7 +227,6 @@ export default function LocationsClient() {
           district: editingLocation.district,
           city: editingLocation.city,
           phone: editingLocation.phone,
-          taxCode: "",
         },
       });
       if (result.success) {
@@ -207,6 +239,31 @@ export default function LocationsClient() {
       console.error("Error updating location:", err);
       alert("Đã xảy ra lỗi khi cập nhật địa điểm");
     }
+  };
+
+  // Handle delete location
+  const handleDeleteClick = (location: Location) => {
+    setDeletingLocation(location);
+    setIsDeleteDialogOpen(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deletingLocation) return;
+
+    try {
+      await deleteMutation.mutateAsync(deletingLocation.id);
+      setIsDeleteDialogOpen(false);
+      setDeletingLocation(null);
+    } catch (err) {
+      console.error("Error deleting location:", err);
+      alert("Đã xảy ra lỗi khi xóa địa điểm");
+    }
+  };
+
+  // Handle detail dialog
+  const handleDetailClick = (location: Location) => {
+    setDetailLocation(location);
+    setIsDetailDialogOpen(true);
   };
 
   return (
@@ -400,7 +457,7 @@ export default function LocationsClient() {
                 ></div>
 
                 <CardContent className="p-6">
-                  {/* Header: Name & Switch */}
+                  {/* Header: Name & Switch + Menu */}
                   <div className="flex items-center justify-between mb-4">
                     <h3
                       className={`text-lg font-bold ${location.isActive ? "text-gray-800" : "text-gray-500"}`}
@@ -416,6 +473,43 @@ export default function LocationsClient() {
                         disabled={updateStatusMutation.isPending}
                         className="scale-150 data-[state=checked]:bg-[#23C4C1]"
                       />
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-gray-400 hover:text-gray-600"
+                          >
+                            <MoreVertical className="w-5 h-5" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-48">
+                          <DropdownMenuItem
+                            onClick={() => handleDetailClick(location)}
+                            className="cursor-pointer"
+                          >
+                            <Eye className="w-4 h-4 mr-2" />
+                            <span>Xem chi tiết</span>
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            onClick={() => handleEditClick(location)}
+                            className="cursor-pointer"
+                          >
+                            <Pencil className="w-4 h-4 mr-2" />
+                            <span>Sửa thông tin</span>
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            onClick={() => handleDeleteClick(location)}
+                            className="cursor-pointer text-red-600 focus:text-red-600"
+                            disabled={deleteMutation.isPending}
+                          >
+                            <Trash2 className="w-4 h-4 mr-2" />
+                            <span>Xóa địa điểm</span>
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </div>
                   </div>
 
@@ -444,24 +538,14 @@ export default function LocationsClient() {
                     </div>
                   </div>
 
-                  {/* Footer Actions */}
-                  <div className="flex items-center justify-between pt-4 border-t border-gray-100">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleEditClick(location)}
-                      className="text-gray-600 hover:text-[#23C4C1] hover:border-[#23C4C1]"
+                  {/* Footer: Chi tiết link → products page */}
+                  <div className="pt-4 border-t border-gray-100">
+                    <Link
+                      href={`/dashboard/locations/${location.id}`}
+                      className="flex items-center justify-between text-sm font-medium text-[#23C4C1] hover:text-[#1da8a5] transition-colors"
                     >
-                      <Pencil className="w-4 h-4 mr-1" />
-                      Sửa
-                    </Button>
-                    <Link href={`/dashboard/locations/${location.id}`}>
-                      <Button
-                        variant="link"
-                        className="text-[#23C4C1] hover:text-[#1da8a5] font-semibold p-0 h-auto"
-                      >
-                        Chi tiết &rarr;
-                      </Button>
+                      <span>Chi tiết</span>
+                      <ArrowRight className="w-4 h-4" />
                     </Link>
                   </div>
                 </CardContent>
@@ -956,6 +1040,188 @@ export default function LocationsClient() {
               </DialogFooter>
             </>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <DialogContent className="sm:max-w-[420px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-600">
+              <AlertTriangle className="w-5 h-5" />
+              Xác nhận xóa địa điểm
+            </DialogTitle>
+            <DialogDescription className="text-sm text-gray-600 mt-2">
+              Bạn có chắc chắn muốn xóa địa điểm{" "}
+              <span className="font-semibold text-gray-900">
+                {deletingLocation?.name}
+              </span>
+              ? Hành động này không thể hoàn tác.
+            </DialogDescription>
+          </DialogHeader>
+
+          <DialogFooter className="mt-4">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setIsDeleteDialogOpen(false);
+                setDeletingLocation(null);
+              }}
+              className="mr-2"
+              disabled={deleteMutation.isPending}
+            >
+              Hủy
+            </Button>
+            <Button
+              type="button"
+              onClick={handleConfirmDelete}
+              disabled={deleteMutation.isPending}
+              className="bg-red-600 hover:bg-red-700 text-white"
+            >
+              {deleteMutation.isPending ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Đang xóa...
+                </>
+              ) : (
+                "Xóa địa điểm"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Detail Location Dialog */}
+      <Dialog
+        open={isDetailDialogOpen}
+        onOpenChange={(open) => {
+          setIsDetailDialogOpen(open);
+          if (!open) setDetailLocation(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-[560px] p-0">
+          <DialogHeader className="px-6 pt-6 pb-4 border-b border-gray-100">
+            <DialogTitle className="text-xl font-bold text-gray-900 flex items-center gap-2">
+              <Building2 className="w-5 h-5 text-[#23C4C1]" />
+              {detailLocation?.name}
+            </DialogTitle>
+            <DialogDescription className="text-sm text-gray-600 mt-1">
+              Thông tin chi tiết địa điểm kinh doanh
+            </DialogDescription>
+          </DialogHeader>
+
+          {detailLocation && (
+            <div className="px-6 py-5 space-y-5 max-h-[65vh] overflow-y-auto">
+              {/* Status */}
+              <div className="flex items-center gap-2">
+                <StatusBadge isActive={detailLocation.isActive} />
+              </div>
+
+              {/* Location Info */}
+              <div className="space-y-3">
+                <h4 className="text-sm font-semibold text-gray-800 flex items-center gap-2">
+                  <Info className="w-4 h-4 text-[#23C4C1]" />
+                  Thông tin địa điểm
+                </h4>
+                <div className="bg-gray-50 rounded-lg p-4 space-y-3">
+                  <div className="flex items-start gap-3 text-sm">
+                    <MapPin className="w-4 h-4 mt-0.5 text-gray-400 shrink-0" />
+                    <div>
+                      <span className="text-gray-500 text-xs">Địa chỉ</span>
+                      <p className="text-gray-700">
+                        {detailLocation.address}, {detailLocation.district},{" "}
+                        {detailLocation.city}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 text-sm">
+                    <Phone className="w-4 h-4 text-gray-400 shrink-0" />
+                    <div>
+                      <span className="text-gray-500 text-xs">
+                        Số điện thoại
+                      </span>
+                      <p className="text-gray-700">{detailLocation.phone}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 text-sm">
+                    <User className="w-4 h-4 text-gray-400 shrink-0" />
+                    <div>
+                      <span className="text-gray-500 text-xs">Chủ sở hữu</span>
+                      <p className="text-gray-700 font-medium">
+                        {detailLocation.ownerName}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Employees List */}
+              <div className="space-y-3">
+                <h4 className="text-sm font-semibold text-gray-800 flex items-center gap-2">
+                  <Users className="w-4 h-4 text-[#23C4C1]" />
+                  Nhân viên (
+                  {isLoadingDetailEmployees ? "..." : detailEmployees.length})
+                </h4>
+
+                {isLoadingDetailEmployees ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="w-5 h-5 animate-spin text-[#23C4C1]" />
+                    <span className="ml-2 text-sm text-gray-500">
+                      Đang tải danh sách nhân viên...
+                    </span>
+                  </div>
+                ) : detailEmployees.length === 0 ? (
+                  <div className="bg-gray-50 rounded-lg p-6 text-center">
+                    <Users className="w-8 h-8 text-gray-300 mx-auto mb-2" />
+                    <p className="text-sm text-gray-500">
+                      Chưa có nhân viên nào được gán cho địa điểm này
+                    </p>
+                  </div>
+                ) : (
+                  <div className="bg-gray-50 rounded-lg divide-y divide-gray-200">
+                    {detailEmployees.map((emp, index) => (
+                      <div
+                        key={emp.userId}
+                        className="flex items-center gap-3 px-4 py-3"
+                      >
+                        <div className="w-8 h-8 rounded-full bg-[#23C4C1]/10 flex items-center justify-center text-[#23C4C1] text-xs font-bold shrink-0">
+                          {index + 1}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-gray-800 truncate">
+                            {emp.userName}
+                          </p>
+                          <p className="text-xs text-gray-500 flex items-center gap-1">
+                            <Phone className="w-3 h-3" />
+                            {emp.phone || "Chưa cập nhật"}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="px-6 py-4 bg-gray-50 border-t border-gray-100">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setIsDetailDialogOpen(false);
+                setDetailLocation(null);
+              }}
+            >
+              Đóng
+            </Button>
+            <Link href={`/dashboard/locations/${detailLocation?.id}`}>
+              <Button className="bg-[#23C4C1] hover:bg-[#1da8a5] text-white gap-2">
+                Quản lý sản phẩm
+                <ArrowRight className="w-4 h-4" />
+              </Button>
+            </Link>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

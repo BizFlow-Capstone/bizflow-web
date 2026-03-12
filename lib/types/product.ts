@@ -2,11 +2,22 @@
 
 export interface Product {
   productId: number;
-  name: string;
-  price: number;
-  trackInventory: boolean;
+  businessLocationId: number;
+  businessTypeId: string;
+  productName: string;
+  name: string; // alias for backward compat (= productName)
+  sku?: string;
+  unit: string;
+  sellingPrice: number;
+  price: number; // alias for backward compat (= sellingPrice)
+  costPrice: number;
   stock: number;
+  imageUrl?: string;
+  imagePublicId?: string;
+  manufacturer?: string;
+  trackInventory: boolean;
   status: string; // "active" | "inactive"
+  deletedAt?: string;
 }
 
 export interface ProductPagination {
@@ -24,6 +35,16 @@ export interface SaleItem {
   unit: string;
   quantity: number;
   price: number;
+  deletedAt?: string;
+}
+
+export interface ProductPricePolicy {
+  productPricePolicyId: number;
+  saleItemId: number;
+  price: number;
+  isDefault: boolean;
+  startAt?: string;
+  endAt?: string;
 }
 
 export interface ProductSaleItems {
@@ -35,6 +56,7 @@ export interface ProductFilters {
   locationId: number;
   name?: string;
   sku?: string;
+  businessTypeIds?: string[];
   minCostPrice?: number;
   maxCostPrice?: number;
   minStock?: number;

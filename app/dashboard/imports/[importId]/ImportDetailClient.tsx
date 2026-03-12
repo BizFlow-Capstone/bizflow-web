@@ -106,9 +106,11 @@ function getStatusBadge(status: ImportStatus) {
 function getImportTypeLabel(importType: string) {
   switch (importType) {
     case "INVOICE":
-      return "Có hóa đơn";
-    case "NO-INVOICE":
-      return "Không hóa đơn";
+      return "Nhập hàng";
+    case "INVENTORY_ADJUSTMENT":
+      return "Điều chỉnh tồn kho";
+    case "RETURN":
+      return "Trả hàng nhập lại";
     default:
       return importType;
   }
@@ -367,6 +369,16 @@ export default function ImportDetailClient() {
                     </span>
                     <span className="text-sm font-medium text-gray-800">
                       {getImportTypeLabel(importDetail.importType)}
+                    </span>
+                  </div>
+                  <div className="flex gap-2">
+                    <span className="text-sm text-gray-500 w-32 shrink-0">
+                      Chứng từ:
+                    </span>
+                    <span className="text-sm font-medium text-gray-800">
+                      {importDetail.hasInvoice
+                        ? "Có hóa đơn"
+                        : "Không có hóa đơn"}
                     </span>
                   </div>
                   <div className="flex gap-2">

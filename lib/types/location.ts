@@ -27,3 +27,13 @@ export interface NewLocationForm {
   taxCode: string;
   employeeIds: string[];
 }
+
+export interface LocationEmployee {
+  userId: string;
+  userName: string;
+  phone: string;
+}
+
+export interface LocationEmployeesResponse {
+  employees: LocationEmployee[];
+}

@@ -29,21 +29,30 @@ export interface ImportItemRequest {
 // --- Import Record ---
 
 export type ImportStatus = "DRAFT" | "CONFIRMED" | "CANCELLED";
-export type ImportType = "INVOICE" | "NO-INVOICE";
+export type ImportType = "INVOICE" | "INVENTORY_ADJUSTMENT" | "RETURN";
 
 export interface ImportRecord {
   importId: number;
   importCode: string;
   importType: ImportType;
+  hasInvoice: boolean;
   status: ImportStatus;
   businessLocationId: number;
   businessLocationName: string;
   supplier?: string;
+  imageUrl?: string;
+  imagePublicId?: string;
+  schemaVersionId?: number;
+  schemaDataJson?: string;
   note?: string;
   receivedAt?: string;
   totalAmount: number;
   createdAt: string;
   updatedAt?: string;
+  confirmedAt?: string;
+  confirmedByUserId?: string;
+  cancelledAt?: string;
+  cancelReason?: string;
 }
 
 export interface ImportDetail extends ImportRecord {
@@ -67,6 +76,7 @@ export interface ImportPagination {
 export interface ImportFilters {
   Status?: ImportStatus;
   ImportType?: ImportType;
+  HasInvoice?: boolean;
   BusinessLocationId?: number;
   FromDate?: string;
   ToDate?: string;
@@ -78,6 +88,7 @@ export interface ImportFilters {
 
 export interface CreateImportRequest {
   importType: ImportType;
+  hasInvoice?: boolean;
   businessLocationId: number;
   supplier?: string;
   note?: string;
@@ -90,6 +101,7 @@ export interface CreateImportRequest {
 
 export interface UpdateImportRequest {
   importType?: ImportType;
+  hasInvoice?: boolean;
   supplier?: string;
   note?: string;
   receivedAt?: string;
@@ -114,6 +126,7 @@ export interface CreateImportResponse {
   importId: number;
   importCode: string;
   importType: ImportType;
+  hasInvoice: boolean;
   status: ImportStatus;
   businessLocationId: number;
   businessLocationName: string;

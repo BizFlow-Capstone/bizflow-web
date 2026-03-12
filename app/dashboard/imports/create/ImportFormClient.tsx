@@ -16,6 +16,9 @@ import {
   X,
   FileText,
   Upload,
+  Package,
+  ClipboardList,
+  RotateCcw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -219,7 +222,8 @@ export default function ImportFormClient() {
   );
 
   // Form state
-  const [importType, setImportType] = useState<ImportType>("NO-INVOICE");
+  const [importType, setImportType] = useState<ImportType>("INVOICE");
+  const [hasInvoice, setHasInvoice] = useState(true);
   const [supplier, setSupplier] = useState("");
   const [supplierAddress, setSupplierAddress] = useState("");
   const [supplierIdNumber, setSupplierIdNumber] = useState("");
@@ -436,6 +440,7 @@ export default function ImportFormClient() {
     try {
       const result = await createMutation.mutateAsync({
         importType,
+        hasInvoice,
         businessLocationId,
         supplier: supplier || undefined,
         note: note || undefined,
@@ -455,6 +460,7 @@ export default function ImportFormClient() {
     try {
       const result = await createMutation.mutateAsync({
         importType,
+        hasInvoice,
         businessLocationId,
         supplier: supplier || undefined,
         note: note || undefined,
@@ -474,6 +480,10 @@ export default function ImportFormClient() {
   const handleTypeChange = (val: string) => {
     setImportType(val as ImportType);
     setItems([{ productId: 0, productName: "", quantity: 1, costPrice: 0 }]);
+  };
+
+  const handleHasInvoiceChange = (val: boolean) => {
+    setHasInvoice(val);
     removeImage();
   };
 
@@ -559,17 +569,66 @@ export default function ImportFormClient() {
         <div className="max-w-5xl mx-auto">
           {/* ===== Import Type Selector ===== */}
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden mb-6">
-            <div className="px-8 py-5">
+            <div className="px-8 py-5 space-y-4">
               <div className="flex items-center gap-4 flex-wrap">
                 <Label className="text-sm font-semibold text-gray-700 whitespace-nowrap">
-                  Chọn loại phiếu nhập:
+                  Mục đích nhập:
+                </Label>
+                <div className="flex gap-3">
+                  {(
+                    [
+                      {
+                        key: "INVOICE",
+                        label: "Nhập hàng",
+                        desc: "Nhập hàng từ nhà cung cấp",
+                        icon: <Package className="w-5 h-5" />,
+                      },
+                      {
+                        key: "INVENTORY_ADJUSTMENT",
+                        label: "Điều chỉnh tồn kho",
+                        desc: "Kiểm kê, hàng hư, thừa/thiếu",
+                        icon: <ClipboardList className="w-5 h-5" />,
+                      },
+                      {
+                        key: "RETURN",
+                        label: "Trả hàng nhập lại",
+                        desc: "Khách trả hàng → nhập lại kho",
+                        icon: <RotateCcw className="w-5 h-5" />,
+                      },
+                    ] as const
+                  ).map((opt) => (
+                    <button
+                      key={opt.key}
+                      type="button"
+                      onClick={() => handleTypeChange(opt.key)}
+                      className={`flex items-center gap-2.5 px-5 py-3 rounded-lg border-2 transition-all ${
+                        importType === opt.key
+                          ? "border-[#23C4C1] bg-[#23C4C1]/5 text-[#23C4C1] shadow-sm"
+                          : "border-gray-200 bg-white text-gray-600 hover:border-gray-300"
+                      }`}
+                    >
+                      {opt.icon}
+                      <div className="text-left">
+                        <p className="text-sm font-semibold">{opt.label}</p>
+                        <p className="text-xs opacity-70">{opt.desc}</p>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <Separator />
+
+              <div className="flex items-center gap-4 flex-wrap">
+                <Label className="text-sm font-semibold text-gray-700 whitespace-nowrap">
+                  Loại chứng từ:
                 </Label>
                 <div className="flex gap-3">
                   <button
                     type="button"
-                    onClick={() => handleTypeChange("NO-INVOICE")}
+                    onClick={() => handleHasInvoiceChange(false)}
                     className={`flex items-center gap-2.5 px-5 py-3 rounded-lg border-2 transition-all ${
-                      importType === "NO-INVOICE"
+                      !hasInvoice
                         ? "border-[#23C4C1] bg-[#23C4C1]/5 text-[#23C4C1] shadow-sm"
                         : "border-gray-200 bg-white text-gray-600 hover:border-gray-300"
                     }`}
@@ -584,9 +643,9 @@ export default function ImportFormClient() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => handleTypeChange("INVOICE")}
+                    onClick={() => handleHasInvoiceChange(true)}
                     className={`flex items-center gap-2.5 px-5 py-3 rounded-lg border-2 transition-all ${
-                      importType === "INVOICE"
+                      hasInvoice
                         ? "border-[#23C4C1] bg-[#23C4C1]/5 text-[#23C4C1] shadow-sm"
                         : "border-gray-200 bg-white text-gray-600 hover:border-gray-300"
                     }`}
@@ -605,9 +664,9 @@ export default function ImportFormClient() {
           </div>
 
           {/* ============================================ */}
-          {/* MODE: INVOICE — Photo + Simplified Entry     */}
+          {/* MODE: Has Invoice — Photo + Simplified Entry */}
           {/* ============================================ */}
-          {importType === "INVOICE" && (
+          {hasInvoice && (
             <div className="space-y-6">
               {/* Photo Upload Section */}
               <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
@@ -963,9 +1022,9 @@ export default function ImportFormClient() {
           )}
 
           {/* ============================================ */}
-          {/* MODE: NO-INVOICE — Mẫu 01/TNDN Template     */}
+          {/* MODE: No Invoice — Mẫu 01/TNDN Template     */}
           {/* ============================================ */}
-          {importType === "NO-INVOICE" && (
+          {!hasInvoice && (
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
               {/* Title Section */}
               <div className="px-8 pt-8 pb-4 text-center">

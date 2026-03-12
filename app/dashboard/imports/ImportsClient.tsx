@@ -136,21 +136,48 @@ function getImportTypeBadge(importType: string) {
           variant="outline"
           className="bg-blue-50 text-blue-700 border-blue-200"
         >
-          Có hóa đơn
+          Nhập hàng
         </Badge>
       );
-    case "NO-INVOICE":
+    case "INVENTORY_ADJUSTMENT":
       return (
         <Badge
           variant="outline"
-          className="bg-gray-50 text-gray-600 border-gray-200"
+          className="bg-amber-50 text-amber-700 border-amber-200"
         >
-          Không hóa đơn
+          Điều chỉnh tồn kho
+        </Badge>
+      );
+    case "RETURN":
+      return (
+        <Badge
+          variant="outline"
+          className="bg-purple-50 text-purple-700 border-purple-200"
+        >
+          Trả hàng nhập lại
         </Badge>
       );
     default:
       return <Badge variant="outline">{importType}</Badge>;
   }
+}
+
+function getHasInvoiceBadge(hasInvoice: boolean) {
+  return hasInvoice ? (
+    <Badge
+      variant="outline"
+      className="bg-green-50 text-green-700 border-green-200"
+    >
+      Có HĐ
+    </Badge>
+  ) : (
+    <Badge
+      variant="outline"
+      className="bg-gray-50 text-gray-600 border-gray-200"
+    >
+      Không HĐ
+    </Badge>
+  );
 }
 
 // --- Main Component ---
@@ -463,7 +490,12 @@ export default function ImportsClient() {
                     <TableCell className="font-mono font-semibold text-[#23C4C1]">
                       {imp.importCode}
                     </TableCell>
-                    <TableCell>{getImportTypeBadge(imp.importType)}</TableCell>
+                    <TableCell>
+                      <div className="flex flex-col gap-1">
+                        {getImportTypeBadge(imp.importType)}
+                        {getHasInvoiceBadge(imp.hasInvoice)}
+                      </div>
+                    </TableCell>
                     <TableCell>{getStatusBadge(imp.status)}</TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">

@@ -1,72 +1,69 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams, useParams } from "next/navigation";
 import { ArrowLeft, Upload, ScanLine, Sun, Bell, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { BarcodeScanModal } from "@/components/BarcodeScanModal";
 import { useProductSearch } from "@/lib/hooks/useProductSearch";
+import { useCreateProduct } from "@/hooks/useProducts";
+import { useBusinessTypes } from "@/hooks/useBusinessTypes";
 
 export default function AddProductPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const params = useParams();
+  const locationId = params.id as string;
   const productId = searchParams.get("productId");
   const isEditMode = !!productId;
+
+  const createProductMutation = useCreateProduct();
+  const { data: businessTypes = [] } = useBusinessTypes();
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   const [imagePreview, setImagePreview] = useState<string>("");
   const [isLoading, setIsLoading] = useState(false);
   const [scanOpen, setScanOpen] = useState(false);
   const [formData, setFormData] = useState({
     name: "",
-    barcode: "",
-    isActive: true,
+    sku: "",
+    businessTypeId: "",
     trackInventory: true,
     costPrice: "",
-    sellPrice: "",
     stock: "",
     unit: "cái",
-    minStock: "10",
-    supplierName: "",
-    contactPerson: "",
-    address: "",
+    manufacturer: "",
     priceList: [{ name: "Giá bán 1", unit: "", quantity: "", price: "" }],
   });
 
   // Hook tìm kiếm sản phẩm theo barcode
   const { searchByBarcode, isSearching } = useProductSearch({
     onProductFound: (product) => {
-      // Điền thông tin sản phẩm vào form
-      setFormData({
-        name: product.name,
-        barcode: product.barcode,
-        isActive: product.isActive,
-        trackInventory: product.trackInventory,
-        costPrice: product.costPrice,
-        sellPrice: product.sellPrice,
-        stock: product.stock,
-        unit: product.unit,
-        minStock: product.minStock,
-        supplierName: product.supplierName || "",
-        contactPerson: product.contactPerson || "",
-        address: product.address || "",
-        priceList: product.priceList || [
-          { name: "Giá bán 1", unit: "", quantity: "", price: "" },
-        ],
-      });
-      if (product.imageUrl) {
-        setImagePreview(product.imageUrl);
-      }
-    },
-    onProductNotFound: (barcode) => {
-      // Chỉ điền mã barcode, để người dùng nhập thông tin khác
       setFormData((prev) => ({
         ...prev,
-        barcode: barcode,
+        name: product.name || prev.name,
+        sku: product.barcode || prev.sku,
+        trackInventory: product.trackInventory ?? prev.trackInventory,
+        costPrice: product.costPrice || prev.costPrice,
+        stock: product.stock || prev.stock,
+        unit: product.unit || prev.unit,
+        priceList: product.priceList || prev.priceList,
       }));
+      if (product.imageUrl) setImagePreview(product.imageUrl);
+    },
+    onProductNotFound: (barcode) => {
+      setFormData((prev) => ({ ...prev, sku: barcode }));
     },
   });
 
@@ -123,20 +120,41 @@ export default function AddProductPage() {
     }
   };
 
-  const handleSubmit = () => {
-    setIsLoading(true);
-    // TODO: Thay bằng API call thực tế
-    if (isEditMode) {
-      console.log("Cập nhật sản phẩm:", productId, formData);
-      // API call để cập nhật sản phẩm
-    } else {
-      console.log("Thêm sản phẩm mới:", formData);
-      // API call để tạo sản phẩm mới
+  const handleSubmit = async () => {
+    setSubmitError(null);
+    if (
+      !formData.name.trim() ||
+      !formData.unit.trim() ||
+      !formData.businessTypeId
+    )
+      return;
+    try {
+      const result = await createProductMutation.mutateAsync({
+        locationId: Number(locationId),
+        businessTypeId: formData.businessTypeId,
+        name: formData.name.trim(),
+        sku: formData.sku.trim() || undefined,
+        trackInventory: formData.trackInventory,
+        unit: formData.unit.trim(),
+        costPrice: Number(formData.costPrice) || 0,
+        stock: Number(formData.stock) || 0,
+        manufacturer: formData.manufacturer.trim() || undefined,
+        priceTiers: formData.priceList
+          .filter((p) => Number(p.price) > 0)
+          .map((p) => ({
+            unit: p.unit || formData.unit.trim(),
+            quantity: Number(p.quantity) || 1,
+            price: Number(p.price),
+          })),
+      });
+      if (result.success) {
+        router.back();
+      } else {
+        setSubmitError(result.message || "Không thể tạo sản phẩm");
+      }
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : "Đã xảy ra lỗi");
     }
-    setTimeout(() => {
-      setIsLoading(false);
-      router.back();
-    }, 1000);
   };
 
   return (
@@ -252,18 +270,18 @@ export default function AddProductPage() {
 
                   <div className="space-y-2">
                     <Label
-                      htmlFor="barcode"
+                      htmlFor="sku"
                       className="text-sm text-gray-700 font-normal"
                     >
-                      Mã vạch <span className="text-red-500">*</span>
+                      SKU / Mã vạch
                     </Label>
                     <div className="relative">
                       <Input
-                        id="barcode"
+                        id="sku"
                         placeholder="Nhập hoặc quét mã vạch"
-                        value={formData.barcode}
+                        value={formData.sku}
                         onChange={(e) =>
-                          setFormData({ ...formData, barcode: e.target.value })
+                          setFormData({ ...formData, sku: e.target.value })
                         }
                         className="pr-12 h-10"
                         disabled={isSearching}
@@ -282,6 +300,35 @@ export default function AddProductPage() {
                       </button>
                     </div>
                   </div>
+                  <div className="space-y-2">
+                    <Label
+                      htmlFor="businessTypeId"
+                      className="text-sm text-gray-700 font-normal"
+                    >
+                      Loại hình kinh doanh{" "}
+                      <span className="text-red-500">*</span>
+                    </Label>
+                    <Select
+                      value={formData.businessTypeId}
+                      onValueChange={(val) =>
+                        setFormData({ ...formData, businessTypeId: val })
+                      }
+                    >
+                      <SelectTrigger id="businessTypeId" className="h-10">
+                        <SelectValue placeholder="Chọn loại hình kinh doanh" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {businessTypes.map((bt) => (
+                          <SelectItem
+                            key={bt.businessTypeId}
+                            value={bt.businessTypeId}
+                          >
+                            {bt.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
               </div>
             </div>
@@ -291,6 +338,20 @@ export default function AddProductPage() {
                 <Button
                   variant="link"
                   className="text-[#23C4C1] hover:text-[#1da8a5] p-0 h-auto text-sm font-normal"
+                  onClick={() =>
+                    setFormData({
+                      ...formData,
+                      priceList: [
+                        ...formData.priceList,
+                        {
+                          name: `Giá bán ${formData.priceList.length + 1}`,
+                          unit: "",
+                          quantity: "",
+                          price: "",
+                        },
+                      ],
+                    })
+                  }
                 >
                   + Thêm Giá bán
                 </Button>
@@ -326,6 +387,14 @@ export default function AddProductPage() {
                             placeholder=""
                             className="h-9 text-sm"
                             value={price.unit}
+                            onChange={(e) => {
+                              const updated = [...formData.priceList];
+                              updated[index] = {
+                                ...updated[index],
+                                unit: e.target.value,
+                              };
+                              setFormData({ ...formData, priceList: updated });
+                            }}
                           />
                         </td>
                         <td className="py-2 px-3">
@@ -334,6 +403,14 @@ export default function AddProductPage() {
                             placeholder="0"
                             className="h-9 text-sm text-center"
                             value={price.quantity}
+                            onChange={(e) => {
+                              const updated = [...formData.priceList];
+                              updated[index] = {
+                                ...updated[index],
+                                quantity: e.target.value,
+                              };
+                              setFormData({ ...formData, priceList: updated });
+                            }}
                           />
                         </td>
                         <td className="py-2 px-3">
@@ -342,6 +419,14 @@ export default function AddProductPage() {
                             placeholder="0"
                             className="h-9 text-sm text-center"
                             value={price.price}
+                            onChange={(e) => {
+                              const updated = [...formData.priceList];
+                              updated[index] = {
+                                ...updated[index],
+                                price: e.target.value,
+                              };
+                              setFormData({ ...formData, priceList: updated });
+                            }}
                           />
                         </td>
                       </tr>
@@ -354,52 +439,31 @@ export default function AddProductPage() {
             {/* Right Column - Status and Pricing */}
             <div className="space-y-6 lg:col-start-3 lg:row-start-1">
               {/* Status */}
-              <div className="bg-white  p-6  rounded-b-lg">
+              <div className="bg-white p-6 rounded-b-lg">
                 <h3 className="text-sm font-normal text-gray-700 mb-4">
-                  Trang thái
+                  Theo dõi tồn kho
                 </h3>
-
-                <div className="space-y-0 divide-y divide-gray-100">
-                  <div className="flex items-start justify-between py-3 first:pt-0">
-                    <div>
-                      <Label className="text-sm font-normal text-gray-900">
-                        Kích hoạt
-                      </Label>
-                      <p className="text-xs text-gray-600 mt-0.5">
-                        Sản phẩm có thể được bán
-                      </p>
-                    </div>
-                    <Switch
-                      checked={formData.isActive}
-                      onCheckedChange={(checked) =>
-                        setFormData({ ...formData, isActive: checked })
-                      }
-                      className="data-[state=checked]:bg-[#23C4C1]"
-                    />
+                <div className="flex items-start justify-between py-2">
+                  <div>
+                    <Label className="text-sm font-normal text-gray-900">
+                      Theo dõi tồn kho
+                    </Label>
+                    <p className="text-xs text-gray-600 mt-0.5">
+                      Cảnh báo khi sản phẩm sắp hết hàng
+                    </p>
                   </div>
-
-                  <div className="flex items-start justify-between py-3">
-                    <div>
-                      <Label className="text-sm font-normal text-gray-900">
-                        Tồn kho
-                      </Label>
-                      <p className="text-xs text-gray-600 mt-0.5">
-                        Quản lí tồn kho sản phẩm này
-                      </p>
-                    </div>
-                    <Switch
-                      checked={formData.trackInventory}
-                      onCheckedChange={(checked) =>
-                        setFormData({ ...formData, trackInventory: checked })
-                      }
-                      className="data-[state=checked]:bg-[#23C4C1]"
-                    />
-                  </div>
+                  <Switch
+                    checked={formData.trackInventory}
+                    onCheckedChange={(checked) =>
+                      setFormData({ ...formData, trackInventory: checked })
+                    }
+                    className="data-[state=checked]:bg-[#23C4C1]"
+                  />
                 </div>
               </div>
 
               {/* Pricing & Inventory */}
-              <div className="bg-white  p-6  rounded-t-lg pb-8">
+              <div className="bg-white  p-6  rounded-t-lg pb-8 h-[470spx]">
                 <h3 className="text-sm font-normal text-gray-700 mb-4">
                   Giá & tồn kho
                 </h3>
@@ -422,28 +486,6 @@ export default function AddProductPage() {
                           setFormData({
                             ...formData,
                             costPrice: e.target.value,
-                          })
-                        }
-                        className="h-10"
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label
-                        htmlFor="sellPrice"
-                        className="text-sm text-gray-700 font-normal"
-                      >
-                        Giá bán
-                      </Label>
-                      <Input
-                        id="sellPrice"
-                        type="number"
-                        placeholder="0"
-                        value={formData.sellPrice}
-                        onChange={(e) =>
-                          setFormData({
-                            ...formData,
-                            sellPrice: e.target.value,
                           })
                         }
                         className="h-10"
@@ -489,85 +531,28 @@ export default function AddProductPage() {
                       />
                     </div>
                   </div>
-
-                  <div className="space-y-2">
-                    <Label
-                      htmlFor="minStock"
-                      className="text-sm text-gray-700 font-normal"
-                    >
-                      Tồn kho thiếu
-                    </Label>
-                    <Input
-                      id="minStock"
-                      type="number"
-                      placeholder="10"
-                      value={formData.minStock}
-                      onChange={(e) =>
-                        setFormData({ ...formData, minStock: e.target.value })
-                      }
-                      className="h-10"
-                    />
-                  </div>
                 </div>
               </div>
             </div>
 
-            {/* Supplier - Full Width */}
+            {/* Manufacturer - Full Width */}
             <div className="lg:col-span-3 bg-white p-6">
-              {/* <h3 className="text-sm font-normal text-gray-700 mb-4">
-                Nhà sản xuất
-              </h3> */}
-
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <Label
-                    htmlFor="supplierName"
-                    className="text-sm text-gray-700 font-normal"
-                  >
-                    Thêm nhà cung cấp mới
-                  </Label>
-                  <Input
-                    id="supplierName"
-                    placeholder="Tên nhà cung cấp *"
-                    value={formData.supplierName}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        supplierName: e.target.value,
-                      })
-                    }
-                    className="h-10"
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <Input
-                    placeholder="Người liên hệ (VD: Anh Tuấn)"
-                    value={formData.contactPerson}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        contactPerson: e.target.value,
-                      })
-                    }
-                    className="h-10"
-                  />
-                  <Input
-                    placeholder="Địa chỉ"
-                    value={formData.address}
-                    onChange={(e) =>
-                      setFormData({ ...formData, address: e.target.value })
-                    }
-                    className="h-10"
-                  />
-                </div>
-                {/* 
-                <Button
-                  variant="outline"
-                  className="w-full border-gray-300 text-gray-700 hover:bg-gray-50 h-10"
+              <div className="space-y-2">
+                <Label
+                  htmlFor="manufacturer"
+                  className="text-sm text-gray-700 font-normal"
                 >
-                  Thêm nhà cung cấp
-                </Button> */}
+                  Nhà sản xuất / Thương hiệu
+                </Label>
+                <Input
+                  id="manufacturer"
+                  placeholder="VD: Nestlé, Vinamilk..."
+                  value={formData.manufacturer}
+                  onChange={(e) =>
+                    setFormData({ ...formData, manufacturer: e.target.value })
+                  }
+                  className="h-10"
+                />
               </div>
             </div>
 
@@ -603,7 +588,7 @@ export default function AddProductPage() {
         title="Quét mã sản phẩm"
         description="Quét xong sẽ tự điền vào ô Mã vạch."
         onScanned={async (code) => {
-          setFormData((prev) => ({ ...prev, barcode: code }));
+          setFormData((prev) => ({ ...prev, sku: code }));
           await searchByBarcode(code);
         }}
       />

@@ -5,13 +5,14 @@ import { usePathname } from "next/navigation";
 import {
   Home,
   ShoppingCart,
-  CreditCard,
+  Heart,
   MapPin,
   Users,
   BarChart3,
   Settings,
   LogOut,
   PackagePlus,
+  Package,
 } from "lucide-react";
 import Image from "next/image";
 import { Separator } from "@/components/ui/separator";
@@ -23,7 +24,12 @@ export default function DashboardSidebar() {
     { href: "/dashboard", label: "Trang Chủ", icon: Home },
     { href: "/dashboard/orders", label: "Đơn Hàng", icon: ShoppingCart },
     { href: "/dashboard/imports", label: "Nhập Kho", icon: PackagePlus },
-    { href: "/dashboard/debt", label: "Quản Lý Nợ", icon: CreditCard },
+    { href: "/dashboard/products", label: "Sản Phẩm", icon: Package },
+    {
+      href: "/dashboard/customers",
+      label: "Khách Hàng Thân Thiết",
+      icon: Heart,
+    },
     {
       href: "/dashboard/locations",
       label: "Địa Điểm Kinh Doanh",
