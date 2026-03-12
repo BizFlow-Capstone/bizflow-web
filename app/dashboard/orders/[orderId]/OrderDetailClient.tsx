@@ -86,28 +86,21 @@ function formatDate(dateStr?: string): string {
 
 function getStatusConfig(status: OrderStatus) {
   switch (status) {
-    case "DRAFT":
-      return {
-        label: "Nháp (AI)",
-        icon: Mic,
-        color: "yellow",
-        bgClass: "bg-yellow-50 text-yellow-700 border-yellow-200",
-      };
-    case "PENDING":
+    case "pending":
       return {
         label: "Chờ xử lý",
         icon: Clock,
         color: "blue",
         bgClass: "bg-blue-50 text-blue-700 border-blue-200",
       };
-    case "COMPLETED":
+    case "completed":
       return {
         label: "Hoàn thành",
         icon: PackageCheck,
         color: "green",
         bgClass: "bg-green-50 text-green-700 border-green-200",
       };
-    case "CANCELLED":
+    case "cancelled":
       return {
         label: "Đã hủy",
         icon: XCircle,
@@ -276,35 +269,7 @@ export default function OrderDetailClient() {
 
           {/* Actions (contextual based on status) */}
           <div className="flex items-center gap-2">
-            {order.status === "DRAFT" && (
-              <>
-                <Button
-                  variant="outline"
-                  onClick={() => setShowCancel(true)}
-                  className="text-red-600 border-red-200 hover:bg-red-50"
-                >
-                  <Trash2 className="w-4 h-4 mr-2" />
-                  Hủy đơn
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() =>
-                    router.push(`/dashboard/orders/${orderId}/edit`)
-                  }
-                >
-                  <Pencil className="w-4 h-4 mr-2" />
-                  Chỉnh sửa
-                </Button>
-                <Button
-                  onClick={() => setShowConfirm(true)}
-                  className="bg-blue-600 hover:bg-blue-700 text-white"
-                >
-                  <CheckCircle2 className="w-4 h-4 mr-2" />
-                  Xác nhận đơn
-                </Button>
-              </>
-            )}
-            {order.status === "PENDING" && (
+            {order.status === "pending" && (
               <>
                 <Button
                   variant="outline"
@@ -333,7 +298,7 @@ export default function OrderDetailClient() {
                 </Button>
               </>
             )}
-            {order.status === "COMPLETED" && (
+            {order.status === "completed" && (
               <Button variant="outline" className="gap-2">
                 <Printer className="w-4 h-4" />
                 In hóa đơn
@@ -348,17 +313,14 @@ export default function OrderDetailClient() {
           {/* Left Column: Order Items */}
           <div className="lg:col-span-2 space-y-6">
             {/* AI Note Banner */}
-            {order.status === "DRAFT" && order.note && (
-              <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4 flex items-start gap-3">
-                <Mic className="w-5 h-5 text-yellow-600 shrink-0 mt-0.5" />
+            {order.status === "pending" && order.note && (
+              <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex items-start gap-3">
+                <Clock className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
                 <div>
-                  <p className="font-medium text-yellow-800">
-                    Đơn hàng nháp — Tạo từ giọng nói AI
+                  <p className="font-medium text-blue-800">
+                    Đơn hàng chờ xử lý
                   </p>
-                  <p className="text-sm text-yellow-700 mt-1">{order.note}</p>
-                  <p className="text-xs text-yellow-600 mt-2">
-                    Vui lòng kiểm tra và xác nhận đơn hàng trước khi xử lý.
-                  </p>
+                  <p className="text-sm text-blue-700 mt-1">{order.note}</p>
                 </div>
               </div>
             )}
@@ -465,7 +427,7 @@ export default function OrderDetailClient() {
             </Card>
 
             {/* Note */}
-            {order.note && order.status !== "DRAFT" && (
+            {order.note && order.status !== "pending" && (
               <Card>
                 <CardHeader>
                   <CardTitle className="text-base">Ghi chú</CardTitle>
@@ -489,21 +451,20 @@ export default function OrderDetailClient() {
                   {/* Status Steps */}
                   {(
                     [
-                      { status: "DRAFT" as const, label: "Tạo nháp" },
-                      { status: "PENDING" as const, label: "Xác nhận" },
-                      { status: "COMPLETED" as const, label: "Hoàn thành" },
+                      { status: "pending" as const, label: "Tạo đơn" },
+                      { status: "completed" as const, label: "Hoàn thành" },
                     ] as const
                   ).map((step, idx) => {
                     const stepConfig = getStatusConfig(step.status);
                     const StepIcon = stepConfig.icon;
                     const isCurrent = order.status === step.status;
                     const isPast =
-                      order.status === "CANCELLED"
+                      order.status === "cancelled"
                         ? false
-                        : (["DRAFT", "PENDING", "COMPLETED"] as const).indexOf(
+                        : (["pending", "completed"] as const).indexOf(
                             order.status,
                           ) >
-                          (["DRAFT", "PENDING", "COMPLETED"] as const).indexOf(
+                          (["pending", "completed"] as const).indexOf(
                             step.status,
                           );
 
@@ -525,7 +486,7 @@ export default function OrderDetailClient() {
                               <StepIcon className="w-4 h-4" />
                             )}
                           </div>
-                          {idx < 2 && (
+                          {idx < 1 && (
                             <div
                               className={`w-0.5 h-6 mt-1 ${
                                 isPast ? "bg-green-300" : "bg-gray-200"
@@ -550,7 +511,7 @@ export default function OrderDetailClient() {
                     );
                   })}
 
-                  {order.status === "CANCELLED" && (
+                  {order.status === "cancelled" && (
                     <div className="flex items-start gap-3 mt-2 pt-2 border-t border-gray-200">
                       <div className="w-8 h-8 rounded-full flex items-center justify-center bg-red-100 text-red-600">
                         <XCircle className="w-4 h-4" />
@@ -696,7 +657,7 @@ export default function OrderDetailClient() {
             <AlertDialogTitle>Hủy đơn hàng?</AlertDialogTitle>
             <AlertDialogDescription>
               Đơn hàng <strong>{order.orderCode}</strong> sẽ bị hủy.
-              {order.status === "PENDING" && (
+              {order.status === "pending" && (
                 <> Tồn kho sẽ được hoàn lại nếu đã trừ.</>
               )}{" "}
               Hành động này không thể hoàn tác.

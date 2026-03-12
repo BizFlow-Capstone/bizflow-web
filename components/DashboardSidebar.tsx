@@ -12,6 +12,7 @@ import {
   Settings,
   LogOut,
   PackagePlus,
+  Package,
 } from "lucide-react";
 import Image from "next/image";
 import { Separator } from "@/components/ui/separator";
@@ -23,6 +24,7 @@ export default function DashboardSidebar() {
     { href: "/dashboard", label: "Trang Chủ", icon: Home },
     { href: "/dashboard/orders", label: "Đơn Hàng", icon: ShoppingCart },
     { href: "/dashboard/imports", label: "Nhập Kho", icon: PackagePlus },
+    { href: "/dashboard/products", label: "Sản Phẩm", icon: Package },
     {
       href: "/dashboard/customers",
       label: "Khách Hàng Thân Thiết",

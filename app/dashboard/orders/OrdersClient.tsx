@@ -108,17 +108,7 @@ function formatDate(dateStr?: string): string {
 
 function getStatusBadge(status: OrderStatus) {
   switch (status) {
-    case "DRAFT":
-      return (
-        <Badge
-          variant="outline"
-          className="bg-yellow-50 text-yellow-700 border-yellow-200"
-        >
-          <Mic className="w-3 h-3 mr-1" />
-          Nháp (AI)
-        </Badge>
-      );
-    case "PENDING":
+    case "pending":
       return (
         <Badge
           variant="outline"
@@ -128,7 +118,7 @@ function getStatusBadge(status: OrderStatus) {
           Chờ xử lý
         </Badge>
       );
-    case "COMPLETED":
+    case "completed":
       return (
         <Badge
           variant="outline"
@@ -138,7 +128,7 @@ function getStatusBadge(status: OrderStatus) {
           Hoàn thành
         </Badge>
       );
-    case "CANCELLED":
+    case "cancelled":
       return (
         <Badge
           variant="outline"
@@ -327,10 +317,9 @@ export default function OrdersClient() {
   const stats = useMemo(
     () => ({
       total: totalCount,
-      draft: orders.filter((o) => o.status === "DRAFT").length,
-      pending: orders.filter((o) => o.status === "PENDING").length,
-      completed: orders.filter((o) => o.status === "COMPLETED").length,
-      cancelled: orders.filter((o) => o.status === "CANCELLED").length,
+      pending: orders.filter((o) => o.status === "pending").length,
+      completed: orders.filter((o) => o.status === "completed").length,
+      cancelled: orders.filter((o) => o.status === "cancelled").length,
     }),
     [orders, totalCount],
   );
@@ -338,7 +327,7 @@ export default function OrdersClient() {
   // Revenue from completed orders
   const totalRevenue = useMemo(() => {
     return orders
-      .filter((o) => o.status === "COMPLETED")
+      .filter((o) => o.status === "completed")
       .reduce((sum, o) => sum + o.totalAmount, 0);
   }, [orders]);
 
@@ -441,19 +430,6 @@ export default function OrdersClient() {
           <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-500">Đơn nháp (AI)</p>
-                <p className="text-2xl font-bold text-yellow-600 mt-1">
-                  {stats.draft}
-                </p>
-              </div>
-              <div className="w-12 h-12 rounded-xl bg-yellow-50 flex items-center justify-center">
-                <Mic className="w-6 h-6 text-yellow-600" />
-              </div>
-            </div>
-          </div>
-          <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
-            <div className="flex items-center justify-between">
-              <div>
                 <p className="text-sm text-gray-500">Chờ xử lý</p>
                 <p className="text-2xl font-bold text-blue-600 mt-1">
                   {stats.pending}
@@ -461,6 +437,19 @@ export default function OrdersClient() {
               </div>
               <div className="w-12 h-12 rounded-xl bg-blue-50 flex items-center justify-center">
                 <Clock className="w-6 h-6 text-blue-600" />
+              </div>
+            </div>
+          </div>
+          <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-500">Hoàn thành</p>
+                <p className="text-2xl font-bold text-green-600 mt-1">
+                  {stats.completed}
+                </p>
+              </div>
+              <div className="w-12 h-12 rounded-xl bg-green-50 flex items-center justify-center">
+                <PackageCheck className="w-6 h-6 text-green-600" />
               </div>
             </div>
           </div>
@@ -521,14 +510,13 @@ export default function OrdersClient() {
               {(
                 [
                   { key: "ALL", label: "Tất cả", count: stats.total },
-                  { key: "DRAFT", label: "Nháp", count: stats.draft },
-                  { key: "PENDING", label: "Chờ xử lý", count: stats.pending },
+                  { key: "pending", label: "Chờ xử lý", count: stats.pending },
                   {
-                    key: "COMPLETED",
+                    key: "completed",
                     label: "Hoàn thành",
                     count: stats.completed,
                   },
-                  { key: "CANCELLED", label: "Đã hủy", count: stats.cancelled },
+                  { key: "cancelled", label: "Đã hủy", count: stats.cancelled },
                 ] as const
               ).map((tab) => (
                 <button
@@ -539,30 +527,26 @@ export default function OrdersClient() {
                   }}
                   className={`shrink-0 px-4 py-2 text-sm font-medium rounded-md transition-all whitespace-nowrap ${
                     statusFilter === tab.key
-                      ? tab.key === "DRAFT"
-                        ? "bg-white text-yellow-700 shadow-sm"
-                        : tab.key === "PENDING"
-                          ? "bg-white text-blue-700 shadow-sm"
-                          : tab.key === "COMPLETED"
-                            ? "bg-white text-green-700 shadow-sm"
-                            : tab.key === "CANCELLED"
-                              ? "bg-white text-red-700 shadow-sm"
-                              : "bg-white text-[#23C4C1] shadow-sm"
+                      ? tab.key === "pending"
+                        ? "bg-white text-blue-700 shadow-sm"
+                        : tab.key === "completed"
+                          ? "bg-white text-green-700 shadow-sm"
+                          : tab.key === "cancelled"
+                            ? "bg-white text-red-700 shadow-sm"
+                            : "bg-white text-[#23C4C1] shadow-sm"
                       : "text-gray-500 hover:text-gray-700"
                   }`}
                 >
                   {tab.label}
                   <span
                     className={`ml-1 text-xs opacity-70 px-1.5 py-0.5 rounded-full ${
-                      tab.key === "DRAFT"
-                        ? "bg-yellow-100 text-yellow-700"
-                        : tab.key === "PENDING"
-                          ? "bg-blue-100 text-blue-700"
-                          : tab.key === "COMPLETED"
-                            ? "bg-green-100 text-green-700"
-                            : tab.key === "CANCELLED"
-                              ? "bg-red-100 text-red-700"
-                              : "bg-gray-200 text-gray-700"
+                      tab.key === "pending"
+                        ? "bg-blue-100 text-blue-700"
+                        : tab.key === "completed"
+                          ? "bg-green-100 text-green-700"
+                          : tab.key === "cancelled"
+                            ? "bg-red-100 text-red-700"
+                            : "bg-gray-200 text-gray-700"
                     }`}
                   >
                     {tab.count}
@@ -996,21 +980,7 @@ export default function OrdersClient() {
                         {/* Secondary row */}
                         <div className="grid grid-cols-3 gap-2">
                           {/* Edit / Confirm based on status */}
-                          {order.status === "DRAFT" && (
-                            <Button
-                              variant="outline"
-                              className="gap-1.5 h-10"
-                              onClick={() =>
-                                router.push(
-                                  `/dashboard/orders/${order.orderId}/edit`,
-                                )
-                              }
-                            >
-                              <Pencil className="w-4 h-4" />
-                              Chỉnh Sửa
-                            </Button>
-                          )}
-                          {order.status === "PENDING" && (
+                          {order.status === "pending" && (
                             <Button
                               variant="outline"
                               className="gap-1.5 h-10"
@@ -1024,8 +994,8 @@ export default function OrdersClient() {
                               Thanh Toán
                             </Button>
                           )}
-                          {(order.status === "COMPLETED" ||
-                            order.status === "CANCELLED") && (
+                          {(order.status === "completed" ||
+                            order.status === "cancelled") && (
                             <Button
                               variant="outline"
                               className="gap-1.5 h-10"
@@ -1041,8 +1011,7 @@ export default function OrdersClient() {
                           )}
 
                           {/* Cancel */}
-                          {order.status === "DRAFT" ||
-                          order.status === "PENDING" ? (
+                          {order.status === "pending" ? (
                             <Button
                               variant="outline"
                               className="gap-1.5 h-10 text-red-500 border-red-200 hover:bg-red-50 hover:text-red-700"
@@ -1056,16 +1025,7 @@ export default function OrdersClient() {
                           )}
 
                           {/* Status action */}
-                          {order.status === "DRAFT" && (
-                            <Button
-                              className="gap-1.5 h-10 bg-green-600 hover:bg-green-700 text-white"
-                              onClick={() => setConfirmTarget(order)}
-                            >
-                              <CheckCircle2 className="w-4 h-4" />
-                              Xác Nhận
-                            </Button>
-                          )}
-                          {order.status === "PENDING" && (
+                          {order.status === "pending" && (
                             <Button
                               className="gap-1.5 h-10 bg-green-600 hover:bg-green-700 text-white"
                               onClick={() => setCompleteTarget(order)}
@@ -1074,7 +1034,7 @@ export default function OrdersClient() {
                               Hoàn Thành
                             </Button>
                           )}
-                          {order.status === "COMPLETED" && (
+                          {order.status === "completed" && (
                             <Button
                               variant="outline"
                               className="gap-1.5 h-10 text-green-600 border-green-200 hover:bg-green-50"
@@ -1083,7 +1043,7 @@ export default function OrdersClient() {
                               Xuất HĐ
                             </Button>
                           )}
-                          {order.status === "CANCELLED" && <div />}
+                          {order.status === "cancelled" && <div />}
                         </div>
                       </div>
                     </div>
@@ -1161,7 +1121,7 @@ export default function OrdersClient() {
             <AlertDialogTitle>Hủy đơn hàng?</AlertDialogTitle>
             <AlertDialogDescription>
               Đơn hàng <strong>{cancelTarget?.orderCode}</strong> sẽ bị hủy.
-              {cancelTarget?.status === "PENDING" && (
+              {cancelTarget?.status === "pending" && (
                 <> Tồn kho sẽ được hoàn lại nếu đã trừ.</>
               )}{" "}
               Hành động này không thể hoàn tác.

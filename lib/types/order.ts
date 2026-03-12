@@ -10,7 +10,7 @@ export interface ApiResponse<T> {
 
 // --- Order Status ---
 
-export type OrderStatus = "DRAFT" | "PENDING" | "COMPLETED" | "CANCELLED";
+export type OrderStatus = "pending" | "completed" | "cancelled";
 
 export type PaymentType = "cash" | "bank" | "debt" | "mixed";
 
@@ -26,6 +26,8 @@ export interface OrderDetail {
   unit: string;
   quantity: number;
   unitPrice: number;
+  discount: number;
+  amount: number;
   totalPrice: number;
 }
 
@@ -44,17 +46,33 @@ export interface OrderRecord {
   status: OrderStatus;
   businessLocationId: number;
   businessLocationName: string;
-  paymentType: PaymentType;
-  paymentStatus: PaymentStatus;
+  refOrderId?: number;
   debtorId?: number;
   debtorName?: string;
+  customerName?: string;
+  customerPhone?: string;
+  subTotal: number;
+  discount: number;
   totalAmount: number;
+  cashAmount: number;
+  bankAmount: number;
+  debtAmount: number;
+  paymentType: PaymentType;
+  paymentStatus: PaymentStatus;
   paidAmount: number;
+  billMetadata?: string;
   note?: string;
+  isFromAI: boolean;
+  aiConfidence?: number;
+  originalTranscript?: string;
   createdByUserId: string;
   createdByUserName: string;
   createdAt: string;
   updatedAt?: string;
+  completedAt?: string;
+  cancelledAt?: string;
+  cancelReasonCode?: string;
+  cancelReason?: string;
 }
 
 // --- Order Detail View (full) ---
@@ -102,6 +120,9 @@ export interface CreateOrderRequest {
   businessLocationId: number;
   paymentType: PaymentType;
   debtorId?: number;
+  customerName?: string;
+  customerPhone?: string;
+  discount?: number;
   note?: string;
   items: CreateOrderItemRequest[];
   payments?: PaymentSplit[];
