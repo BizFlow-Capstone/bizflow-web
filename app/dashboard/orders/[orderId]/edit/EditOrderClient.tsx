@@ -439,7 +439,7 @@ export default function EditOrderClient() {
   return (
     <div className="flex-1 flex flex-col">
       {/* Header */}
-      <header className="bg-white border-b border-gray-200 px-8 py-4">
+      <div className="px-8 pt-6">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
             <Button
@@ -449,32 +449,14 @@ export default function EditOrderClient() {
             >
               <ArrowLeft className="w-5 h-5" />
             </Button>
-            <div>
-              <div className="flex items-center gap-3">
-                <h1 className="text-2xl font-bold text-gray-800">
-                  Chỉnh sửa đơn hàng
-                </h1>
-                {isDraftOrder && (
-                  <Badge
-                    variant="outline"
-                    className="bg-yellow-50 text-yellow-700 border-yellow-200"
-                  >
-                    Đơn treo (Nháp)
-                  </Badge>
-                )}
-              </div>
-              <p className="text-sm text-gray-600 mt-1">
-                {draftData
-                  ? `Tạo lúc ${new Intl.DateTimeFormat("vi-VN", {
-                      day: "2-digit",
-                      month: "2-digit",
-                      year: "numeric",
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    }).format(new Date(draftData.createdAt))}`
-                  : "Chỉnh sửa sản phẩm và thanh toán"}
-              </p>
-            </div>
+            {isDraftOrder && (
+              <Badge
+                variant="outline"
+                className="bg-yellow-50 text-yellow-700 border-yellow-200"
+              >
+                Đơn treo (Nháp)
+              </Badge>
+            )}
           </div>
           {isDraftOrder && (
             <Button
@@ -487,7 +469,7 @@ export default function EditOrderClient() {
             </Button>
           )}
         </div>
-      </header>
+      </div>
 
       <main className="flex-1 p-8 bg-gray-50">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">

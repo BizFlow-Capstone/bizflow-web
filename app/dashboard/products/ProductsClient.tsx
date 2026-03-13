@@ -126,58 +126,46 @@ export default function ProductsClient() {
 
   return (
     <div className="flex-1 flex flex-col">
-      {/* Header */}
-      <header className="bg-white border-b border-gray-200 px-8 py-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-800">
-              Quản lý Sản phẩm
-            </h1>
-            <p className="text-sm text-gray-600 mt-1">
-              Xem và quản lý danh sách sản phẩm theo địa điểm kinh doanh
-            </p>
-          </div>
-          <div className="flex items-center gap-3">
-            {/* Location Selector */}
-            <div className="flex items-center gap-2">
-              <MapPin className="w-4 h-4 text-gray-500" />
-              <Select
-                value={locationId?.toString() ?? ""}
-                onValueChange={(val) => {
-                  setSelectedLocationId(Number(val));
-                  setPageNumber(1);
-                }}
-              >
-                <SelectTrigger className="w-56">
-                  <SelectValue
-                    placeholder={
-                      isLoadingLocations ? "Đang tải..." : "Chọn địa điểm"
-                    }
-                  />
-                </SelectTrigger>
-                <SelectContent>
-                  {locations.map((loc) => (
-                    <SelectItem key={loc.id} value={loc.id.toString()}>
-                      {loc.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <Button
-              variant="outline"
-              onClick={() => refetch()}
-              disabled={isRefetching}
-              className="gap-2"
+      <div className="px-8 pt-6">
+        <div className="flex items-center justify-end gap-3">
+          <div className="flex items-center gap-2">
+            <MapPin className="w-4 h-4 text-gray-500" />
+            <Select
+              value={locationId?.toString() ?? ""}
+              onValueChange={(val) => {
+                setSelectedLocationId(Number(val));
+                setPageNumber(1);
+              }}
             >
-              <RefreshCw
-                className={`w-4 h-4 ${isRefetching ? "animate-spin" : ""}`}
-              />
-              Làm mới
-            </Button>
+              <SelectTrigger className="w-56 bg-white">
+                <SelectValue
+                  placeholder={
+                    isLoadingLocations ? "Đang tải..." : "Chọn địa điểm"
+                  }
+                />
+              </SelectTrigger>
+              <SelectContent>
+                {locations.map((loc) => (
+                  <SelectItem key={loc.id} value={loc.id.toString()}>
+                    {loc.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
+          <Button
+            variant="outline"
+            onClick={() => refetch()}
+            disabled={isRefetching}
+            className="gap-2 bg-white"
+          >
+            <RefreshCw
+              className={`w-4 h-4 ${isRefetching ? "animate-spin" : ""}`}
+            />
+            Làm mới
+          </Button>
         </div>
-      </header>
+      </div>
 
       <main className="flex-1 p-8 bg-gray-50">
         {/* Filters & Search */}

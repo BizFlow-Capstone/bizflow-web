@@ -517,17 +517,14 @@ export default function ImportFormClient() {
   return (
     <div className="flex-1 flex flex-col">
       {/* Header */}
-      <header className="bg-white border-b border-gray-200 px-8 py-4">
+      <div className="px-8 pt-6">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
             <Button variant="ghost" size="icon" onClick={() => router.back()}>
               <ArrowLeft className="w-5 h-5" />
             </Button>
             <div>
-              <h1 className="text-2xl font-bold text-gray-800">
-                Tạo phiếu nhập kho
-              </h1>
-              <p className="text-sm text-gray-600 mt-1">
+              <p className="text-sm text-gray-600">
                 Kho:{" "}
                 <span className="font-semibold text-[#23C4C1]">
                   {currentLocation?.name ?? `#${businessLocationId}`}
@@ -563,7 +560,7 @@ export default function ImportFormClient() {
             </Button>
           </div>
         </div>
-      </header>
+      </div>
 
       <main className="flex-1 p-8 bg-gray-50">
         <div className="max-w-5xl mx-auto">

@@ -281,7 +281,7 @@ export default function LocationDetailClient({
   return (
     <div className="flex-1 flex flex-col">
       {/* Header */}
-      <header className="bg-white border-b border-gray-200 px-8 py-4">
+      <div className="px-8 pt-6">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
             <Button
@@ -293,12 +293,12 @@ export default function LocationDetailClient({
               <ArrowLeft className="w-5 h-5" />
             </Button>
             <div>
-              <h1 className="text-2xl font-bold text-gray-800">
+              <p className="text-sm font-semibold text-gray-800">
                 {isLocationLoading
                   ? `Địa điểm #${locationId}`
                   : location?.name || `Địa điểm #${locationId}`}
-              </h1>
-              <p className="text-sm text-gray-600 mt-1">
+              </p>
+              <p className="text-sm text-gray-600">
                 Quản lý sản phẩm tại địa điểm kinh doanh
               </p>
             </div>
@@ -323,7 +323,7 @@ export default function LocationDetailClient({
             </div>
           </div>
         </div>
-      </header>
+      </div>
 
       {/* Main Content */}
       <main className="flex-1 p-8 bg-gray-50">

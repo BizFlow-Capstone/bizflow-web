@@ -160,7 +160,7 @@ export default function AddProductPage() {
   return (
     <div className="flex-1 flex flex-col min-h-screen bg-gray-50">
       {/* Header */}
-      <header className="bg-white border-b border-gray-200 px-8 py-4">
+      <div className="px-8 pt-6">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
             <Button
@@ -171,9 +171,6 @@ export default function AddProductPage() {
             >
               <ArrowLeft className="w-5 h-5" />
             </Button>
-            <h1 className="text-2xl font-bold text-gray-800">
-              {isEditMode ? "Chỉnh sửa sản phẩm" : "Thêm sản phẩm mới"}
-            </h1>
           </div>
           <div className="flex items-center gap-3">
             <Button variant="ghost" size="icon">
@@ -201,7 +198,7 @@ export default function AddProductPage() {
             </div>
           </div>
         </div>
-      </header>
+      </div>
 
       {/* Main Content */}
       <main className="flex-1 p-8 bg-gray-50">

@@ -106,39 +106,27 @@ export default function ReportsClient() {
 
   return (
     <div className="flex-1 flex flex-col">
-      {/* Header */}
-      <header className="bg-white border-b border-gray-200 px-8 py-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-800">
-              Báo Cáo & Kế Toán
-            </h1>
-            <p className="text-sm text-gray-600 mt-1">
-              Quản lý báo cáo tài chính, kỳ kế toán và sổ sách
-            </p>
-          </div>
-          <div className="flex items-center gap-3">
-            <MapPin className="w-4 h-4 text-gray-400" />
-            <Select
-              value={String(activeLocationId)}
-              onValueChange={(v) => setLocationId(Number(v))}
-            >
-              <SelectTrigger className="w-55">
-                <SelectValue placeholder="Chọn cửa hàng" />
-              </SelectTrigger>
-              <SelectContent>
-                {locations?.map((loc) => (
-                  <SelectItem key={loc.id} value={String(loc.id)}>
-                    {loc.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+      <div className="px-8 pt-6">
+        <div className="flex items-center justify-end gap-3">
+          <MapPin className="w-4 h-4 text-gray-400" />
+          <Select
+            value={String(activeLocationId)}
+            onValueChange={(v) => setLocationId(Number(v))}
+          >
+            <SelectTrigger className="w-55 bg-white">
+              <SelectValue placeholder="Chọn cửa hàng" />
+            </SelectTrigger>
+            <SelectContent>
+              {locations?.map((loc) => (
+                <SelectItem key={loc.id} value={String(loc.id)}>
+                  {loc.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
-        {/* Tab Bar */}
-        <div className="flex gap-1 mt-4">
+        <div className="flex gap-1 mt-4 flex-wrap">
           {tabs.map((tab) => (
             <button
               key={tab.key}
@@ -154,7 +142,7 @@ export default function ReportsClient() {
             </button>
           ))}
         </div>
-      </header>
+      </div>
 
       <main className="flex-1 p-8 bg-gray-50 overflow-auto">
         {activeTab === "reports" && (

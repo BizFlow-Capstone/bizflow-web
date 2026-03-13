@@ -246,7 +246,7 @@ export default function ImportDetailClient() {
   return (
     <div className="flex-1 flex flex-col">
       {/* Header */}
-      <header className="bg-white border-b border-gray-200 px-8 py-4">
+      <div className="px-8 pt-6">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
             <Button
@@ -258,14 +258,12 @@ export default function ImportDetailClient() {
             </Button>
             <div>
               <div className="flex items-center gap-3">
-                <h1 className="text-2xl font-bold text-gray-800">
+                <p className="text-sm font-semibold text-gray-800">
                   {importDetail.importCode}
-                </h1>
+                </p>
                 {getStatusBadge(importDetail.status)}
               </div>
-              <p className="text-sm text-gray-600 mt-1">
-                Chi tiết phiếu nhập kho
-              </p>
+              <p className="text-sm text-gray-600">Chi tiết phiếu nhập kho</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -302,7 +300,7 @@ export default function ImportDetailClient() {
             )}
           </div>
         </div>
-      </header>
+      </div>
 
       <main className="flex-1 p-8 bg-gray-50">
         <div className="max-w-5xl mx-auto">
