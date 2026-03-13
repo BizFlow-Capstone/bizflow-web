@@ -6,8 +6,10 @@ export interface Location {
   district: string;
   city: string;
   phone: string;
+  taxCode?: string | null;
   isActive: boolean;
   ownerName: string;
+  isOwner?: boolean;
 }
 
 export interface ApiResponse<T> {
@@ -26,6 +28,15 @@ export interface NewLocationForm {
   phone: string;
   taxCode: string;
   employeeIds: string[];
+}
+
+export interface UpdateLocationPayload {
+  name: string;
+  address: string;
+  district: string;
+  city: string;
+  phone: string;
+  taxCode: string;
 }
 
 export interface LocationEmployee {

@@ -8,6 +8,7 @@ import type {
   Location,
   ApiResponse,
   NewLocationForm,
+  UpdateLocationPayload,
   LocationEmployeesResponse,
 } from "@/lib/types/location";
 
@@ -73,7 +74,7 @@ export async function updateLocationStatus(
  */
 export async function updateLocation(
   id: number,
-  data: Partial<NewLocationForm>,
+  data: UpdateLocationPayload,
 ): Promise<ApiResponse<Location>> {
   const response = await fetch(`/api/locations/${id}`, {
     method: "PUT",
@@ -117,6 +118,26 @@ export async function getLocationEmployees(
 
   if (!response.ok) {
     throw new Error(`Failed to fetch location employees: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+/**
+ * Assign employees to a location (replace list)
+ */
+export async function assignLocationEmployees(
+  locationId: number,
+  employeeIds: string[],
+): Promise<ApiResponse<null>> {
+  const response = await fetch(`/api/locations/${locationId}/employees`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(employeeIds),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to assign location employees: ${response.status}`);
   }
 
   return response.json();

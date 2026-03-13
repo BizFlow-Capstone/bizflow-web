@@ -5,7 +5,7 @@ const BACKEND_URL = process.env.BACKEND_API_URL;
 // PUT /api/locations/[id]/status - Enable or disable a location
 export async function PUT(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   try {
     const { id } = await params;
@@ -15,7 +15,7 @@ export async function PUT(
     const response = await fetch(
       `${BACKEND_URL}/api/location/me/owned/${id}/status`,
       {
-        method: "PUT",
+        method: "PATCH",
         headers: {
           accept: "*/*",
           "Content-Type": "application/json",
