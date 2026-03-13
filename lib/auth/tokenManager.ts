@@ -122,7 +122,10 @@ export async function refreshAndPersistToken(): Promise<string> {
 
   persistRefreshedTokens(newAccessToken, newRefreshToken);
   if (raw.data?.account && isBrowser()) {
-    window.localStorage.setItem(AUTH_ACCOUNT_KEY, JSON.stringify(raw.data.account));
+    window.localStorage.setItem(
+      AUTH_ACCOUNT_KEY,
+      JSON.stringify(raw.data.account),
+    );
   }
 
   return newAccessToken;
