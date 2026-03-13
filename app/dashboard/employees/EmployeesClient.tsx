@@ -25,25 +25,16 @@ export default function EmployeesClient() {
 
   return (
     <div className="flex-1 flex flex-col">
-      {/* Header */}
-      <header className="bg-white border-b border-gray-200 px-8 py-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-800">Nhân Viên</h1>
-            <p className="text-sm text-gray-600 mt-1">
-              Quản lý danh sách nhân viên
-            </p>
-          </div>
-          {employees && (
+      <main className="flex-1 p-8 bg-gray-50">
+        {employees && (
+          <div className="mb-4">
             <Badge variant="secondary" className="text-sm px-3 py-1">
               <Users className="w-4 h-4 mr-1" />
               {employees.length} nhân viên
             </Badge>
-          )}
-        </div>
-      </header>
+          </div>
+        )}
 
-      <main className="flex-1 p-8 bg-gray-50">
         {/* Search */}
         <div className="relative mb-6 max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />

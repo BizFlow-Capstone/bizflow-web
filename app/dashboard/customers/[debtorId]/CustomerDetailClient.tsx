@@ -167,7 +167,7 @@ export default function CustomerDetailClient() {
   return (
     <div className="flex-1 flex flex-col">
       {/* Header */}
-      <header className="bg-white border-b border-gray-200 px-8 py-4">
+      <div className="px-8 pt-6">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
             <Button
@@ -179,10 +179,10 @@ export default function CustomerDetailClient() {
               Quay lại
             </Button>
             <div>
-              <h1 className="text-2xl font-bold text-gray-800">
+              <p className="text-sm font-semibold text-gray-800">
                 {debtor.name}
-              </h1>
-              <p className="text-sm text-gray-500 mt-0.5">
+              </p>
+              <p className="text-sm text-gray-500">
                 Mã KH: #{debtor.debtorId} · {debtor.businessLocationName}
               </p>
             </div>
@@ -212,7 +212,7 @@ export default function CustomerDetailClient() {
             </Button>
           </div>
         </div>
-      </header>
+      </div>
 
       <main className="flex-1 p-8 bg-gray-50 space-y-6">
         {/* Balance Card */}

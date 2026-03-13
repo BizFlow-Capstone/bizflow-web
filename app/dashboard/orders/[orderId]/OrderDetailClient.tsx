@@ -240,7 +240,7 @@ export default function OrderDetailClient() {
   return (
     <div className="flex-1 flex flex-col">
       {/* Header */}
-      <header className="bg-white border-b border-gray-200 px-8 py-4">
+      <div className="px-8 pt-6">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
             <Button
@@ -250,21 +250,10 @@ export default function OrderDetailClient() {
             >
               <ArrowLeft className="w-5 h-5" />
             </Button>
-            <div>
-              <div className="flex items-center gap-3">
-                <h1 className="text-2xl font-bold text-gray-800">
-                  {order.orderCode}
-                </h1>
-                <Badge variant="outline" className={statusConfig.bgClass}>
-                  <StatusIcon className="w-3.5 h-3.5 mr-1" />
-                  {statusConfig.label}
-                </Badge>
-              </div>
-              <p className="text-sm text-gray-600 mt-1">
-                Tạo bởi {order.createdByUserName} ·{" "}
-                {formatDate(order.createdAt)}
-              </p>
-            </div>
+            <Badge variant="outline" className={statusConfig.bgClass}>
+              <StatusIcon className="w-3.5 h-3.5 mr-1" />
+              {statusConfig.label}
+            </Badge>
           </div>
 
           {/* Actions (contextual based on status) */}
@@ -306,7 +295,7 @@ export default function OrderDetailClient() {
             )}
           </div>
         </div>
-      </header>
+      </div>
 
       <main className="flex-1 p-8 bg-gray-50">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

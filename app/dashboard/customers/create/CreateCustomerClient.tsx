@@ -80,7 +80,7 @@ export default function CreateCustomerClient() {
   return (
     <div className="flex-1 flex flex-col">
       {/* Header */}
-      <header className="bg-white border-b border-gray-200 px-8 py-4">
+      <div className="px-8 pt-6">
         <div className="flex items-center gap-4">
           <Button
             variant="ghost"
@@ -90,16 +90,8 @@ export default function CreateCustomerClient() {
             <ArrowLeft className="w-4 h-4 mr-2" />
             Quay lại
           </Button>
-          <div>
-            <h1 className="text-2xl font-bold text-gray-800">
-              Thêm Khách Hàng Thân Thiết
-            </h1>
-            <p className="text-sm text-gray-500 mt-0.5">
-              Tạo hồ sơ khách hàng mới để theo dõi công nợ
-            </p>
-          </div>
         </div>
-      </header>
+      </div>
 
       <main className="flex-1 p-8 bg-gray-50 flex justify-center">
         <div className="w-full max-w-xl space-y-6">
