@@ -23,15 +23,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { useProducts } from "@/hooks/useProducts";
 import { useLocations } from "@/hooks/useLocations";
+import { useDashboardLocation } from "@/lib/providers/DashboardLocationProvider";
 import type { ProductFilters } from "@/lib/types/product";
 
 // --- Helpers ---
@@ -49,9 +43,7 @@ export default function ProductsClient() {
   // Location selector
   const { data: locations = [], isLoading: isLoadingLocations } =
     useLocations();
-  const [selectedLocationId, setSelectedLocationId] = useState<number | null>(
-    null,
-  );
+  const { selectedLocationId } = useDashboardLocation();
 
   // Auto-select first location
   const locationId = useMemo(() => {
@@ -126,45 +118,18 @@ export default function ProductsClient() {
 
   return (
     <div className="flex-1 flex flex-col">
-      <div className="px-8 pt-6">
-        <div className="flex items-center justify-end gap-3">
-          <div className="flex items-center gap-2">
-            <MapPin className="w-4 h-4 text-gray-500" />
-            <Select
-              value={locationId?.toString() ?? ""}
-              onValueChange={(val) => {
-                setSelectedLocationId(Number(val));
-                setPageNumber(1);
-              }}
-            >
-              <SelectTrigger className="w-56 bg-white">
-                <SelectValue
-                  placeholder={
-                    isLoadingLocations ? "Đang tải..." : "Chọn địa điểm"
-                  }
-                />
-              </SelectTrigger>
-              <SelectContent>
-                {locations.map((loc) => (
-                  <SelectItem key={loc.id} value={loc.id.toString()}>
-                    {loc.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <Button
-            variant="outline"
-            onClick={() => refetch()}
-            disabled={isRefetching}
-            className="gap-2 bg-white"
-          >
-            <RefreshCw
-              className={`w-4 h-4 ${isRefetching ? "animate-spin" : ""}`}
-            />
-            Làm mới
-          </Button>
-        </div>
+      <div className="px-8 pt-6 flex justify-end">
+        <Button
+          variant="outline"
+          onClick={() => refetch()}
+          disabled={isRefetching}
+          className="gap-2 bg-white"
+        >
+          <RefreshCw
+            className={`w-4 h-4 ${isRefetching ? "animate-spin" : ""}`}
+          />
+          Làm mới
+        </Button>
       </div>
 
       <main className="flex-1 p-8 bg-gray-50">

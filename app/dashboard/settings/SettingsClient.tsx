@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Settings, MapPin, Loader2, Calendar, Globe, Save } from "lucide-react";
+import { Settings, Loader2, Calendar, Globe, Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import {
@@ -12,18 +12,19 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useLocations } from "@/hooks/useLocations";
+import { useDashboardLocation } from "@/lib/providers/DashboardLocationProvider";
 
 export default function SettingsClient() {
   const { data: locations, isLoading } = useLocations();
-  const [locationId, setLocationId] = useState<number>(0);
+  const { selectedLocationId } = useDashboardLocation();
 
   // Accounting settings state
   const [fiscalYearStart, setFiscalYearStart] = useState("1");
   const [currency, setCurrency] = useState("VND");
 
   const activeLocationId =
-    locationId > 0
-      ? locationId
+    selectedLocationId && selectedLocationId > 0
+      ? selectedLocationId
       : locations && locations.length > 0
         ? locations[0].id
         : 0;
@@ -53,27 +54,6 @@ export default function SettingsClient() {
 
   return (
     <div className="flex-1 flex flex-col">
-      <div className="px-8 pt-6">
-        <div className="flex items-center justify-end gap-3">
-          <MapPin className="w-4 h-4 text-gray-400" />
-          <Select
-            value={String(activeLocationId)}
-            onValueChange={(v) => setLocationId(Number(v))}
-          >
-            <SelectTrigger className="w-55 bg-white">
-              <SelectValue placeholder="Chọn cửa hàng" />
-            </SelectTrigger>
-            <SelectContent>
-              {locations?.map((loc) => (
-                <SelectItem key={loc.id} value={String(loc.id)}>
-                  {loc.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
-
       <main className="flex-1 p-8 bg-gray-50 overflow-auto">
         <div className="max-w-2xl space-y-6">
           {/* Accounting Settings */}

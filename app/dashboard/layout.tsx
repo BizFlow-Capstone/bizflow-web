@@ -1,5 +1,6 @@
 import DashboardSidebar from "@/components/DashboardSidebar";
 import DashboardHeader from "@/components/DashboardHeader";
+import { DashboardLocationProvider } from "@/lib/providers/DashboardLocationProvider";
 
 export default function DashboardLayout({
   children,
@@ -9,10 +10,12 @@ export default function DashboardLayout({
   return (
     <div className="flex min-h-screen bg-gray-50">
       <DashboardSidebar />
-      <main className="flex-1 flex flex-col min-w-0">
-        <DashboardHeader />
-        <div className="flex-1">{children}</div>
-      </main>
+      <DashboardLocationProvider>
+        <main className="flex-1 flex flex-col min-w-0">
+          <DashboardHeader />
+          <div className="flex-1">{children}</div>
+        </main>
+      </DashboardLocationProvider>
     </div>
   );
 }

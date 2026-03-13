@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import {
-  MapPin,
   Loader2,
   DollarSign,
   TrendingDown,
@@ -56,6 +55,7 @@ import {
   useAccountingTemplates,
   useAccountingBooks,
 } from "@/hooks/useAccounting";
+import { useDashboardLocation } from "@/lib/providers/DashboardLocationProvider";
 import type { PeriodStatus } from "@/lib/types/accounting";
 
 const fmt = new Intl.NumberFormat("vi-VN", {
@@ -68,12 +68,12 @@ type Tab = "reports" | "periods" | "books";
 
 export default function ReportsClient() {
   const { data: locations, isLoading: locLoading } = useLocations();
-  const [locationId, setLocationId] = useState<number>(0);
+  const { selectedLocationId } = useDashboardLocation();
   const [activeTab, setActiveTab] = useState<Tab>("reports");
 
   const activeLocationId =
-    locationId > 0
-      ? locationId
+    selectedLocationId && selectedLocationId > 0
+      ? selectedLocationId
       : locations && locations.length > 0
         ? locations[0].id
         : 0;
@@ -107,25 +107,6 @@ export default function ReportsClient() {
   return (
     <div className="flex-1 flex flex-col">
       <div className="px-8 pt-6">
-        <div className="flex items-center justify-end gap-3">
-          <MapPin className="w-4 h-4 text-gray-400" />
-          <Select
-            value={String(activeLocationId)}
-            onValueChange={(v) => setLocationId(Number(v))}
-          >
-            <SelectTrigger className="w-55 bg-white">
-              <SelectValue placeholder="Chọn cửa hàng" />
-            </SelectTrigger>
-            <SelectContent>
-              {locations?.map((loc) => (
-                <SelectItem key={loc.id} value={String(loc.id)}>
-                  {loc.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
         <div className="flex gap-1 mt-4 flex-wrap">
           {tabs.map((tab) => (
             <button
