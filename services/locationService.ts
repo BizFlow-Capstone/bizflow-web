@@ -11,13 +11,14 @@ import type {
   UpdateLocationPayload,
   LocationEmployeesResponse,
 } from "@/lib/types/location";
+import { authFetch } from "@/lib/auth/tokenManager";
 
 /**
  * Get all owned locations
  * Uses cache: 'no-store' to ensure fresh data for CRUD operations
  */
 export async function getLocations(): Promise<ApiResponse<Location[]>> {
-  const response = await fetch("/api/locations", {
+  const response = await authFetch("/api/locations", {
     method: "GET",
     headers: { accept: "*/*" },
     cache: "no-store", // Always fetch fresh data for dashboard
@@ -36,7 +37,7 @@ export async function getLocations(): Promise<ApiResponse<Location[]>> {
 export async function createLocation(
   data: NewLocationForm,
 ): Promise<ApiResponse<Location>> {
-  const response = await fetch("/api/locations", {
+  const response = await authFetch("/api/locations", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
@@ -56,7 +57,7 @@ export async function updateLocationStatus(
   id: number,
   isActive: boolean,
 ): Promise<ApiResponse<null>> {
-  const response = await fetch(`/api/locations/${id}/status`, {
+  const response = await authFetch(`/api/locations/${id}/status`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ isActive }),
@@ -76,7 +77,7 @@ export async function updateLocation(
   id: number,
   data: UpdateLocationPayload,
 ): Promise<ApiResponse<Location>> {
-  const response = await fetch(`/api/locations/${id}`, {
+  const response = await authFetch(`/api/locations/${id}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
@@ -93,7 +94,7 @@ export async function updateLocation(
  * Delete a location
  */
 export async function deleteLocation(id: number): Promise<ApiResponse<null>> {
-  const response = await fetch(`/api/locations/${id}`, {
+  const response = await authFetch(`/api/locations/${id}`, {
     method: "DELETE",
   });
 
@@ -110,7 +111,7 @@ export async function deleteLocation(id: number): Promise<ApiResponse<null>> {
 export async function getLocationEmployees(
   locationId: number,
 ): Promise<ApiResponse<LocationEmployeesResponse>> {
-  const response = await fetch(`/api/locations/${locationId}/employees`, {
+  const response = await authFetch(`/api/locations/${locationId}/employees`, {
     method: "GET",
     headers: { accept: "*/*" },
     cache: "no-store",
@@ -130,7 +131,7 @@ export async function assignLocationEmployees(
   locationId: number,
   employeeIds: string[],
 ): Promise<ApiResponse<null>> {
-  const response = await fetch(`/api/locations/${locationId}/employees`, {
+  const response = await authFetch(`/api/locations/${locationId}/employees`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(employeeIds),

@@ -1,4 +1,5 @@
 import type { BusinessTypeApiResponse } from "@/lib/types/businessType";
+import { authFetch } from "@/lib/auth/tokenManager";
 
 /**
  * Business Type Service
@@ -9,7 +10,7 @@ import type { BusinessTypeApiResponse } from "@/lib/types/businessType";
  * Fetch all business types
  */
 export async function getBusinessTypes(): Promise<BusinessTypeApiResponse> {
-  const response = await fetch("/api/business-types", {
+  const response = await authFetch("/api/business-types", {
     method: "GET",
     headers: { accept: "*/*" },
     cache: "no-store",

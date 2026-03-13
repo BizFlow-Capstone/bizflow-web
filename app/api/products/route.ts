@@ -10,6 +10,7 @@ const BACKEND_API_URL = process.env.BACKEND_API_URL || "http://localhost:5139";
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
+    const authHeader = request.headers.get("authorization");
 
     // Forward all query params to backend
     const backendUrl = new URL(`${BACKEND_API_URL}/api/my-business/products`);
@@ -21,6 +22,7 @@ export async function GET(request: NextRequest) {
       method: "GET",
       headers: {
         "Content-Type": "application/json",
+        ...(authHeader && { Authorization: authHeader }),
       },
       cache: "no-store",
     });
@@ -57,6 +59,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
+    const authHeader = request.headers.get("authorization");
 
     const formData = new FormData();
 
@@ -96,6 +99,9 @@ export async function POST(request: NextRequest) {
 
     const response = await fetch(`${BACKEND_API_URL}/api/my-business/product`, {
       method: "POST",
+      headers: {
+        ...(authHeader && { Authorization: authHeader }),
+      },
       // Do NOT set Content-Type — let fetch set it with the correct boundary
       body: formData,
     });

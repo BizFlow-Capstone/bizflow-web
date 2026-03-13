@@ -14,6 +14,7 @@ export async function PUT(
   try {
     const { productId } = await params;
     const body = await request.json();
+    const authHeader = request.headers.get("authorization");
 
     const response = await fetch(
       `${BACKEND_API_URL}/api/my-business/product/${productId}/status`,
@@ -21,6 +22,7 @@ export async function PUT(
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
+          ...(authHeader && { Authorization: authHeader }),
         },
         body: JSON.stringify(body),
       },

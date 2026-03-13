@@ -13,6 +13,7 @@ export async function GET(
 ) {
   try {
     const { productId } = await params;
+    const authHeader = request.headers.get("authorization");
 
     const response = await fetch(
       `${BACKEND_API_URL}/api/my-business/product/${productId}/sale-items`,
@@ -20,6 +21,7 @@ export async function GET(
         method: "GET",
         headers: {
           "Content-Type": "application/json",
+          ...(authHeader && { Authorization: authHeader }),
         },
         cache: "no-store",
       },

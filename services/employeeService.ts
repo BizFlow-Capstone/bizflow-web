@@ -1,4 +1,5 @@
 import type { ApiResponse, EmployeeListResponse } from "@/lib/types/employee";
+import { authFetch } from "@/lib/auth/tokenManager";
 
 /**
  * Employee Service
@@ -11,7 +12,7 @@ import type { ApiResponse, EmployeeListResponse } from "@/lib/types/employee";
 export async function getEmployees(): Promise<
   ApiResponse<EmployeeListResponse>
 > {
-  const response = await fetch("/api/employees", {
+  const response = await authFetch("/api/employees", {
     method: "GET",
     headers: {
       "Content-Type": "application/json",

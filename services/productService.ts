@@ -7,6 +7,7 @@ import type {
   Product,
   UpdateProductStatusRequest,
 } from "@/lib/types/product";
+import { authFetch } from "@/lib/auth/tokenManager";
 
 /**
  * Product Service
@@ -50,7 +51,7 @@ export async function getProducts(
     params.append("PageNumber", String(filters.pageNumber));
   if (filters.pageSize) params.append("PageSize", String(filters.pageSize));
 
-  const response = await fetch(`/api/products?${params.toString()}`, {
+  const response = await authFetch(`/api/products?${params.toString()}`, {
     method: "GET",
     headers: {
       "Content-Type": "application/json",
@@ -71,7 +72,7 @@ export async function getProducts(
 export async function getProductSaleItems(
   productId: number,
 ): Promise<ApiResponse<ProductSaleItems>> {
-  const response = await fetch(`/api/products/${productId}/sale-items`, {
+  const response = await authFetch(`/api/products/${productId}/sale-items`, {
     method: "GET",
     headers: {
       "Content-Type": "application/json",
@@ -92,7 +93,7 @@ export async function getProductSaleItems(
 export async function createProduct(
   data: CreateProductRequest,
 ): Promise<ApiResponse<Product>> {
-  const response = await fetch("/api/products", {
+  const response = await authFetch("/api/products", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -114,7 +115,7 @@ export async function updateProductStatus(
   productId: number,
   data: UpdateProductStatusRequest,
 ): Promise<ApiResponse<null>> {
-  const response = await fetch(`/api/products/${productId}/status`, {
+  const response = await authFetch(`/api/products/${productId}/status`, {
     method: "PUT",
     headers: {
       "Content-Type": "application/json",
@@ -135,7 +136,7 @@ export async function updateProductStatus(
 export async function deleteProduct(
   productId: number,
 ): Promise<ApiResponse<null>> {
-  const response = await fetch(`/api/products/${productId}`, {
+  const response = await authFetch(`/api/products/${productId}`, {
     method: "DELETE",
     headers: {
       "Content-Type": "application/json",

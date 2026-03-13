@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Bell, Check, LogOut, MapPin, Settings, Sun, User } from "lucide-react";
@@ -18,10 +18,29 @@ import { Separator } from "@/components/ui/separator";
 import { useLocations } from "@/hooks/useLocations";
 import { useDashboardLocation } from "@/lib/providers/DashboardLocationProvider";
 import type { Location } from "@/lib/types/location";
+import type { AuthAccount, AuthCredentialsData } from "@/lib/types/auth";
 
 type HeaderContent = {
   title: string;
   description: string;
+};
+
+type HeaderProfile = {
+  fullName: string;
+  avatarUrl: string;
+  subtitle: string;
+  initials: string;
+};
+
+const AUTH_ACCOUNT_KEY = "bizflow_auth_account";
+const AUTH_CREDENTIALS_KEY = "bizflow_auth_credentials";
+const AUTH_UPDATED_EVENT = "bizflow-auth-updated";
+
+const defaultProfile: HeaderProfile = {
+  fullName: "Tài khoản BizFlow",
+  avatarUrl: "",
+  subtitle: "Tài khoản Google",
+  initials: "BF",
 };
 
 const defaultHeader: HeaderContent = {
@@ -39,6 +58,45 @@ function getLocationOwnerRole(
 ): "Chủ" | "Nhân viên" {
   if (!location) return "Nhân viên";
   return (location.isOwner ?? location.IsOwner) ? "Chủ" : "Nhân viên";
+}
+
+function getInitials(fullName?: string): string {
+  const name = (fullName ?? "").trim();
+  if (!name) return defaultProfile.initials;
+
+  const parts = name.split(/\s+/).filter(Boolean);
+  const initials = parts
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join("");
+  return initials || defaultProfile.initials;
+}
+
+function getSubtitle(
+  account?: AuthAccount,
+  credentials?: AuthCredentialsData,
+): string {
+  const combinedIdentifiers = [
+    ...(account?.credentials ?? []).map((item) => item.identifier),
+    ...((credentials?.credentials ?? []).map((item) => item.identifier) ?? []),
+  ];
+
+  const preferred = combinedIdentifiers.find(
+    (value) =>
+      typeof value === "string" &&
+      value.trim().length > 0 &&
+      value.trim().toLowerCase() !== "connected" &&
+      value.includes("@"),
+  );
+
+  const fallback = combinedIdentifiers.find(
+    (value) =>
+      typeof value === "string" &&
+      value.trim().length > 0 &&
+      value.trim().toLowerCase() !== "connected",
+  );
+
+  return preferred ?? fallback ?? defaultProfile.subtitle;
 }
 
 function getHeaderContent(pathname: string): HeaderContent {
@@ -201,6 +259,7 @@ export default function DashboardHeader() {
   const pathname = usePathname();
   const content = useMemo(() => getHeaderContent(pathname), [pathname]);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+  const [profile, setProfile] = useState<HeaderProfile>(defaultProfile);
   const { selectedLocationId, switchLocation } = useDashboardLocation();
   const { data: locations = [], isLoading: isLoadingLocations } =
     useLocations();
@@ -219,6 +278,56 @@ export default function DashboardHeader() {
 
   const roleLabel = getLocationOwnerRole(activeLocation);
   const locationLabel = activeLocation?.name ?? "Chưa chọn địa điểm";
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const syncProfileFromStorage = () => {
+      try {
+        const rawAccount = window.localStorage.getItem(AUTH_ACCOUNT_KEY);
+        const rawCredentials =
+          window.localStorage.getItem(AUTH_CREDENTIALS_KEY);
+
+        const account = rawAccount
+          ? (JSON.parse(rawAccount) as AuthAccount)
+          : undefined;
+        const credentials = rawCredentials
+          ? (JSON.parse(rawCredentials) as AuthCredentialsData)
+          : undefined;
+
+        const fullName = account?.fullName?.trim() || defaultProfile.fullName;
+
+        setProfile({
+          fullName,
+          avatarUrl: account?.avatarUrl?.trim() || "",
+          subtitle: getSubtitle(account, credentials),
+          initials: getInitials(fullName),
+        });
+      } catch {
+        setProfile(defaultProfile);
+      }
+    };
+
+    syncProfileFromStorage();
+
+    const onStorage = (event: StorageEvent) => {
+      if (
+        event.key === AUTH_ACCOUNT_KEY ||
+        event.key === AUTH_CREDENTIALS_KEY ||
+        event.key === null
+      ) {
+        syncProfileFromStorage();
+      }
+    };
+
+    window.addEventListener("storage", onStorage);
+    window.addEventListener(AUTH_UPDATED_EVENT, syncProfileFromStorage);
+
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener(AUTH_UPDATED_EVENT, syncProfileFromStorage);
+    };
+  }, []);
 
   return (
     <header className="bg-white border-b border-gray-200 px-8 py-4">
@@ -251,10 +360,7 @@ export default function DashboardHeader() {
                   aria-label="Mở hồ sơ tài khoản"
                 >
                   <Avatar className="cursor-pointer">
-                    <AvatarImage src="https://github.com/shadcn.png" />
-                    <AvatarFallback className="bg-blue-600 text-white">
-                      LV
-                    </AvatarFallback>
+                    <AvatarImage src={profile.avatarUrl || undefined} />
                   </Avatar>
                 </button>
               </DialogTrigger>
@@ -273,15 +379,15 @@ export default function DashboardHeader() {
                 <div className="p-4 bg-gray-50">
                   <div className="rounded-xl bg-slate-100 px-4 py-5 text-center">
                     <Avatar className="mx-auto h-14 w-14 mb-3">
-                      <AvatarImage src="https://github.com/shadcn.png" />
+                      <AvatarImage src={profile.avatarUrl || undefined} />
                       <AvatarFallback className="bg-blue-600 text-white">
-                        LV
+                        {profile.initials}
                       </AvatarFallback>
                     </Avatar>
                     <p className="text-base font-semibold text-gray-900">
-                      Lê Văn A · Work
+                      {profile.fullName} · {locationLabel}
                     </p>
-                    <p className="text-sm text-gray-600">lkhoagg@gmail.com</p>
+                    <p className="text-sm text-gray-600">{profile.subtitle}</p>
                   </div>
                 </div>
 

@@ -1,33 +1,28 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const BACKEND_API_URL = process.env.BACKEND_API_URL || "http://localhost:5139";
+const BACKEND_URL = process.env.BACKEND_API_URL;
 
-/**
- * GET /api/business-types
- * Proxy to backend: GET /api/business-types
- * Get all business types for filter tags
- */
 export async function GET(request: NextRequest) {
   try {
     const authHeader = request.headers.get("authorization");
 
-    const response = await fetch(`${BACKEND_API_URL}/api/business-types`, {
+    const response = await fetch(`${BACKEND_URL}/api/auth/credentials`, {
       method: "GET",
       headers: {
         accept: "*/*",
         ...(authHeader && { Authorization: authHeader }),
       },
-      cache: "no-store",
     });
 
     const data = await response.json();
     return NextResponse.json(data, { status: response.status });
   } catch (error) {
-    console.error("Error fetching business types:", error);
+    console.error("Error getting credentials:", error);
     return NextResponse.json(
       {
         success: false,
-        message: "Failed to fetch business types",
+        message: "Failed to get credentials",
+        error: error instanceof Error ? error.message : "Unknown error",
       },
       { status: 500 },
     );

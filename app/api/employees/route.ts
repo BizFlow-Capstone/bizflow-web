@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
 const BACKEND_API_URL = process.env.BACKEND_API_URL || "http://localhost:5139";
 
@@ -7,14 +7,17 @@ const BACKEND_API_URL = process.env.BACKEND_API_URL || "http://localhost:5139";
  * Proxy to backend: GET /api/my-employee/employees
  * Get employee list for dropdown selection
  */
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    const authHeader = request.headers.get("authorization");
+
     const response = await fetch(
       `${BACKEND_API_URL}/api/my-employee/employees`,
       {
         method: "GET",
         headers: {
           "Content-Type": "application/json",
+          ...(authHeader && { Authorization: authHeader }),
         },
         cache: "no-store",
       },
