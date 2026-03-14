@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import Image from "next/image";
 import {
   Search,
   Loader2,
@@ -10,32 +9,18 @@ import {
   ChevronLeft,
   ChevronRight,
   MapPin,
-  Image as ImageIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { useProducts } from "@/hooks/useProducts";
+  useProducts,
+  useUpdateProductStatus,
+  useDeleteProduct,
+} from "@/hooks/useProducts";
 import { useLocations } from "@/hooks/useLocations";
 import { useDashboardLocation } from "@/lib/providers/DashboardLocationProvider";
 import type { ProductFilters } from "@/lib/types/product";
-
-// --- Helpers ---
-
-function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat("vi-VN", {
-    style: "currency",
-    currency: "VND",
-  }).format(amount);
-}
+import ProductManagementTable from "@/components/products/ProductManagementTable";
 
 // --- Main Component ---
 
@@ -44,6 +29,10 @@ export default function ProductsClient() {
   const { data: locations = [], isLoading: isLoadingLocations } =
     useLocations();
   const { selectedLocationId } = useDashboardLocation();
+
+  // Mutations
+  const updateStatusMutation = useUpdateProductStatus();
+  const deleteProductMutation = useDeleteProduct();
 
   // Auto-select first location
   const locationId = useMemo(() => {
@@ -201,122 +190,44 @@ export default function ProductsClient() {
         )}
 
         {/* Product Table */}
-        {!isLoading && !error && filteredProducts.length > 0 && (
-          <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-            <Table>
-              <TableHeader>
-                <TableRow className="bg-gray-50/50">
-                  <TableHead className="font-semibold text-gray-700 w-16">
-                    Ảnh
-                  </TableHead>
-                  <TableHead className="font-semibold text-gray-700">
-                    Sản phẩm
-                  </TableHead>
-                  <TableHead className="font-semibold text-gray-700">
-                    SKU
-                  </TableHead>
-                  <TableHead className="font-semibold text-gray-700">
-                    Đơn vị
-                  </TableHead>
-                  <TableHead className="font-semibold text-gray-700 text-right">
-                    Giá bán
-                  </TableHead>
-                  <TableHead className="font-semibold text-gray-700 text-right">
-                    Giá vốn
-                  </TableHead>
-                  <TableHead className="font-semibold text-gray-700 text-center">
-                    Tồn kho
-                  </TableHead>
-                  <TableHead className="font-semibold text-gray-700 text-center">
-                    Trạng thái
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredProducts.map((product) => (
-                  <TableRow
-                    key={product.productId}
-                    className="hover:bg-gray-50/50 transition-colors"
-                  >
-                    <TableCell>
-                      {product.imageUrl ? (
-                        <Image
-                          src={product.imageUrl}
-                          alt={product.productName || product.name}
-                          width={40}
-                          height={40}
-                          className="w-10 h-10 rounded-lg object-cover border border-gray-200"
-                        />
-                      ) : (
-                        <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center">
-                          <ImageIcon className="w-4 h-4 text-gray-400" />
-                        </div>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <div>
-                        <p className="text-sm font-medium text-gray-800">
-                          {product.productName || product.name}
-                        </p>
-                        {product.manufacturer && (
-                          <p className="text-xs text-gray-500">
-                            {product.manufacturer}
-                          </p>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-sm text-gray-600 font-mono">
-                      {product.sku || "—"}
-                    </TableCell>
-                    <TableCell className="text-sm text-gray-600">
-                      {product.unit || "—"}
-                    </TableCell>
-                    <TableCell className="text-right text-sm font-semibold text-gray-800">
-                      {formatCurrency(product.sellingPrice || product.price)}
-                    </TableCell>
-                    <TableCell className="text-right text-sm text-gray-600">
-                      {product.costPrice
-                        ? formatCurrency(product.costPrice)
-                        : "—"}
-                    </TableCell>
-                    <TableCell className="text-center">
-                      {product.trackInventory ? (
-                        <Badge
-                          variant="outline"
-                          className={
-                            product.stock <= 0
-                              ? "bg-red-50 text-red-700 border-red-200"
-                              : product.stock <= 10
-                                ? "bg-amber-50 text-amber-700 border-amber-200"
-                                : "bg-blue-50 text-blue-700 border-blue-200"
-                          }
-                        >
-                          {product.stock}
-                        </Badge>
-                      ) : (
-                        <span className="text-xs text-gray-400">N/A</span>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-center">
-                      <Badge
-                        variant="outline"
-                        className={
-                          product.status === "active"
-                            ? "bg-green-50 text-green-700 border-green-200"
-                            : "bg-gray-50 text-gray-500 border-gray-200"
-                        }
-                      >
-                        {product.status === "active" ? "Đang bán" : "Ngừng bán"}
-                      </Badge>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+        {!isLoading && !error && (
+          <>
+            <ProductManagementTable
+              products={filteredProducts}
+              locationId={locationId ?? 0}
+              statusUpdating={updateStatusMutation.isPending}
+              deleteUpdating={deleteProductMutation.isPending}
+              emptyTitle={
+                products.length === 0
+                  ? "Chưa có sản phẩm nào"
+                  : "Không tìm thấy kết quả"
+              }
+              emptyDescription={
+                products.length === 0
+                  ? "Thêm sản phẩm từ trang chi tiết địa điểm kinh doanh."
+                  : "Thử tìm kiếm với từ khóa khác."
+              }
+              onToggleStatus={(product) => {
+                updateStatusMutation.mutate({
+                  productId: product.productId,
+                  data: {
+                    status: product.status === "active" ? "inactive" : "active",
+                  },
+                });
+              }}
+              onDelete={(product) => {
+                const confirmed = window.confirm(
+                  `Bạn có chắc muốn xóa sản phẩm \"${product.name}\"?`,
+                );
+                if (!confirmed) return;
+
+                deleteProductMutation.mutate(product.productId);
+              }}
+            />
 
             {/* Pagination */}
             {totalPages > 1 && (
-              <div className="flex items-center justify-between px-6 py-4 border-t border-gray-200">
+              <div className="flex items-center justify-between px-6 py-4 border-x border-b border-gray-200 rounded-b-lg bg-white">
                 <p className="text-sm text-gray-600">
                   Trang {pageNumber} / {totalPages} — Tổng {totalCount} sản phẩm
                 </p>
@@ -342,26 +253,7 @@ export default function ProductsClient() {
                 </div>
               </div>
             )}
-          </div>
-        )}
-
-        {/* Empty State */}
-        {!isLoading && !error && filteredProducts.length === 0 && (
-          <div className="text-center py-20 bg-white rounded-xl border border-dashed border-gray-300">
-            <div className="mx-auto bg-gray-50 w-16 h-16 rounded-full flex items-center justify-center mb-4">
-              <Package className="w-8 h-8 text-gray-400" />
-            </div>
-            <h3 className="text-lg font-medium text-gray-900">
-              {products.length === 0
-                ? "Chưa có sản phẩm nào"
-                : "Không tìm thấy kết quả"}
-            </h3>
-            <p className="text-gray-500 mt-1">
-              {products.length === 0
-                ? "Thêm sản phẩm từ trang chi tiết địa điểm kinh doanh."
-                : "Thử tìm kiếm với từ khóa khác."}
-            </p>
-          </div>
+          </>
         )}
       </main>
     </div>

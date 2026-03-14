@@ -172,9 +172,9 @@ function getHeaderContent(pathname: string): HeaderContent {
 
   if (pathname.startsWith("/dashboard/products")) {
     return {
-      title: "Quản Lý Sản Phẩm",
+      title: "Quản Lý Kinh Doanh Tổng Hợp",
       description:
-        "Quản lý danh mục, tồn kho và thông tin sản phẩm kinh doanh.",
+        "Quản lý sản phẩm theo mô hình đa địa điểm và điều phối vận hành chung.",
     };
   }
 
@@ -217,9 +217,9 @@ function getHeaderContent(pathname: string): HeaderContent {
 
     if (/^\/dashboard\/locations\/[^/]+$/.test(pathname)) {
       return {
-        title: "Chi Tiết Địa Điểm Kinh Doanh",
+        title: "Quản Lý Kinh Doanh Theo Địa Điểm",
         description:
-          "Xem thông tin chi tiết và hoạt động của địa điểm đã chọn.",
+          "Theo dõi và vận hành sản phẩm tại một địa điểm kinh doanh cụ thể.",
       };
     }
 
