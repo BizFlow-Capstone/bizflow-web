@@ -7,6 +7,7 @@ import {
 import {
   getProducts,
   getProductSaleItems,
+  getProductCostPriceHistory,
   getProductDetail,
   createProduct,
   updateProduct,
@@ -17,6 +18,7 @@ import type {
   ProductFilters,
   ProductPagination,
   ProductSaleItems,
+  ProductCostPriceHistory,
   ProductDetail,
   CreateProductRequest,
   UpdateProductRequest,
@@ -34,6 +36,8 @@ export const productKeys = {
   detail: (productId: number) => [...productKeys.details(), productId] as const,
   saleItems: (productId: number) =>
     [...productKeys.all, "sale-items", productId] as const,
+  costHistory: (productId: number) =>
+    [...productKeys.all, "cost-history", productId] as const,
 };
 
 /**
@@ -60,6 +64,20 @@ export function useProductSaleItems(productId: number) {
     queryKey: productKeys.saleItems(productId),
     queryFn: async () => {
       const response = await getProductSaleItems(productId);
+      return response.data;
+    },
+    enabled: !!productId,
+  });
+}
+
+/**
+ * Hook to fetch cost price history for a product
+ */
+export function useProductCostPriceHistory(productId: number) {
+  return useQuery<ProductCostPriceHistory>({
+    queryKey: productKeys.costHistory(productId),
+    queryFn: async () => {
+      const response = await getProductCostPriceHistory(productId);
       return response.data;
     },
     enabled: !!productId,

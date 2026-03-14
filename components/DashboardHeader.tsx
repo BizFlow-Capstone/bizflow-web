@@ -257,6 +257,13 @@ function getHeaderContent(pathname: string): HeaderContent {
 
 export default function DashboardHeader() {
   const pathname = usePathname();
+  const shouldHideHeader = useMemo(
+    () =>
+      /^\/dashboard\/locations\/[^/]+\/products\/(?!new(?:\/|$))[^/]+(?:\/|$)/.test(
+        pathname,
+      ),
+    [pathname],
+  );
   const content = useMemo(() => getHeaderContent(pathname), [pathname]);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [profile, setProfile] = useState<HeaderProfile>(defaultProfile);
@@ -328,6 +335,10 @@ export default function DashboardHeader() {
       window.removeEventListener(AUTH_UPDATED_EVENT, syncProfileFromStorage);
     };
   }, []);
+
+  if (shouldHideHeader) {
+    return null;
+  }
 
   return (
     <header className="bg-white border-b border-gray-200 px-8 py-4">

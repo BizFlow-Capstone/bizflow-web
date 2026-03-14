@@ -58,6 +58,24 @@ export interface ProductSaleItems {
   saleItems: SaleItem[];
 }
 
+export interface ProductCostPriceHistoryItem {
+  importId: number;
+  importCode: string;
+  costPrice: number;
+  quantity: number;
+  totalPrice: number;
+  supplier?: string | null;
+  receivedAt?: string;
+  createdAt?: string;
+}
+
+export interface ProductCostPriceHistory {
+  productId: number;
+  productName: string;
+  currentCostPrice: number;
+  history: ProductCostPriceHistoryItem[];
+}
+
 export interface ProductFilters {
   locationId: number;
   name?: string;

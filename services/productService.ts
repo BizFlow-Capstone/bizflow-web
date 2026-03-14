@@ -2,6 +2,7 @@ import type {
   ApiResponse,
   ProductPagination,
   ProductSaleItems,
+  ProductCostPriceHistory,
   ProductFilters,
   CreateProductRequest,
   Product,
@@ -121,6 +122,32 @@ export async function getProductSaleItems(
 
   if (!response.ok) {
     throw new Error(`Failed to fetch sale items: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+/**
+ * Fetch cost price history for a specific product
+ */
+export async function getProductCostPriceHistory(
+  productId: number,
+): Promise<ApiResponse<ProductCostPriceHistory>> {
+  const response = await authFetch(
+    `/api/products/${productId}/cost-price-history`,
+    {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      cache: "no-store",
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      `Failed to fetch product cost price history: ${response.status}`,
+    );
   }
 
   return response.json();

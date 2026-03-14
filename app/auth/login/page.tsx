@@ -20,7 +20,7 @@ import {
   loginWithGoogle,
   setAccountPassword,
 } from "@/services/authService";
-import type { AuthAccount } from "@/lib/types/auth";
+import type { AuthAccount, AuthCredentialsData } from "@/lib/types/auth";
 
 const ACCESS_TOKEN_KEY = "bizflow_access_token";
 const REFRESH_TOKEN_KEY = "bizflow_refresh_token";
@@ -28,6 +28,31 @@ const AUTH_CREDENTIALS_KEY = "bizflow_auth_credentials";
 const AUTH_ACCOUNT_KEY = "bizflow_auth_account";
 const AUTH_UPDATED_EVENT = "bizflow-auth-updated";
 const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ?? "";
+
+type MockLoginUser = {
+  phone: string;
+  password: string;
+  role: "admin" | "accountant";
+  fullName: string;
+  redirectTo: string;
+};
+
+const MOCK_LOGIN_USERS: MockLoginUser[] = [
+  {
+    phone: "0900000001",
+    password: "Admin@123",
+    role: "admin",
+    fullName: "BizFlow Admin",
+    redirectTo: "/dashboard",
+  },
+  {
+    phone: "0900000002",
+    password: "Accountant@123",
+    role: "accountant",
+    fullName: "BizFlow Accountant",
+    redirectTo: "/dashboard/reports",
+  },
+];
 
 declare global {
   interface Window {
@@ -48,6 +73,11 @@ declare global {
 function getDeviceInfo(): string {
   if (typeof window === "undefined") return "";
   return window.navigator?.userAgent ?? "";
+}
+
+function createMockToken(phone: string, role: string): string {
+  const payload = `${phone}:${role}:${Date.now()}`;
+  return `mock_${btoa(payload)}`;
 }
 
 export default function LoginPage() {
@@ -74,9 +104,68 @@ export default function LoginPage() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    alert(
-      "Login bằng SMS/Password chưa có API theo backend hiện tại. Vui lòng dùng Google login.",
+
+    setGoogleError("");
+    setGoogleMessage("");
+
+    const normalizedPhone = formData.phone.trim().replace(/\s+/g, "");
+    const normalizedPassword = formData.password.trim();
+
+    const matchedUser = MOCK_LOGIN_USERS.find(
+      (user) =>
+        user.phone === normalizedPhone && user.password === normalizedPassword,
     );
+
+    if (!matchedUser) {
+      setGoogleError("Sai số điện thoại hoặc mật khẩu.");
+      return;
+    }
+
+    const account: AuthAccount = {
+      accountId: `mock-${matchedUser.role}-account`,
+      profileId: `mock-${matchedUser.role}-profile`,
+      fullName: matchedUser.fullName,
+      role: matchedUser.role,
+      hasPassword: true,
+      credentials: [
+        {
+          type: "phone",
+          identifier: matchedUser.phone,
+        },
+      ],
+    };
+
+    const credentials: AuthCredentialsData = {
+      credentials: [
+        {
+          type: "phone",
+          identifier: matchedUser.phone,
+          createdAt: new Date().toISOString(),
+        },
+      ],
+    };
+
+    const accessToken = createMockToken(matchedUser.phone, matchedUser.role);
+    const refreshToken = createMockToken(
+      matchedUser.phone,
+      `${matchedUser.role}-refresh`,
+    );
+
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(ACCESS_TOKEN_KEY, accessToken);
+      window.localStorage.setItem(REFRESH_TOKEN_KEY, refreshToken);
+      window.localStorage.setItem(AUTH_ACCOUNT_KEY, JSON.stringify(account));
+      window.localStorage.setItem(
+        AUTH_CREDENTIALS_KEY,
+        JSON.stringify(credentials),
+      );
+      window.dispatchEvent(new Event(AUTH_UPDATED_EVENT));
+    }
+
+    setGoogleMessage(
+      `Đăng nhập thành công (${matchedUser.role}). Đang chuyển hướng...`,
+    );
+    router.push(matchedUser.redirectTo);
   };
 
   const handleAfterAuth = useCallback(
@@ -287,9 +376,15 @@ export default function LoginPage() {
                 type="submit"
                 className="w-full bg-[#23C4C1] text-white py-3 rounded-lg font-semibold hover:bg-[#1a9b99] transition-colors"
               >
-                Đăng nhập SMS (chưa hỗ trợ API)
+                Đăng nhập
               </button>
             </form>
+
+            <div className="mt-4 rounded-lg border border-dashed border-gray-300 bg-gray-50 p-3 text-xs text-gray-600 space-y-1">
+              <p className="font-semibold text-gray-700">Tài khoản mock:</p>
+              <p>Admin: 0900000001 / Admin@123</p>
+              <p>Accountant: 0900000002 / Accountant@123</p>
+            </div>
 
             <div className="my-6 flex items-center">
               <div className="flex-1 border-t border-gray-300"></div>
