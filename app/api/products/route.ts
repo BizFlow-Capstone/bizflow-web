@@ -58,8 +58,29 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
     const authHeader = request.headers.get("authorization");
+    const contentType = request.headers.get("content-type") || "";
+
+    // If FE sends multipart/form-data (including image binary), forward as-is.
+    if (contentType.includes("multipart/form-data")) {
+      const incomingFormData = await request.formData();
+
+      const response = await fetch(
+        `${BACKEND_API_URL}/api/my-business/product`,
+        {
+          method: "POST",
+          headers: {
+            ...(authHeader && { Authorization: authHeader }),
+          },
+          body: incomingFormData,
+        },
+      );
+
+      const data = await response.json();
+      return NextResponse.json(data, { status: response.status });
+    }
+
+    const body = await request.json();
 
     const formData = new FormData();
 
@@ -72,6 +93,7 @@ export async function POST(request: NextRequest) {
     // Optional fields
     if (body.sku) formData.append("Sku", String(body.sku));
     formData.append("TrackInventory", String(body.trackInventory ?? true));
+    formData.append("SellingPrice", String(body.sellingPrice ?? 0));
     formData.append("CostPrice", String(body.costPrice ?? 0));
     formData.append("Stock", String(body.stock ?? 0));
     if (body.manufacturer)
@@ -93,9 +115,6 @@ export async function POST(request: NextRequest) {
         },
       );
     }
-
-    // NOTE: image upload not sent through this JSON→FormData path.
-    // For image uploads, call the route with FormData directly in the future.
 
     const response = await fetch(`${BACKEND_API_URL}/api/my-business/product`, {
       method: "POST",

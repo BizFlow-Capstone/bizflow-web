@@ -3,11 +3,11 @@ import { NextRequest, NextResponse } from "next/server";
 const BACKEND_API_URL = process.env.BACKEND_API_URL || "http://localhost:5139";
 
 /**
- * PUT /api/products/[productId]/status
- * Proxy to backend: PUT /api/my-business/product/{productId}/status
+ * PATCH /api/products/[productId]/status
+ * Proxy to backend: PATCH /api/my-business/product/{productId}/status
  * Update product status (active/inactive)
  */
-export async function PUT(
+export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ productId: string }> },
 ) {
@@ -19,7 +19,7 @@ export async function PUT(
     const response = await fetch(
       `${BACKEND_API_URL}/api/my-business/product/${productId}/status`,
       {
-        method: "PUT",
+        method: "PATCH",
         headers: {
           "Content-Type": "application/json",
           ...(authHeader && { Authorization: authHeader }),

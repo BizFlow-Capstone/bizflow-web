@@ -17,7 +17,11 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { BarcodeScanModal } from "@/components/BarcodeScanModal";
 import { useProductSearch } from "@/lib/hooks/useProductSearch";
-import { useCreateProduct } from "@/hooks/useProducts";
+import {
+  useCreateProduct,
+  useProductDetail,
+  useUpdateProduct,
+} from "@/hooks/useProducts";
 import { useBusinessTypes } from "@/hooks/useBusinessTypes";
 
 export default function AddProductPage() {
@@ -26,20 +30,26 @@ export default function AddProductPage() {
   const params = useParams();
   const locationId = params.id as string;
   const productId = searchParams.get("productId");
+  const productIdNum = productId ? Number(productId) : 0;
   const isEditMode = !!productId;
 
   const createProductMutation = useCreateProduct();
+  const updateProductMutation = useUpdateProduct();
   const { data: businessTypes = [] } = useBusinessTypes();
+  const { data: productDetail, isLoading: isLoadingDetail } =
+    useProductDetail(productIdNum);
+  const isPageLoading = isEditMode && isLoadingDetail;
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   const [imagePreview, setImagePreview] = useState<string>("");
-  const [isLoading, setIsLoading] = useState(false);
+  const [selectedImageFile, setSelectedImageFile] = useState<File | null>(null);
   const [scanOpen, setScanOpen] = useState(false);
   const [formData, setFormData] = useState({
     name: "",
     sku: "",
     businessTypeId: "",
     trackInventory: true,
+    sellingPrice: "",
     costPrice: "",
     stock: "",
     unit: "cái",
@@ -69,49 +79,46 @@ export default function AddProductPage() {
 
   // Load product data khi ở chế độ edit
   useEffect(() => {
-    if (isEditMode && productId) {
-      const loadingTimer = window.setTimeout(() => {
-        setIsLoading(true);
-      }, 0);
-      // TODO: Thay bằng API call thực tế
-      // Giả lập load data từ API
-      const fetchTimer = window.setTimeout(() => {
-        const mockProductData = {
-          name: "Nước khoáng Lavie",
-          barcode: "8934588020016",
-          isActive: true,
-          trackInventory: true,
-          costPrice: "8000",
-          sellPrice: "10000",
-          stock: "240",
-          unit: "lon",
-          minStock: "10",
-          supplierName: "Công ty ABC",
-          contactPerson: "Anh Tuấn",
-          address: "Hà Nội",
-          priceList: [
-            {
-              name: "Giá bán 1",
-              unit: "thùng",
-              quantity: "12",
-              price: "110000",
-            },
-          ],
-        };
-        setFormData(mockProductData);
-        setIsLoading(false);
-      }, 500);
-
-      return () => {
-        window.clearTimeout(loadingTimer);
-        window.clearTimeout(fetchTimer);
-      };
+    if (!isEditMode || !productDetail) {
+      return;
     }
-  }, [isEditMode, productId]);
+
+    const timer = window.setTimeout(() => {
+      setFormData({
+        name: productDetail.productName || productDetail.name || "",
+        sku: productDetail.sku || "",
+        businessTypeId: productDetail.businessTypeId || "",
+        trackInventory: Boolean(productDetail.trackInventory),
+        sellingPrice: String(
+          productDetail.sellingPrice || productDetail.price || 0,
+        ),
+        costPrice: String(productDetail.costPrice || 0),
+        stock: String(productDetail.stock || 0),
+        unit: productDetail.unit || "cái",
+        manufacturer: productDetail.manufacturer || "",
+        priceList: productDetail.saleItems?.map((item, index) => ({
+          name: `Giá bán ${index + 1}`,
+          unit: item.unit,
+          quantity: String(item.quantity),
+          price: String(item.price),
+        })) || [{ name: "Giá bán 1", unit: "", quantity: "", price: "" }],
+      });
+
+      if (productDetail.imageUrl) {
+        setImagePreview(productDetail.imageUrl);
+        setSelectedImageFile(null);
+      }
+    }, 0);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [isEditMode, productDetail]);
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      setSelectedImageFile(file);
       const reader = new FileReader();
       reader.onloadend = () => {
         setImagePreview(reader.result as string);
@@ -128,34 +135,69 @@ export default function AddProductPage() {
       !formData.businessTypeId
     )
       return;
+
+    const normalizedBaseUnit = formData.unit.trim().toLowerCase();
+    const sellingPrice = Number(formData.sellingPrice) || 0;
+    const normalizedPriceTiers = formData.priceList
+      .map((p) => ({
+        unit: p.unit.trim(),
+        quantity: Number(p.quantity) || 1,
+        price: Number(p.price) || 0,
+      }))
+      .filter(
+        (p) =>
+          p.unit.length > 0 &&
+          p.price > 0 &&
+          p.unit.toLowerCase() !== normalizedBaseUnit,
+      );
+
     try {
-      const result = await createProductMutation.mutateAsync({
+      const payload = {
         locationId: Number(locationId),
         businessTypeId: formData.businessTypeId,
         name: formData.name.trim(),
         sku: formData.sku.trim() || undefined,
         trackInventory: formData.trackInventory,
         unit: formData.unit.trim(),
+        sellingPrice,
         costPrice: Number(formData.costPrice) || 0,
         stock: Number(formData.stock) || 0,
+        image: selectedImageFile || undefined,
         manufacturer: formData.manufacturer.trim() || undefined,
-        priceTiers: formData.priceList
-          .filter((p) => Number(p.price) > 0)
-          .map((p) => ({
-            unit: p.unit || formData.unit.trim(),
-            quantity: Number(p.quantity) || 1,
-            price: Number(p.price),
-          })),
-      });
+        priceTiers: normalizedPriceTiers,
+      };
+
+      const result = isEditMode
+        ? await updateProductMutation.mutateAsync({
+            productId: productIdNum,
+            data: payload,
+          })
+        : await createProductMutation.mutateAsync(payload);
+
       if (result.success) {
         router.back();
       } else {
-        setSubmitError(result.message || "Không thể tạo sản phẩm");
+        setSubmitError(
+          result.message ||
+            (isEditMode
+              ? "Không thể cập nhật sản phẩm"
+              : "Không thể tạo sản phẩm"),
+        );
       }
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : "Đã xảy ra lỗi");
     }
   };
+
+  if (isPageLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-gray-50">
+        <div className="text-sm text-gray-500">
+          Đang tải dữ liệu sản phẩm...
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex-1 flex flex-col min-h-screen bg-gray-50">
@@ -469,6 +511,28 @@ export default function AddProductPage() {
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label
+                        htmlFor="sellingPrice"
+                        className="text-sm text-gray-700 font-normal"
+                      >
+                        Giá bán
+                      </Label>
+                      <Input
+                        id="sellingPrice"
+                        type="number"
+                        placeholder="0"
+                        value={formData.sellingPrice}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            sellingPrice: e.target.value,
+                          })
+                        }
+                        className="h-10"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label
                         htmlFor="costPrice"
                         className="text-sm text-gray-700 font-normal"
                       >
@@ -496,7 +560,7 @@ export default function AddProductPage() {
                         htmlFor="stock"
                         className="text-sm text-gray-700 font-normal"
                       >
-                        Số lượng
+                        Ngưỡng cảnh báo tồn kho
                       </Label>
                       <Input
                         id="stock"
@@ -559,22 +623,34 @@ export default function AddProductPage() {
                 variant="outline"
                 onClick={() => router.back()}
                 className="px-6 h-10"
-                disabled={isLoading}
+                disabled={isLoadingDetail}
               >
                 Quay lại
               </Button>
               <Button
                 onClick={handleSubmit}
                 className="bg-[#23C4C1] hover:bg-[#1da8a5] text-white px-6 h-10"
-                disabled={isLoading}
+                disabled={
+                  isLoadingDetail ||
+                  createProductMutation.isPending ||
+                  updateProductMutation.isPending
+                }
               >
-                {isLoading
+                {isLoadingDetail ||
+                createProductMutation.isPending ||
+                updateProductMutation.isPending
                   ? "Đang xử lý..."
                   : isEditMode
                     ? "Cập nhật"
                     : "Thêm sản phẩm"}
               </Button>
             </div>
+
+            {submitError && (
+              <div className="lg:col-span-3 mt-2 text-center text-sm text-red-600">
+                {submitError}
+              </div>
+            )}
           </div>
         </div>
       </main>

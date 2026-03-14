@@ -1358,6 +1358,29 @@ export default function LocationDetailClient({
               onClick={async () => {
                 setCreateError(null);
                 try {
+                  const normalizedBaseUnit = newProduct.unit
+                    .trim()
+                    .toLowerCase();
+                  const normalizedPriceTiers = newProduct.priceTiers
+                    .map((t) => ({
+                      unit: t.unit.trim(),
+                      quantity: t.quantity,
+                      price: t.price,
+                    }))
+                    .filter(
+                      (t) =>
+                        t.unit.length > 0 &&
+                        t.price > 0 &&
+                        t.unit.toLowerCase() !== normalizedBaseUnit,
+                    );
+
+                  const baseTier = newProduct.priceTiers.find(
+                    (t) =>
+                      t.price > 0 &&
+                      t.quantity === 1 &&
+                      t.unit.trim().toLowerCase() === normalizedBaseUnit,
+                  );
+
                   const result = await createProductMutation.mutateAsync({
                     locationId: Number(locationId),
                     businessTypeId: newProduct.businessTypeId,
@@ -1365,14 +1388,14 @@ export default function LocationDetailClient({
                     sku: newProduct.sku.trim() || undefined,
                     trackInventory: newProduct.trackInventory,
                     unit: newProduct.unit.trim(),
+                    sellingPrice:
+                      baseTier?.price ||
+                      newProduct.priceTiers.find((t) => t.price > 0)?.price ||
+                      0,
                     costPrice: newProduct.costPrice,
                     stock: newProduct.stock,
                     manufacturer: newProduct.manufacturer.trim() || undefined,
-                    priceTiers: newProduct.priceTiers.map((t) => ({
-                      unit: t.unit || newProduct.unit.trim(),
-                      quantity: t.quantity,
-                      price: t.price,
-                    })),
+                    priceTiers: normalizedPriceTiers,
                   });
                   if (result.success) {
                     setIsAddDialogOpen(false);

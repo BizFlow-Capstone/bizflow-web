@@ -63,8 +63,8 @@ export default function ProductsClient() {
     () => ({
       locationId: locationId ?? 0,
       ...(statusFilter !== "all" && { status: statusFilter }),
-      PageNumber: pageNumber,
-      PageSize: pageSize,
+      pageNumber,
+      pageSize,
     }),
     [locationId, statusFilter, pageNumber],
   );
