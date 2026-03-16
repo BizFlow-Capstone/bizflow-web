@@ -245,6 +245,14 @@ function getHeaderContent(pathname: string): HeaderContent {
     };
   }
 
+  if (pathname.startsWith("/dashboard/profile")) {
+    return {
+      title: "Cài Đặt Tài Khoản",
+      description:
+        "Quản lý phương thức đăng nhập và bảo mật tài khoản của bạn.",
+    };
+  }
+
   if (pathname.startsWith("/dashboard/settings")) {
     return {
       title: "Cài Đặt Hệ Thống",

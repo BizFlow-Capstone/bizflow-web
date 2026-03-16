@@ -11,6 +11,107 @@ function parseResponse<T>(raw: unknown): AuthApiResponse<T> {
   return raw as AuthApiResponse<T>;
 }
 
+export async function loginWithPhone(
+  phone: string,
+  password: string,
+  deviceInfo = "",
+): Promise<AuthApiResponse<GoogleAuthData>> {
+  const response = await fetch("/api/auth/login/phone", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", accept: "*/*" },
+    body: JSON.stringify({ phone, password, deviceInfo }),
+  });
+
+  const raw = await response.json();
+  const result = parseResponse<GoogleAuthData>(raw);
+
+  if (!response.ok || !result.success) {
+    throw new Error(result.message || "Phone login failed");
+  }
+
+  return result;
+}
+
+export async function loginWithEmail(
+  email: string,
+  password: string,
+  deviceInfo = "",
+): Promise<AuthApiResponse<GoogleAuthData>> {
+  const response = await fetch("/api/auth/login/email", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", accept: "*/*" },
+    body: JSON.stringify({ email, password, deviceInfo }),
+  });
+
+  const raw = await response.json();
+  const result = parseResponse<GoogleAuthData>(raw);
+
+  if (!response.ok || !result.success) {
+    throw new Error(result.message || "Email login failed");
+  }
+
+  return result;
+}
+
+export async function registerWithPhone(
+  phone: string,
+  password: string,
+  firebaseIdToken: string,
+  fullName: string,
+  deviceInfo = "",
+): Promise<AuthApiResponse<GoogleAuthData>> {
+  const response = await fetch("/api/auth/register/phone", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", accept: "*/*" },
+    body: JSON.stringify({
+      phone,
+      password,
+      firebaseIdToken,
+      fullName,
+      deviceInfo,
+    }),
+  });
+
+  const raw = await response.json();
+  const result = parseResponse<GoogleAuthData>(raw);
+
+  if (!response.ok || !result.success) {
+    throw new Error(result.message || "Phone registration failed");
+  }
+
+  return result;
+}
+
+export async function linkPhone(
+  phone: string,
+  firebaseIdToken: string,
+  accessToken: string,
+  password?: string,
+): Promise<AuthApiResponse<unknown>> {
+  const response = await fetch("/api/auth/link/phone", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      accept: "*/*",
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify({
+      phone,
+      firebaseIdToken,
+      ...(password ? { password } : {}),
+    }),
+  });
+
+  const raw = await response.json();
+  const result = parseResponse<unknown>(raw);
+
+  if (!response.ok || !result.success) {
+    throw new Error(result.message || "Link phone failed");
+  }
+
+  return result;
+}
+
 export async function loginWithGoogle(
   idToken: string,
   deviceInfo = "",
