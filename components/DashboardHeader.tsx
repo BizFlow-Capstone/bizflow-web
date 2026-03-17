@@ -3,7 +3,15 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Bell, Check, LogOut, MapPin, Settings, Sun, User } from "lucide-react";
+import {
+  Bell,
+  Check,
+  LogOut,
+  MapPin,
+  Settings,
+  Sun,
+  UserCircle,
+} from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
@@ -411,15 +419,16 @@ export default function DashboardHeader() {
                 </div>
 
                 <div className="px-4 py-3 space-y-2">
-                  <button
-                    type="button"
-                    className="w-full flex items-center justify-between rounded-lg px-2 py-2 text-sm text-left text-gray-700 hover:bg-gray-50"
+                  <Link
+                    href="/dashboard/profile"
+                    className="w-full inline-flex items-center gap-2 rounded-lg px-2 py-2 text-sm text-left text-gray-700 hover:bg-gray-50"
+                    onClick={() => setIsProfileModalOpen(false)}
                   >
                     <span className="inline-flex items-center gap-2">
-                      <User className="h-4 w-4" />
-                      Profile
+                      <UserCircle className="h-4 w-4 text-gray-500" />
+                      <span>Tài Khoản</span>
                     </span>
-                  </button>
+                  </Link>
                 </div>
 
                 <Separator />

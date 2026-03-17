@@ -227,3 +227,29 @@ export async function logoutAuth(
 
   return result;
 }
+
+export async function logoutAllAuth(
+  accessToken: string,
+): Promise<AuthApiResponse<null>> {
+  const headers: HeadersInit = {
+    accept: "*/*",
+  };
+
+  if (accessToken) {
+    headers.Authorization = `Bearer ${accessToken}`;
+  }
+
+  const response = await fetch("/api/auth/logout-all", {
+    method: "POST",
+    headers,
+  });
+
+  const raw = await response.json();
+  const result = parseResponse<null>(raw);
+
+  if (!response.ok || !result.success) {
+    throw new Error(result.message || "Logout all failed");
+  }
+
+  return result;
+}

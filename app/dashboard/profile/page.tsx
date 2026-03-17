@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   RecaptchaVerifier,
   signInWithPhoneNumber,
@@ -10,8 +11,10 @@ import { firebaseAuth } from "@/lib/firebase/client";
 import {
   getAuthCredentials,
   linkPhone,
+  logoutAllAuth,
   setAccountPassword,
 } from "@/services/authService";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import type {
   AuthAccount,
   AuthAccountCredential,
@@ -19,11 +22,22 @@ import type {
 } from "@/lib/types/auth";
 
 const ACCESS_TOKEN_KEY = "bizflow_access_token";
+const REFRESH_TOKEN_KEY = "bizflow_refresh_token";
 const AUTH_ACCOUNT_KEY = "bizflow_auth_account";
 const AUTH_CREDENTIALS_KEY = "bizflow_auth_credentials";
 const AUTH_UPDATED_EVENT = "bizflow-auth-updated";
 
 type LinkStep = "idle" | "otp";
+
+type ThemeColors = {
+  primary: string;
+  secondary: string;
+};
+
+const DEFAULT_THEME: ThemeColors = {
+  primary: "#0f766e",
+  secondary: "#0369a1",
+};
 
 function normalizePhone(input: string): string {
   const trimmed = input.replace(/\s+/g, "");
@@ -56,7 +70,117 @@ function dedupeCredentials(
   return Array.from(map.values());
 }
 
+function getInitials(fullName?: string): string {
+  const trimmed = (fullName ?? "").trim();
+  if (!trimmed) return "BF";
+
+  const parts = trimmed.split(/\s+/).filter(Boolean);
+  const initials = parts
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join("");
+
+  return initials || "BF";
+}
+
+function rgbToHex(r: number, g: number, b: number): string {
+  const toHex = (value: number) => value.toString(16).padStart(2, "0");
+  return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+}
+
+function colorDistance(
+  a: [number, number, number],
+  b: [number, number, number],
+): number {
+  const dr = a[0] - b[0];
+  const dg = a[1] - b[1];
+  const db = a[2] - b[2];
+  return Math.sqrt(dr * dr + dg * dg + db * db);
+}
+
+function extractThemeFromImage(url: string): Promise<ThemeColors> {
+  return new Promise((resolve) => {
+    const image = new Image();
+    image.crossOrigin = "anonymous";
+
+    image.onload = () => {
+      try {
+        const canvas = document.createElement("canvas");
+        const size = 80;
+        canvas.width = size;
+        canvas.height = size;
+
+        const context = canvas.getContext("2d");
+        if (!context) {
+          resolve(DEFAULT_THEME);
+          return;
+        }
+
+        context.drawImage(image, 0, 0, size, size);
+        const data = context.getImageData(0, 0, size, size).data;
+        const counter = new Map<string, number>();
+
+        for (let i = 0; i < data.length; i += 4) {
+          const r = data[i];
+          const g = data[i + 1];
+          const b = data[i + 2];
+          const a = data[i + 3];
+
+          if (a < 160) continue;
+
+          const max = Math.max(r, g, b);
+          const min = Math.min(r, g, b);
+          const saturation = max === 0 ? 0 : (max - min) / max;
+          if (saturation < 0.12) continue;
+
+          const qr = Math.floor(r / 24) * 24;
+          const qg = Math.floor(g / 24) * 24;
+          const qb = Math.floor(b / 24) * 24;
+          const key = `${qr},${qg},${qb}`;
+
+          counter.set(key, (counter.get(key) ?? 0) + 1);
+        }
+
+        const ranked = Array.from(counter.entries())
+          .map(([key, count]) => {
+            const parts = key.split(",").map((value) => Number(value));
+            return {
+              rgb: parts as [number, number, number],
+              count,
+            };
+          })
+          .sort((left, right) => right.count - left.count);
+
+        if (ranked.length === 0) {
+          resolve(DEFAULT_THEME);
+          return;
+        }
+
+        const primaryRgb = ranked[0].rgb;
+        const secondaryCandidate =
+          ranked.find((item) => colorDistance(item.rgb, primaryRgb) >= 60)
+            ?.rgb ?? ranked[Math.min(1, ranked.length - 1)].rgb;
+
+        resolve({
+          primary: rgbToHex(primaryRgb[0], primaryRgb[1], primaryRgb[2]),
+          secondary: rgbToHex(
+            secondaryCandidate[0],
+            secondaryCandidate[1],
+            secondaryCandidate[2],
+          ),
+        });
+      } catch {
+        resolve(DEFAULT_THEME);
+      }
+    };
+
+    image.onerror = () => resolve(DEFAULT_THEME);
+    image.src = url;
+  });
+}
+
 export default function ProfilePage() {
+  const router = useRouter();
   const [account, setAccount] = useState<AuthAccount | null>(null);
   const [credentials, setCredentials] = useState<AuthAccountCredential[]>([]);
   const [accessToken, setAccessToken] = useState("");
@@ -74,6 +198,8 @@ export default function ProfilePage() {
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [isSavingPassword, setIsSavingPassword] = useState(false);
+  const [isLoggingOutAll, setIsLoggingOutAll] = useState(false);
+  const [themeColors, setThemeColors] = useState<ThemeColors>(DEFAULT_THEME);
 
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
@@ -150,6 +276,28 @@ export default function ProfilePage() {
   );
 
   const hasPassword = account?.hasPassword === true;
+  const avatarUrl = account?.avatarUrl?.trim() ?? "";
+  const displayName = account?.fullName?.trim() || "Tài khoản BizFlow";
+  const roleLabel = account?.role?.trim() || "Thành viên";
+
+  useEffect(() => {
+    if (!avatarUrl) {
+      setThemeColors(DEFAULT_THEME);
+      return;
+    }
+
+    let isCancelled = false;
+
+    void extractThemeFromImage(avatarUrl).then((colors) => {
+      if (!isCancelled) {
+        setThemeColors(colors);
+      }
+    });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [avatarUrl]);
 
   const getRecaptchaVerifier = useCallback(() => {
     if (recaptchaVerifierRef.current) return recaptchaVerifierRef.current;
@@ -383,17 +531,91 @@ export default function ProfilePage() {
     }
   };
 
+  const clearAuthStorage = () => {
+    if (typeof window === "undefined") return;
+
+    window.localStorage.removeItem(ACCESS_TOKEN_KEY);
+    window.localStorage.removeItem(REFRESH_TOKEN_KEY);
+    window.localStorage.removeItem(AUTH_CREDENTIALS_KEY);
+    window.localStorage.removeItem(AUTH_ACCOUNT_KEY);
+    window.dispatchEvent(new Event(AUTH_UPDATED_EVENT));
+  };
+
+  const handleLogoutAllDevices = async () => {
+    setError("");
+    setMessage("");
+
+    if (!accessToken) {
+      setError("Không tìm thấy phiên đăng nhập. Vui lòng đăng nhập lại.");
+      return;
+    }
+
+    setIsLoggingOutAll(true);
+    try {
+      await logoutAllAuth(accessToken);
+      clearAuthStorage();
+      router.replace("/auth/login");
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Đăng xuất mọi thiết bị thất bại.",
+      );
+    } finally {
+      setIsLoggingOutAll(false);
+    }
+  };
+
   return (
     <div className="p-8 bg-gray-50 min-h-full">
       <div id="profile-phone-recaptcha" />
 
       <div className="max-w-4xl mx-auto space-y-6">
+        <section
+          className="relative overflow-hidden rounded-2xl p-6 text-white"
+          style={{
+            background: `linear-gradient(130deg, ${themeColors.primary} 0%, ${themeColors.secondary} 100%)`,
+            boxShadow: `0 14px 36px -10px ${themeColors.primary}66, 0 10px 28px -12px ${themeColors.secondary}88`,
+          }}
+        >
+          <div className="pointer-events-none absolute -top-16 -left-14 h-44 w-44 rounded-full bg-white/20 blur-3xl" />
+          <div className="pointer-events-none absolute -bottom-16 -right-14 h-48 w-48 rounded-full bg-white/15 blur-3xl" />
+          <div className="pointer-events-none absolute top-4 right-10 h-2 w-2 rounded-full bg-white/70 animate-pulse" />
+          <div className="pointer-events-none absolute top-12 right-24 h-1.5 w-1.5 rounded-full bg-white/60 animate-pulse" />
+
+          <div className="relative z-10 flex flex-col sm:flex-row sm:items-center gap-5">
+            <Avatar
+              className="h-20 w-20 shrink-0 border border-white/50"
+              style={{
+                boxShadow:
+                  "0 0 0 6px rgba(255,255,255,0.18), 0 0 36px rgba(255,255,255,0.34)",
+              }}
+            >
+              <AvatarImage src={avatarUrl || undefined} alt="Ảnh đại diện" />
+              <AvatarFallback className="bg-white/20 text-white text-2xl font-bold">
+                {getInitials(displayName)}
+              </AvatarFallback>
+            </Avatar>
+
+            <div className="min-w-0">
+              <p className="text-sm text-white/80">Hồ sơ người dùng</p>
+              <h1 className="text-2xl font-bold truncate">{displayName}</h1>
+              <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
+                <span className="px-3 py-1 rounded-full bg-white/20 border border-white/45 backdrop-blur-xs">
+                  Vai trò: {roleLabel}
+                </span>
+                <span className="px-3 py-1 rounded-full bg-white/20 border border-white/45 backdrop-blur-xs">
+                  {emailCredential?.identifier ?? "Chưa liên kết email"}
+                </span>
+              </div>
+            </div>
+          </div>
+        </section>
+
         <section className="bg-white border border-gray-100 rounded-2xl p-6 shadow-sm">
           <h2 className="text-xl font-bold text-gray-900 mb-1">
-            Cai dat tai khoan
+            Cài đặt tài khoản
           </h2>
           <p className="text-sm text-gray-500 mb-6">
-            Quan ly thong tin dang nhap va bao mat tai khoan BizFlow.
+            Quản lý thông tin đăng nhập và bảo mật tài khoản BizFlow.
           </p>
 
           {(error || message) && (
@@ -414,7 +636,7 @@ export default function ProfilePage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Ho va ten
+                Họ và tên
               </label>
               <input
                 type="text"
@@ -429,7 +651,7 @@ export default function ProfilePage() {
               </label>
               <input
                 type="text"
-                value={emailCredential?.identifier ?? "Chua lien ket"}
+                value={emailCredential?.identifier ?? "Chưa liên kết"}
                 readOnly
                 className="w-full rounded-xl border border-gray-200 px-4 py-3 bg-gray-50 text-gray-700"
               />
@@ -439,9 +661,9 @@ export default function ProfilePage() {
           <div className="mt-6 space-y-4">
             <div className="flex items-center justify-between rounded-xl border border-gray-200 px-4 py-3">
               <div>
-                <p className="text-sm text-gray-500">Tai khoan Google</p>
+                <p className="text-sm text-gray-500">Tài khoản Google</p>
                 <p className="font-medium text-gray-900">
-                  {googleCredential?.identifier ?? "Chua lien ket"}
+                  {googleCredential?.identifier ?? "Chưa liên kết"}
                 </p>
               </div>
               <span
@@ -451,23 +673,24 @@ export default function ProfilePage() {
                     : "bg-gray-100 text-gray-600"
                 }`}
               >
-                {googleCredential ? "Da lien ket Google" : "Chua lien ket"}
+                {googleCredential ? "Đã liên kết Google" : "Chưa liên kết"}
               </span>
             </div>
 
             <div className="rounded-xl border border-gray-200 p-4">
               <div className="flex items-center justify-between gap-3">
                 <div>
-                  <p className="text-sm text-gray-500">So dien thoai</p>
+                  <p className="text-sm text-gray-500">Số điện thoại</p>
                   <p className="font-medium text-gray-900">
-                    {phoneCredential?.identifier ?? "Chua lien ket"}
+                    {phoneCredential?.identifier ?? "Chưa liên kết"}
                   </p>
                 </div>
                 <button
                   onClick={startLinkFlow}
-                  className="px-4 py-2 rounded-lg bg-[#23C4C1] text-white text-sm font-medium hover:bg-[#1a9b99] transition-colors"
+                  style={{ backgroundColor: themeColors.primary }}
+                  className="px-4 py-2 rounded-lg text-white text-sm font-medium transition-opacity hover:opacity-90"
                 >
-                  {phoneCredential ? "Thay doi" : "Lien ket so dien thoai"}
+                  {phoneCredential ? "Thay đổi" : "Liên kết số điện thoại"}
                 </button>
               </div>
 
@@ -476,7 +699,7 @@ export default function ProfilePage() {
                   <div className="flex gap-2">
                     <input
                       type="tel"
-                      placeholder="Nhap so dien thoai"
+                      placeholder="Nhập số điện thoại"
                       value={linkPhoneInput}
                       onChange={(e) => setLinkPhoneInput(e.target.value)}
                       className="flex-1 rounded-lg border border-gray-200 px-3 py-2 outline-none focus:border-[#23C4C1]"
@@ -484,9 +707,13 @@ export default function ProfilePage() {
                     <button
                       onClick={handleSendOtp}
                       disabled={isSendingOtp}
-                      className="px-4 py-2 rounded-lg border border-[#23C4C1] text-[#23C4C1] text-sm font-medium disabled:opacity-50"
+                      style={{
+                        borderColor: themeColors.primary,
+                        color: themeColors.primary,
+                      }}
+                      className="px-4 py-2 rounded-lg border text-sm font-medium disabled:opacity-50"
                     >
-                      {isSendingOtp ? "Dang gui..." : "Gui OTP"}
+                      {isSendingOtp ? "Đang gửi..." : "Gửi OTP"}
                     </button>
                   </div>
 
@@ -498,7 +725,7 @@ export default function ProfilePage() {
                     }}
                     className="text-sm text-gray-500 hover:text-gray-700"
                   >
-                    Dong lien ket
+                    Đóng liên kết
                   </button>
 
                   {linkStep === "otp" && (
@@ -526,26 +753,28 @@ export default function ProfilePage() {
                       <button
                         onClick={handleVerifyOtp}
                         disabled={otp.some((digit) => !digit) || isVerifyingOtp}
-                        className="w-full rounded-lg bg-[#23C4C1] text-white py-2.5 font-medium disabled:opacity-50"
+                        style={{ backgroundColor: themeColors.primary }}
+                        className="w-full rounded-lg text-white py-2.5 font-medium disabled:opacity-50"
                       >
                         {isVerifyingOtp
-                          ? "Dang xac minh..."
-                          : "Xac minh va lien ket"}
+                          ? "Đang xác minh..."
+                          : "Xác minh và liên kết"}
                       </button>
 
                       <div className="flex items-center justify-center gap-3 text-sm">
                         <button
                           onClick={handleResendOtp}
                           disabled={!canResend || isSendingOtp}
-                          className="text-[#23C4C1] disabled:text-gray-400"
+                          style={{ color: themeColors.primary }}
+                          className="disabled:text-gray-400"
                         >
-                          Gui lai ma
+                          Gửi lại mã
                         </button>
                         <span className="text-gray-400">|</span>
                         <span className="text-gray-500">
                           {canResend
-                            ? "Ban co the gui lai OTP"
-                            : `Gui lai sau ${timer}s`}
+                            ? "Bạn có thể gửi lại OTP"
+                            : `Gửi lại sau ${timer}s`}
                         </span>
                       </div>
                     </>
@@ -559,33 +788,53 @@ export default function ProfilePage() {
         <section className="bg-white border border-gray-100 rounded-2xl p-6 shadow-sm">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h3 className="text-lg font-semibold text-gray-900">Bao mat</h3>
+              <h3 className="text-lg font-semibold text-gray-900">Bảo mật</h3>
               <p className="text-sm text-gray-500">
                 {hasPassword
-                  ? "Tai khoan da co mat khau"
-                  : "Tai khoan chua co mat khau"}
+                  ? "Tài khoản đã có mật khẩu"
+                  : "Tài khoản chưa có mật khẩu"}
               </p>
             </div>
             <button
               onClick={() => setShowPasswordForm((prev) => !prev)}
               className="px-4 py-2 rounded-lg border border-gray-300 text-sm font-medium hover:bg-gray-50"
             >
-              {hasPassword ? "Doi mat khau" : "Thiet lap mat khau"}
+              {hasPassword ? "Đổi mật khẩu" : "Thiết lập mật khẩu"}
             </button>
+          </div>
+
+          <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-red-700">
+                  Đăng xuất mọi thiết bị
+                </p>
+                <p className="text-sm text-red-600">
+                  Kết thúc tất cả phiên đăng nhập trên các thiết bị.
+                </p>
+              </div>
+              <button
+                onClick={handleLogoutAllDevices}
+                disabled={isLoggingOutAll}
+                className="px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-medium hover:bg-red-700 disabled:opacity-60"
+              >
+                {isLoggingOutAll ? "Đang xử lý..." : "Đăng xuất tất cả"}
+              </button>
+            </div>
           </div>
 
           {showPasswordForm && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <input
                 type="password"
-                placeholder="Mat khau moi"
+                placeholder="Mật khẩu mới"
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
                 className="rounded-lg border border-gray-200 px-3 py-2 outline-none focus:border-[#23C4C1]"
               />
               <input
                 type="password"
-                placeholder="Nhap lai mat khau"
+                placeholder="Nhập lại mật khẩu"
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 className="rounded-lg border border-gray-200 px-3 py-2 outline-none focus:border-[#23C4C1]"
@@ -593,9 +842,10 @@ export default function ProfilePage() {
               <button
                 onClick={handleSavePassword}
                 disabled={isSavingPassword}
-                className="md:col-span-2 rounded-lg bg-[#23C4C1] text-white py-2.5 font-medium disabled:opacity-50"
+                style={{ backgroundColor: themeColors.primary }}
+                className="md:col-span-2 rounded-lg text-white py-2.5 font-medium disabled:opacity-50"
               >
-                {isSavingPassword ? "Dang luu..." : "Luu mat khau"}
+                {isSavingPassword ? "Đang lưu..." : "Lưu mật khẩu"}
               </button>
             </div>
           )}

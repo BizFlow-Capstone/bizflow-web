@@ -21,7 +21,29 @@ export async function POST(request: NextRequest) {
       }),
     });
 
-    const data = await response.json();
+    const raw = await response.text();
+    let data: unknown = null;
+
+    if (raw.trim().length > 0) {
+      try {
+        data = JSON.parse(raw);
+      } catch {
+        data = { message: raw };
+      }
+    }
+
+    if (data === null) {
+      return NextResponse.json(
+        {
+          success: response.ok,
+          message: response.ok
+            ? "Phone linked successfully"
+            : "Backend returned empty response",
+        },
+        { status: response.status },
+      );
+    }
+
     return NextResponse.json(data, { status: response.status });
   } catch (error) {
     console.error("Error linking phone:", error);

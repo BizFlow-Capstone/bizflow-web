@@ -2,15 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 
 const BACKEND_URL = process.env.BACKEND_API_URL;
 
-export async function GET(request: NextRequest) {
+export async function POST(request: NextRequest) {
   try {
-    const authHeader = request.headers.get("authorization");
+    const authorization = request.headers.get("authorization") ?? "";
 
-    const response = await fetch(`${BACKEND_URL}/api/auth/credentials`, {
-      method: "GET",
+    const response = await fetch(`${BACKEND_URL}/api/auth/logout-all`, {
+      method: "POST",
       headers: {
         accept: "*/*",
-        ...(authHeader && { Authorization: authHeader }),
+        ...(authorization ? { Authorization: authorization } : {}),
       },
     });
 
@@ -30,7 +30,7 @@ export async function GET(request: NextRequest) {
         {
           success: response.ok,
           message: response.ok
-            ? "Fetched credentials successfully"
+            ? "Logged out all devices successfully"
             : "Backend returned empty response",
         },
         { status: response.status },
@@ -39,11 +39,11 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(data, { status: response.status });
   } catch (error) {
-    console.error("Error getting credentials:", error);
+    console.error("Error logging out all devices:", error);
     return NextResponse.json(
       {
         success: false,
-        message: "Failed to get credentials",
+        message: "Failed to logout all devices",
         error: error instanceof Error ? error.message : "Unknown error",
       },
       { status: 500 },
