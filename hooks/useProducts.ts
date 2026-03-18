@@ -13,6 +13,8 @@ import {
   updateProduct,
   updateProductStatus,
   deleteProduct,
+  adjustProductStock,
+  adjustSaleItemPrices,
 } from "@/services/productService";
 import type {
   ProductFilters,
@@ -23,6 +25,8 @@ import type {
   CreateProductRequest,
   UpdateProductRequest,
   UpdateProductStatusRequest,
+  AdjustStockRequest,
+  AdjustSaleItemPriceRequest,
 } from "@/lib/types/product";
 
 /**
@@ -155,6 +159,47 @@ export function useUpdateProductStatus() {
       productId: number;
       data: UpdateProductStatusRequest;
     }) => updateProductStatus(productId, data),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: productKeys.lists() });
+      queryClient.invalidateQueries({
+        queryKey: productKeys.detail(variables.productId),
+      });
+    },
+  });
+}
+
+/**
+ * Hook to adjust sale item selling prices by a fixed delta. Owner only.
+ */
+export function useAdjustSaleItemPrices() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (data: AdjustSaleItemPriceRequest) =>
+      adjustSaleItemPrices(data),
+    onSuccess: () => {
+      // Invalidate all sale-item queries since we don't know which products were affected
+      queryClient.invalidateQueries({ queryKey: productKeys.all });
+    },
+  });
+}
+
+/**
+ * Hook to adjust product stock manually.
+ * Increase creates import + stock movement. Decrease creates stock movement only.
+ * Owner only.
+ */
+export function useAdjustProductStock() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      productId,
+      data,
+    }: {
+      productId: number;
+      data: AdjustStockRequest;
+    }) => adjustProductStock(productId, data),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: productKeys.lists() });
       queryClient.invalidateQueries({

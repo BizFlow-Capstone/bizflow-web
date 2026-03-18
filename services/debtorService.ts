@@ -6,467 +6,246 @@ import type {
   DebtorFilters,
   CreateDebtorRequest,
   UpdateDebtorRequest,
+  UpdateDebtorStatusRequest,
   RecordPaymentRequest,
   RecordPaymentResponse,
   DebtSummary,
+  DeleteDebtorOptions,
+  DebtorPaymentTransaction,
 } from "@/lib/types/debtor";
+import { authFetch } from "@/lib/auth/tokenManager";
 
-// ================ MOCK DATA ================
-
-const MOCK_DEBTORS: DebtorRecord[] = [
-  {
-    debtorId: 1,
-    businessLocationId: 1,
-    businessLocationName: "Chi nhánh Quận 1",
-    name: "Anh Ba",
-    phone: "0901234567",
-    address: "123 Nguyễn Văn A, Q.1, TP.HCM",
-    notes: "Khách quen, mua xi măng thường xuyên",
-    creditLimit: 10000000,
-    currentBalance: -1500000,
-    outstandingDebt: 1500000,
-    isActive: true,
-    lastOrderDate: "2026-03-08T14:30:00Z",
-    lastPaymentDate: "2026-03-05T10:00:00Z",
-    createdByUserId: "user-001",
-    createdByUserName: "Lê Văn Minh",
-    createdAt: "2026-01-15T08:00:00Z",
-    updatedAt: "2026-03-08T14:30:00Z",
-  },
-  {
-    debtorId: 2,
-    businessLocationId: 1,
-    businessLocationName: "Chi nhánh Quận 1",
-    name: "Chú Năm",
-    phone: "0912345678",
-    address: "45 Lê Lợi, Q.3, TP.HCM",
-    notes: "Nhà thầu nhỏ, mua sắt thép",
-    creditLimit: 20000000,
-    currentBalance: -5200000,
-    outstandingDebt: 5200000,
-    isActive: true,
-    lastOrderDate: "2026-03-06T09:15:00Z",
-    lastPaymentDate: "2026-02-28T16:00:00Z",
-    createdByUserId: "user-001",
-    createdByUserName: "Lê Văn Minh",
-    createdAt: "2026-01-20T09:00:00Z",
-    updatedAt: "2026-03-06T09:15:00Z",
-  },
-  {
-    debtorId: 3,
-    businessLocationId: 1,
-    businessLocationName: "Chi nhánh Quận 1",
-    name: "Cô Bảy",
-    phone: "0909876543",
-    address: "78 Trần Hưng Đạo, Q.5, TP.HCM",
-    creditLimit: 5000000,
-    currentBalance: 200000,
-    outstandingDebt: 0,
-    isActive: true,
-    lastOrderDate: "2026-03-08T11:00:00Z",
-    lastPaymentDate: "2026-03-08T11:00:00Z",
-    createdByUserId: "user-001",
-    createdByUserName: "Lê Văn Minh",
-    createdAt: "2026-02-01T10:00:00Z",
-    updatedAt: "2026-03-08T11:00:00Z",
-  },
-  {
-    debtorId: 4,
-    businessLocationId: 1,
-    businessLocationName: "Chi nhánh Quận 1",
-    name: "Anh Tư (Thợ sơn)",
-    phone: "0923456789",
-    address: "12 Nguyễn Trãi, Q.1, TP.HCM",
-    notes: "Mua sơn, bột trét tường",
-    creditLimit: 8000000,
-    currentBalance: -3800000,
-    outstandingDebt: 3800000,
-    isActive: true,
-    lastOrderDate: "2026-03-07T15:00:00Z",
-    lastPaymentDate: "2026-02-20T09:30:00Z",
-    createdByUserId: "user-001",
-    createdByUserName: "Lê Văn Minh",
-    createdAt: "2026-01-25T14:00:00Z",
-    updatedAt: "2026-03-07T15:00:00Z",
-  },
-  {
-    debtorId: 5,
-    businessLocationId: 1,
-    businessLocationName: "Chi nhánh Quận 1",
-    name: "Chị Lan",
-    phone: "0934567890",
-    address: "56 Hai Bà Trưng, Q.1, TP.HCM",
-    creditLimit: undefined,
-    currentBalance: -800000,
-    outstandingDebt: 800000,
-    isActive: true,
-    lastOrderDate: "2026-03-09T08:45:00Z",
-    lastPaymentDate: "2026-03-01T14:00:00Z",
-    createdByUserId: "user-001",
-    createdByUserName: "Lê Văn Minh",
-    createdAt: "2026-02-10T11:00:00Z",
-    updatedAt: "2026-03-09T08:45:00Z",
-  },
-  {
-    debtorId: 6,
-    businessLocationId: 1,
-    businessLocationName: "Chi nhánh Quận 1",
-    name: "Nguyễn Văn An",
-    phone: "0945678901",
-    address: "90 Điện Biên Phủ, Bình Thạnh, TP.HCM",
-    notes: "Xây nhà mới",
-    creditLimit: 15000000,
-    currentBalance: 0,
-    outstandingDebt: 0,
-    isActive: true,
-    lastOrderDate: "2026-02-25T16:00:00Z",
-    lastPaymentDate: "2026-02-25T16:00:00Z",
-    createdByUserId: "user-001",
-    createdByUserName: "Lê Văn Minh",
-    createdAt: "2026-02-15T09:00:00Z",
-    updatedAt: "2026-02-25T16:00:00Z",
-  },
-  {
-    debtorId: 7,
-    businessLocationId: 1,
-    businessLocationName: "Chi nhánh Quận 1",
-    name: "Công ty TNHH Phúc An",
-    phone: "02838123456",
-    address: "200 Cách Mạng Tháng 8, Q.10, TP.HCM",
-    notes: "Công ty xây dựng nhỏ, mua số lượng lớn",
-    creditLimit: 50000000,
-    currentBalance: -12500000,
-    outstandingDebt: 12500000,
-    isActive: true,
-    lastOrderDate: "2026-03-10T10:00:00Z",
-    lastPaymentDate: "2026-03-01T08:00:00Z",
-    createdByUserId: "user-001",
-    createdByUserName: "Lê Văn Minh",
-    createdAt: "2026-01-10T08:00:00Z",
-    updatedAt: "2026-03-10T10:00:00Z",
-  },
-  {
-    debtorId: 8,
-    businessLocationId: 1,
-    businessLocationName: "Chi nhánh Quận 1",
-    name: "Anh Đức (Thợ điện)",
-    phone: "0956789012",
-    notes: "Mua dây điện, ống nhựa",
-    creditLimit: 3000000,
-    currentBalance: -2900000,
-    outstandingDebt: 2900000,
-    isActive: true,
-    lastOrderDate: "2026-03-09T13:00:00Z",
-    lastPaymentDate: "2026-01-30T10:00:00Z",
-    createdByUserId: "user-001",
-    createdByUserName: "Lê Văn Minh",
-    createdAt: "2026-01-28T15:00:00Z",
-    updatedAt: "2026-03-09T13:00:00Z",
-  },
-];
-
-const MOCK_DEBTOR_DETAILS: Record<number, DebtorFull> = {
-  1: {
-    ...MOCK_DEBTORS[0],
-    recentOrders: [
-      {
-        orderId: 1001,
-        orderCode: "ORD-20260308-001",
-        orderDate: "2026-03-08T14:30:00Z",
-        totalAmount: 2000000,
-        debtAmount: 500000,
-        paidAmount: 1500000,
-        status: "COMPLETED",
-      },
-      {
-        orderId: 985,
-        orderCode: "ORD-20260305-002",
-        orderDate: "2026-03-05T10:00:00Z",
-        totalAmount: 3500000,
-        debtAmount: 1000000,
-        paidAmount: 2500000,
-        status: "COMPLETED",
-      },
-      {
-        orderId: 960,
-        orderCode: "ORD-20260301-001",
-        orderDate: "2026-03-01T09:00:00Z",
-        totalAmount: 1800000,
-        debtAmount: 0,
-        paidAmount: 1800000,
-        status: "COMPLETED",
-      },
-    ],
-    recentPayments: [
-      {
-        transactionId: 101,
-        debtorId: 1,
-        amount: 1000000,
-        paymentMethod: "cash",
-        notes: "Trả một phần",
-        balanceBefore: -2500000,
-        balanceAfter: -1500000,
-        createdByUserName: "Lê Văn Minh",
-        paidAt: "2026-03-05T10:00:00Z",
-      },
-      {
-        transactionId: 95,
-        debtorId: 1,
-        amount: 500000,
-        paymentMethod: "bank",
-        notes: "Chuyển khoản",
-        balanceBefore: -3000000,
-        balanceAfter: -2500000,
-        createdByUserName: "Trần Thị B",
-        paidAt: "2026-02-28T14:00:00Z",
-      },
-      {
-        transactionId: 88,
-        debtorId: 1,
-        amount: 2000000,
-        paymentMethod: "cash",
-        balanceBefore: -5000000,
-        balanceAfter: -3000000,
-        createdByUserName: "Lê Văn Minh",
-        paidAt: "2026-02-15T09:30:00Z",
-      },
-    ],
-    statistics: {
-      totalOrders: 15,
-      totalPurchaseAmount: 25000000,
-      totalPaidAmount: 23500000,
-      oldestUnpaidOrder: "2026-03-05",
-    },
-  },
-  2: {
-    ...MOCK_DEBTORS[1],
-    recentOrders: [
-      {
-        orderId: 995,
-        orderCode: "ORD-20260306-003",
-        orderDate: "2026-03-06T09:15:00Z",
-        totalAmount: 8500000,
-        debtAmount: 3200000,
-        paidAmount: 5300000,
-        status: "COMPLETED",
-      },
-      {
-        orderId: 970,
-        orderCode: "ORD-20260302-001",
-        orderDate: "2026-03-02T11:00:00Z",
-        totalAmount: 6000000,
-        debtAmount: 2000000,
-        paidAmount: 4000000,
-        status: "COMPLETED",
-      },
-    ],
-    recentPayments: [
-      {
-        transactionId: 98,
-        debtorId: 2,
-        amount: 3000000,
-        paymentMethod: "bank",
-        notes: "Chuyển khoản trả nợ tháng 2",
-        balanceBefore: -8200000,
-        balanceAfter: -5200000,
-        createdByUserName: "Lê Văn Minh",
-        paidAt: "2026-02-28T16:00:00Z",
-      },
-    ],
-    statistics: {
-      totalOrders: 22,
-      totalPurchaseAmount: 45000000,
-      totalPaidAmount: 39800000,
-      oldestUnpaidOrder: "2026-03-02",
-    },
-  },
-  7: {
-    ...MOCK_DEBTORS[6],
-    recentOrders: [
-      {
-        orderId: 1005,
-        orderCode: "ORD-20260310-002",
-        orderDate: "2026-03-10T10:00:00Z",
-        totalAmount: 15000000,
-        debtAmount: 7500000,
-        paidAmount: 7500000,
-        status: "COMPLETED",
-      },
-      {
-        orderId: 990,
-        orderCode: "ORD-20260305-001",
-        orderDate: "2026-03-05T14:00:00Z",
-        totalAmount: 12000000,
-        debtAmount: 5000000,
-        paidAmount: 7000000,
-        status: "COMPLETED",
-      },
-    ],
-    recentPayments: [
-      {
-        transactionId: 100,
-        debtorId: 7,
-        amount: 5000000,
-        paymentMethod: "bank",
-        notes: "Chuyển khoản đợt 1 tháng 3",
-        balanceBefore: -17500000,
-        balanceAfter: -12500000,
-        createdByUserName: "Lê Văn Minh",
-        paidAt: "2026-03-01T08:00:00Z",
-      },
-    ],
-    statistics: {
-      totalOrders: 35,
-      totalPurchaseAmount: 120000000,
-      totalPaidAmount: 107500000,
-      oldestUnpaidOrder: "2026-03-05",
-    },
-  },
-};
-
-// ================ DELAY HELPER ================
-
-function delay(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function toNumber(value: unknown, fallback = 0): number {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return fallback;
 }
 
-// ================ SERVICE FUNCTIONS ================
+function toDateString(value: unknown): string {
+  if (typeof value === "string" && value) return value;
+  return new Date().toISOString();
+}
+
+function mapDebtorRecord(raw: Record<string, unknown>): DebtorRecord {
+  const currentBalance = toNumber(raw.currentBalance);
+  const outstandingDebt = Math.abs(Math.min(0, currentBalance));
+
+  return {
+    debtorId: toNumber(raw.debtorId),
+    businessLocationId: toNumber(raw.businessLocationId),
+    businessLocationName:
+      typeof raw.businessLocationName === "string"
+        ? raw.businessLocationName
+        : "—",
+    name: typeof raw.name === "string" ? raw.name : "Khách hàng",
+    phone: typeof raw.phone === "string" ? raw.phone : undefined,
+    address: typeof raw.address === "string" ? raw.address : undefined,
+    notes: typeof raw.notes === "string" ? raw.notes : undefined,
+    creditLimit:
+      raw.creditLimit === null || raw.creditLimit === undefined
+        ? undefined
+        : toNumber(raw.creditLimit),
+    currentBalance,
+    outstandingDebt,
+    isActive: Boolean(raw.isActive),
+    lastOrderDate:
+      typeof raw.lastOrderDate === "string" ? raw.lastOrderDate : undefined,
+    lastPaymentDate:
+      typeof raw.lastPaymentDate === "string" ? raw.lastPaymentDate : undefined,
+    createdByUserId:
+      typeof raw.createdByUserId === "string" ? raw.createdByUserId : undefined,
+    createdByUserName:
+      typeof raw.createdByUserName === "string"
+        ? raw.createdByUserName
+        : undefined,
+    createdAt: toDateString(raw.createdAt),
+    updatedAt: typeof raw.updatedAt === "string" ? raw.updatedAt : undefined,
+  };
+}
+
+async function throwApiError(
+  response: Response,
+  fallback: string,
+): Promise<never> {
+  const payload = (await response.json().catch(() => null)) as {
+    message?: string;
+  } | null;
+  throw new Error(payload?.message || fallback);
+}
+
+function buildDebtorQuery(filters: DebtorFilters): URLSearchParams {
+  const params = new URLSearchParams();
+
+  if (filters.businessLocationIds && filters.businessLocationIds.length > 0) {
+    const cleanedIds = filters.businessLocationIds.filter(
+      (id) => Number.isFinite(id) && id > 0,
+    );
+    if (cleanedIds.length > 0) {
+      params.append("BusinessLocationIds", `[${cleanedIds.join(",")}]`);
+    }
+  } else if (filters.locationId) {
+    params.append("BusinessLocationIds", `[${filters.locationId}]`);
+  }
+
+  if (filters.search) params.append("Search", filters.search);
+  if (filters.isActive !== undefined)
+    params.append("IsActive", String(filters.isActive));
+  if (filters.hasDebt !== undefined)
+    params.append("HasDebt", String(filters.hasDebt));
+  if (filters.sortBy) params.append("SortBy", filters.sortBy);
+  if (filters.sortDir) params.append("SortDir", filters.sortDir);
+  if (filters.page) params.append("PageNumber", String(filters.page));
+  if (filters.pageSize) params.append("PageSize", String(filters.pageSize));
+
+  return params;
+}
 
 export async function getDebtors(
   filters: DebtorFilters,
 ): Promise<ApiResponse<DebtorPagination>> {
-  await delay(400);
+  const query = buildDebtorQuery(filters).toString();
+  const url = query ? `/api/debtors?${query}` : "/api/debtors";
 
-  let result = [...MOCK_DEBTORS];
+  const response = await authFetch(url, {
+    method: "GET",
+    headers: { accept: "*/*" },
+    cache: "no-store",
+  });
 
-  // Filter: hasDebt
-  if (filters.hasDebt === true) {
-    result = result.filter((d) => d.currentBalance < 0);
-  }
-
-  // Filter: search
-  if (filters.search) {
-    const q = filters.search.toLowerCase();
-    result = result.filter(
-      (d) =>
-        d.name.toLowerCase().includes(q) ||
-        (d.phone && d.phone.includes(q)) ||
-        (d.address && d.address.toLowerCase().includes(q)),
+  if (!response.ok) {
+    return throwApiError(
+      response,
+      `Failed to fetch debtors: ${response.status}`,
     );
   }
 
-  // Sort
-  const sortBy = filters.sortBy ?? "name";
-  const sortDir = filters.sortDir ?? "asc";
-  result.sort((a, b) => {
-    let cmp = 0;
-    if (sortBy === "name") cmp = a.name.localeCompare(b.name, "vi");
-    else if (sortBy === "balance") cmp = a.currentBalance - b.currentBalance;
-    else if (sortBy === "createdAt")
-      cmp = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
-    return sortDir === "desc" ? -cmp : cmp;
-  });
+  const payload = (await response.json()) as ApiResponse<{
+    items?: Record<string, unknown>[];
+    page?: number;
+    pageNumber?: number;
+    pageSize?: number;
+    totalPages?: number;
+    totalCount?: number;
+    hasPreviousPage?: boolean;
+    hasNextPage?: boolean;
+  }>;
 
-  // Pagination
-  const page = filters.page ?? 1;
-  const pageSize = filters.pageSize ?? 20;
-  const totalCount = result.length;
-  const totalPages = Math.ceil(totalCount / pageSize);
-  const start = (page - 1) * pageSize;
-  const items = result.slice(start, start + pageSize);
-
-  const totalDebt = MOCK_DEBTORS.filter((d) => d.currentBalance < 0).reduce(
-    (sum, d) => sum + d.outstandingDebt,
-    0,
+  const pagePayload = payload.data ?? {};
+  const items = (pagePayload.items ?? []).map(mapDebtorRecord);
+  const page = toNumber(pagePayload.page ?? pagePayload.pageNumber, 1);
+  const pageSize = toNumber(pagePayload.pageSize, 20);
+  const totalCount = toNumber(pagePayload.totalCount, items.length);
+  const totalPages = toNumber(
+    pagePayload.totalPages,
+    Math.max(1, Math.ceil(totalCount / Math.max(pageSize, 1))),
   );
+  const totalDebt = items
+    .filter((item) => item.currentBalance < 0)
+    .reduce((sum, item) => sum + item.outstandingDebt, 0);
 
   return {
+    ...payload,
     data: {
       items,
       totalCount,
       page,
       pageSize,
       totalPages,
-      hasPreviousPage: page > 1,
-      hasNextPage: page < totalPages,
+      hasPreviousPage:
+        pagePayload.hasPreviousPage ?? (page > 1 && totalPages > 1),
+      hasNextPage: pagePayload.hasNextPage ?? page < totalPages,
       totalDebt,
     },
-    success: true,
-    messageCode: "SUCCESS",
-    message: "OK",
-    timestamp: new Date().toISOString(),
   };
 }
 
 export async function getDebtorDetail(
   debtorId: number,
 ): Promise<ApiResponse<DebtorFull>> {
-  await delay(300);
+  const response = await authFetch(`/api/debtors/${debtorId}`, {
+    method: "GET",
+    headers: { accept: "*/*" },
+    cache: "no-store",
+  });
 
-  const detail = MOCK_DEBTOR_DETAILS[debtorId];
-  if (detail) {
-    return {
-      data: detail,
-      success: true,
-      messageCode: "SUCCESS",
-      message: "OK",
-      timestamp: new Date().toISOString(),
-    };
+  if (!response.ok) {
+    return throwApiError(
+      response,
+      `Failed to fetch debtor detail: ${response.status}`,
+    );
   }
 
-  // Fallback: generate basic detail from record
-  const record = MOCK_DEBTORS.find((d) => d.debtorId === debtorId);
-  if (!record) {
-    throw new Error("Không tìm thấy khách hàng");
-  }
+  const payload = (await response.json()) as ApiResponse<
+    Record<string, unknown>
+  >;
+  const detailRaw = payload.data ?? {};
+
+  const detail: DebtorFull = {
+    ...mapDebtorRecord(detailRaw),
+    recentOrders: Array.isArray(detailRaw.recentOrders)
+      ? (detailRaw.recentOrders as DebtorFull["recentOrders"])
+      : [],
+    recentPayments: Array.isArray(detailRaw.recentPayments)
+      ? (detailRaw.recentPayments as DebtorFull["recentPayments"])
+      : [],
+    statistics:
+      typeof detailRaw.statistics === "object" && detailRaw.statistics !== null
+        ? {
+            totalOrders: toNumber(
+              (detailRaw.statistics as Record<string, unknown>).totalOrders,
+            ),
+            totalPurchaseAmount: toNumber(
+              (detailRaw.statistics as Record<string, unknown>)
+                .totalPurchaseAmount,
+            ),
+            totalPaidAmount: toNumber(
+              (detailRaw.statistics as Record<string, unknown>).totalPaidAmount,
+            ),
+            oldestUnpaidOrder:
+              typeof (detailRaw.statistics as Record<string, unknown>)
+                .oldestUnpaidOrder === "string"
+                ? ((detailRaw.statistics as Record<string, unknown>)
+                    .oldestUnpaidOrder as string)
+                : undefined,
+          }
+        : {
+            totalOrders: 0,
+            totalPurchaseAmount: 0,
+            totalPaidAmount: 0,
+          },
+  };
 
   return {
-    data: {
-      ...record,
-      recentOrders: [],
-      recentPayments: [],
-      statistics: {
-        totalOrders: 0,
-        totalPurchaseAmount: 0,
-        totalPaidAmount: 0,
-      },
-    },
-    success: true,
-    messageCode: "SUCCESS",
-    message: "OK",
-    timestamp: new Date().toISOString(),
+    ...payload,
+    data: detail,
   };
 }
 
 export async function createDebtor(
   request: CreateDebtorRequest,
 ): Promise<ApiResponse<DebtorRecord>> {
-  await delay(500);
+  const response = await authFetch("/api/debtors", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", accept: "*/*" },
+    body: JSON.stringify(request),
+  });
 
-  const newDebtor: DebtorRecord = {
-    debtorId: Date.now(),
-    businessLocationId: request.businessLocationId,
-    businessLocationName: "Chi nhánh Quận 1",
-    name: request.name,
-    phone: request.phone,
-    address: request.address,
-    notes: request.notes,
-    creditLimit: request.creditLimit,
-    currentBalance: 0,
-    outstandingDebt: 0,
-    isActive: true,
-    createdByUserId: "user-001",
-    createdByUserName: "Lê Văn Minh",
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  };
+  if (!response.ok) {
+    return throwApiError(
+      response,
+      `Failed to create debtor: ${response.status}`,
+    );
+  }
 
+  const payload = (await response.json()) as ApiResponse<
+    Record<string, unknown>
+  >;
   return {
-    data: newDebtor,
-    success: true,
-    messageCode: "CREATED",
-    message: "Tạo khách hàng thành công",
-    timestamp: new Date().toISOString(),
+    ...payload,
+    data: mapDebtorRecord(payload.data ?? {}),
   };
 }
 
@@ -474,105 +253,157 @@ export async function updateDebtor(
   debtorId: number,
   request: UpdateDebtorRequest,
 ): Promise<ApiResponse<DebtorRecord>> {
-  await delay(400);
+  const response = await authFetch(`/api/debtors/${debtorId}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", accept: "*/*" },
+    body: JSON.stringify(request),
+  });
 
-  const existing = MOCK_DEBTORS.find((d) => d.debtorId === debtorId);
-  if (!existing) throw new Error("Không tìm thấy khách hàng");
+  if (!response.ok) {
+    return throwApiError(
+      response,
+      `Failed to update debtor: ${response.status}`,
+    );
+  }
 
-  const updated: DebtorRecord = {
-    ...existing,
-    ...request,
-    updatedAt: new Date().toISOString(),
-  };
-
+  const payload = (await response.json()) as ApiResponse<
+    Record<string, unknown>
+  >;
   return {
-    data: updated,
-    success: true,
-    messageCode: "UPDATED",
-    message: "Cập nhật thành công",
-    timestamp: new Date().toISOString(),
+    ...payload,
+    data: mapDebtorRecord(payload.data ?? {}),
+  };
+}
+
+export async function updateDebtorStatus(
+  debtorId: number,
+  request: UpdateDebtorStatusRequest,
+): Promise<ApiResponse<DebtorRecord>> {
+  const response = await authFetch(`/api/debtors/${debtorId}/status`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", accept: "*/*" },
+    body: JSON.stringify(request),
+  });
+
+  if (!response.ok) {
+    return throwApiError(
+      response,
+      `Failed to update debtor status: ${response.status}`,
+    );
+  }
+
+  const payload = (await response.json()) as ApiResponse<
+    Record<string, unknown>
+  >;
+  return {
+    ...payload,
+    data: mapDebtorRecord(payload.data ?? {}),
   };
 }
 
 export async function deleteDebtor(
   debtorId: number,
+  options?: DeleteDebtorOptions,
 ): Promise<ApiResponse<null>> {
-  await delay(300);
+  const query = new URLSearchParams();
+  if (options?.force !== undefined) {
+    query.set("force", String(options.force));
+  }
+  const url = query.toString()
+    ? `/api/debtors/${debtorId}?${query.toString()}`
+    : `/api/debtors/${debtorId}`;
 
-  const existing = MOCK_DEBTORS.find((d) => d.debtorId === debtorId);
-  if (!existing) throw new Error("Không tìm thấy khách hàng");
-  if (existing.currentBalance < 0) {
-    throw new Error(
-      `Không thể xóa khách hàng còn nợ ${Math.abs(existing.currentBalance).toLocaleString("vi-VN")}đ`,
+  const response = await authFetch(url, {
+    method: "DELETE",
+    headers: { accept: "*/*" },
+  });
+
+  if (!response.ok) {
+    return throwApiError(
+      response,
+      `Failed to delete debtor: ${response.status}`,
     );
   }
 
-  return {
-    data: null,
-    success: true,
-    messageCode: "DELETED",
-    message: "Xóa thành công",
-    timestamp: new Date().toISOString(),
-  };
+  return response.json();
 }
 
 export async function recordPayment(
   debtorId: number,
   request: RecordPaymentRequest,
 ): Promise<ApiResponse<RecordPaymentResponse>> {
-  await delay(500);
+  const response = await authFetch(`/api/debtors/${debtorId}/payments`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", accept: "*/*" },
+    body: JSON.stringify(request),
+  });
 
-  const debtor = MOCK_DEBTORS.find((d) => d.debtorId === debtorId);
-  if (!debtor) throw new Error("Không tìm thấy khách hàng");
+  if (!response.ok) {
+    return throwApiError(
+      response,
+      `Failed to record payment: ${response.status}`,
+    );
+  }
 
-  const balanceBefore = debtor.currentBalance;
-  const balanceAfter = balanceBefore + request.amount;
+  return response.json();
+}
 
-  return {
-    data: {
-      transactionId: Date.now(),
-      debtorId,
-      amount: request.amount,
-      paymentMethod: request.paymentMethod,
-      balanceBefore,
-      balanceAfter,
-      outstandingDebtAfter: Math.abs(Math.min(0, balanceAfter)),
-      paidAt: new Date().toISOString(),
-      createdByUserName: "Lê Văn Minh",
-    },
-    success: true,
-    messageCode: "CREATED",
-    message: "Ghi nhận thanh toán thành công",
-    timestamp: new Date().toISOString(),
-  };
+export async function getDebtorPayments(
+  debtorId: number,
+): Promise<ApiResponse<DebtorPaymentTransaction[]>> {
+  const response = await authFetch(`/api/debtors/${debtorId}/payments`, {
+    method: "GET",
+    headers: { accept: "*/*" },
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    return throwApiError(
+      response,
+      `Failed to fetch debtor payments: ${response.status}`,
+    );
+  }
+
+  return response.json();
 }
 
 export async function getDebtSummary(): Promise<ApiResponse<DebtSummary>> {
-  await delay(300);
+  const summaryResponse = await authFetch("/api/debtors/summary", {
+    method: "GET",
+    headers: { accept: "*/*" },
+    cache: "no-store",
+  });
 
-  const debtorsWithDebt = MOCK_DEBTORS.filter((d) => d.currentBalance < 0);
-  const debtorsWithCredit = MOCK_DEBTORS.filter((d) => d.currentBalance > 0);
-  const totalOutstanding = debtorsWithDebt.reduce(
-    (sum, d) => sum + d.outstandingDebt,
+  if (summaryResponse.ok) {
+    return summaryResponse.json();
+  }
+
+  // Fallback: derive summary from list endpoint when summary API is not ready.
+  const debtorsResponse = await getDebtors({ page: 1, pageSize: 200 });
+  const debtors = debtorsResponse.data.items;
+  const debtorsWithDebt = debtors.filter((item) => item.currentBalance < 0);
+  const debtorsWithCredit = debtors.filter((item) => item.currentBalance > 0);
+  const totalOutstandingDebt = debtorsWithDebt.reduce(
+    (sum, item) => sum + item.outstandingDebt,
     0,
   );
   const totalCredit = debtorsWithCredit.reduce(
-    (sum, d) => sum + d.currentBalance,
+    (sum, item) => sum + item.currentBalance,
     0,
   );
 
   return {
     data: {
-      totalDebtors: MOCK_DEBTORS.length,
+      totalDebtors: debtors.length,
       debtorsWithDebt: debtorsWithDebt.length,
       debtorsWithCredit: debtorsWithCredit.length,
-      totalOutstandingDebt: totalOutstanding,
+      totalOutstandingDebt,
       totalCredit,
-      netDebt: totalOutstanding - totalCredit,
+      netDebt: totalOutstandingDebt - totalCredit,
     },
     success: true,
-    messageCode: "SUCCESS",
-    message: "OK",
+    messageCode: "COMMON_DATA_RETRIEVED",
+    message: "Data retrieved successfully",
     timestamp: new Date().toISOString(),
   };
 }

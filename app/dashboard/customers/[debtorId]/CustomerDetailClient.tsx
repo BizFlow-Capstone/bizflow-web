@@ -5,6 +5,7 @@ import Link from "next/link";
 import {
   ArrowLeft,
   Loader2,
+  RefreshCw,
   Phone,
   MapPin,
   Calendar,
@@ -33,9 +34,14 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useState } from "react";
-import { useDebtorDetail, useDeleteDebtor } from "@/hooks/useDebtors";
+import {
+  useDebtorDetail,
+  useDebtorPayments,
+  useDeleteDebtor,
+} from "@/hooks/useDebtors";
 import { getBalanceStatus } from "@/lib/types/debtor";
 import type { DebtorRecentOrder } from "@/lib/types/debtor";
+import { Switch } from "@/components/ui/switch";
 
 // --- Helpers ---
 
@@ -114,12 +120,23 @@ export default function CustomerDetailClient() {
   const debtorId = Number(params.debtorId);
 
   const { data: debtor, isLoading, error } = useDebtorDetail(debtorId);
+  const {
+    data: paymentHistory,
+    isLoading: isPaymentLoading,
+    error: paymentError,
+    refetch: refetchPayments,
+    isRefetching: isRefetchingPayments,
+  } = useDebtorPayments(debtorId);
   const deleteMutation = useDeleteDebtor();
   const [showDelete, setShowDelete] = useState(false);
+  const [deleteForce, setDeleteForce] = useState(false);
 
   const handleDelete = async () => {
     try {
-      await deleteMutation.mutateAsync(debtorId);
+      await deleteMutation.mutateAsync({
+        debtorId,
+        options: { force: deleteForce },
+      });
       router.push("/dashboard/customers");
     } catch {
       // handled by mutation
@@ -163,6 +180,7 @@ export default function CustomerDetailClient() {
   }
 
   const balanceStatus = getBalanceStatus(debtor.currentBalance);
+  const payments = paymentHistory ?? [];
 
   return (
     <div className="flex-1 flex flex-col">
@@ -188,14 +206,12 @@ export default function CustomerDetailClient() {
             </div>
           </div>
           <div className="flex gap-2">
-            {balanceStatus === "DEBT" && (
-              <Link href={`/dashboard/customers/${debtor.debtorId}/payment`}>
-                <Button className="bg-green-600 hover:bg-green-700 text-white gap-2">
-                  <Banknote className="w-4 h-4" />
-                  Ghi nhận thu nợ
-                </Button>
-              </Link>
-            )}
+            <Link href={`/dashboard/customers/${debtor.debtorId}/payment`}>
+              <Button className="bg-green-600 hover:bg-green-700 text-white gap-2">
+                <Banknote className="w-4 h-4" />
+                Điều chỉnh công nợ
+              </Button>
+            </Link>
             <Link href={`/dashboard/customers/${debtor.debtorId}/edit`}>
               <Button variant="outline" className="gap-2">
                 <Pencil className="w-4 h-4" />
@@ -317,7 +333,7 @@ export default function CustomerDetailClient() {
               <InfoRow
                 icon={<MapPin className="w-4 h-4 text-[#23C4C1]" />}
                 label="Địa điểm KD"
-                value={debtor.businessLocationName}
+                value={debtor.businessLocationName || "—"}
               />
               <InfoRow
                 icon={<Calendar className="w-4 h-4" />}
@@ -401,17 +417,57 @@ export default function CustomerDetailClient() {
 
         {/* Recent Payments */}
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
-          <h3 className="text-base font-semibold text-gray-800 mb-4 flex items-center gap-2">
-            <Receipt className="w-4 h-4 text-[#23C4C1]" />
-            Lịch sử thanh toán
-          </h3>
-          {debtor.recentPayments.length === 0 ? (
+          <div className="mb-4 flex items-center justify-between gap-2">
+            <div>
+              <h3 className="text-base font-semibold text-gray-800 flex items-center gap-2">
+                <Receipt className="w-4 h-4 text-[#23C4C1]" />
+                Lịch sử điều chỉnh công nợ
+              </h3>
+              <p className="text-xs text-gray-500 mt-1">
+                Dữ liệu được tải trực tiếp từ API lịch sử giao dịch của khách
+                hàng.
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-2"
+              onClick={() => refetchPayments()}
+              disabled={isRefetchingPayments}
+            >
+              <RefreshCw
+                className={`w-4 h-4 ${isRefetchingPayments ? "animate-spin" : ""}`}
+              />
+              Tải lại
+            </Button>
+          </div>
+
+          {isPaymentLoading ? (
+            <div className="py-8 flex items-center justify-center text-sm text-gray-600">
+              <Loader2 className="w-4 h-4 animate-spin mr-2" />
+              Đang tải lịch sử điều chỉnh...
+            </div>
+          ) : paymentError ? (
+            <div className="py-6 text-center">
+              <p className="text-sm text-red-600 mb-3">
+                Không tải được lịch sử điều chỉnh. Vui lòng thử lại.
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => refetchPayments()}
+                disabled={isRefetchingPayments}
+              >
+                Thử lại
+              </Button>
+            </div>
+          ) : payments.length === 0 ? (
             <p className="text-sm text-gray-500 text-center py-8">
-              Chưa có giao dịch thanh toán nào.
+              Chưa có giao dịch điều chỉnh nào.
             </p>
           ) : (
             <div className="space-y-2">
-              {debtor.recentPayments.map((tx) => (
+              {payments.map((tx) => (
                 <div
                   key={tx.transactionId}
                   className="rounded-lg border border-gray-100 p-3 hover:bg-gray-50 transition-colors flex items-center justify-between"
@@ -426,10 +482,14 @@ export default function CustomerDetailClient() {
                     </div>
                     <div>
                       <p className="text-sm font-medium text-gray-800">
-                        +{formatCurrency(tx.amount)}
+                        {tx.amount >= 0 ? "+" : ""}
+                        {formatCurrency(tx.amount)}
                       </p>
                       <p className="text-xs text-gray-400">
-                        {formatDateTime(tx.paidAt)} · {tx.createdByUserName}
+                        {formatDateTime(tx.paidAt)}
+                        {tx.createdByUserName
+                          ? ` · ${tx.createdByUserName}`
+                          : ""}
                         {tx.notes && ` · ${tx.notes}`}
                       </p>
                     </div>
@@ -464,7 +524,13 @@ export default function CustomerDetailClient() {
       </main>
 
       {/* Delete Dialog */}
-      <AlertDialog open={showDelete} onOpenChange={setShowDelete}>
+      <AlertDialog
+        open={showDelete}
+        onOpenChange={(open) => {
+          setShowDelete(open);
+          if (!open) setDeleteForce(false);
+        }}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Xóa khách hàng?</AlertDialogTitle>
@@ -474,18 +540,27 @@ export default function CustomerDetailClient() {
               {debtor.currentBalance < 0 && (
                 <span className="block mt-2 text-red-600 font-medium">
                   ⚠ Khách hàng này đang nợ{" "}
-                  {formatCurrency(debtor.outstandingDebt)}. Không thể xóa khi
-                  còn nợ.
+                  {formatCurrency(debtor.outstandingDebt)}. Bật &quot;Xóa cưỡng
+                  bức&quot; nếu vẫn muốn xóa.
                 </span>
               )}
             </AlertDialogDescription>
           </AlertDialogHeader>
+          <div className="rounded-lg border border-gray-200 px-3 py-2 flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-700">Xóa cưỡng bức</p>
+              <p className="text-xs text-gray-500">
+                Dùng khi khách còn nợ nhưng vẫn cần xóa hồ sơ.
+              </p>
+            </div>
+            <Switch checked={deleteForce} onCheckedChange={setDeleteForce} />
+          </div>
           <AlertDialogFooter>
             <AlertDialogCancel>Đóng</AlertDialogCancel>
             <AlertDialogAction
               onClick={handleDelete}
               className="bg-red-600 hover:bg-red-700"
-              disabled={deleteMutation.isPending || debtor.currentBalance < 0}
+              disabled={deleteMutation.isPending}
             >
               {deleteMutation.isPending ? (
                 <>

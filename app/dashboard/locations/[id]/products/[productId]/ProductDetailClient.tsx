@@ -7,11 +7,11 @@ import Link from "next/link";
 import { AnimatePresence, motion } from "motion/react";
 import {
   ArrowLeft,
-  Building2,
-  Pencil,
+  Info,
   Package,
   Loader2,
   Trash2,
+  Pencil,
   ToggleRight,
   TrendingUp,
   BarChart3,
@@ -21,7 +21,6 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   Minus,
-  Info,
 } from "lucide-react";
 import {
   Area,
@@ -54,8 +53,10 @@ import {
   useProductCostPriceHistory,
   useUpdateProductStatus,
   useDeleteProduct,
+  useAdjustProductStock,
 } from "@/hooks/useProducts";
 import type { ProductCostPriceHistoryItem } from "@/lib/types/product";
+import StockAdjustmentDialog from "@/components/products/StockAdjustmentDialog";
 
 function formatVnd(value: number): string {
   return `${value.toLocaleString("vi-VN")}đ`;
@@ -262,6 +263,7 @@ export default function ProductDetailClient({
   const router = useRouter();
   const productIdNum = Number(productId);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [showStockDialog, setShowStockDialog] = useState(false);
   const [activeTab, setActiveTab] = useState<"overview" | "price">("overview");
   const [selectedRange, setSelectedRange] = useState<TimeRange>("ALL");
   const [useMockData, setUseMockData] = useState(false);
@@ -269,6 +271,7 @@ export default function ProductDetailClient({
   // Mutations
   const updateStatusMutation = useUpdateProductStatus();
   const deleteProductMutation = useDeleteProduct();
+  const adjustStockMutation = useAdjustProductStock();
 
   // Data fetching
   const {
@@ -489,7 +492,7 @@ export default function ProductDetailClient({
               </Link>
             </Button>
             <h1 className="text-lg font-semibold text-gray-900">
-              {product.productName || product.name}
+              {product.name}
             </h1>
           </div>
 
@@ -596,13 +599,11 @@ export default function ProductDetailClient({
                             Tên sản phẩm
                           </div>
                           <div className="mt-1 text-sm font-semibold text-gray-900">
-                            {product.productName || product.name}
+                            {product.name}
                           </div>
                         </div>
                         <div>
-                          <div className="text-xs text-gray-500">
-                            Mã vạch / SKU ID
-                          </div>
+                          <div className="text-xs text-gray-500">Mã SKU</div>
                           <div className="mt-1 text-sm font-semibold text-gray-900">
                             {product.sku || `#${product.productId}`}
                           </div>
@@ -612,13 +613,29 @@ export default function ProductDetailClient({
                             Đơn vị tính
                           </div>
                           <div className="mt-1 text-sm font-semibold text-gray-900">
-                            {product.unit}
+                            {product.unit || "—"}
                           </div>
                         </div>
                         <div>
                           <div className="text-xs text-gray-500">Danh mục</div>
                           <div className="mt-1 text-sm font-semibold text-gray-900">
-                            {product.businessTypeName || "Chưa cập nhật"}
+                            {product.businessTypeName || "—"}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-xs text-gray-500">
+                            Nhà sản xuất
+                          </div>
+                          <div className="mt-1 text-sm font-semibold text-gray-900">
+                            {product.manufacturer || "—"}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-xs text-gray-500">
+                            Vị trí kho
+                          </div>
+                          <div className="mt-1 text-sm font-semibold text-gray-900">
+                            {product.businessLocationName || "—"}
                           </div>
                         </div>
                         <div>
@@ -638,18 +655,6 @@ export default function ProductDetailClient({
                               ? "Đang bán"
                               : "Ngừng bán"}
                           </div>
-                        </div>
-                      </div>
-                    </section>
-
-                    <section>
-                      <div className="text-sm font-semibold text-gray-900">
-                        Nhà cung cấp
-                      </div>
-                      <div className="mt-4 rounded-lg border bg-gray-50/60 p-4">
-                        <div className="flex items-start gap-2 text-sm font-medium text-gray-900">
-                          <Building2 className="mt-0.5 h-4 w-4 shrink-0 text-gray-500" />
-                          <span>{product.manufacturer || "Chưa cập nhật"}</span>
                         </div>
                       </div>
                     </section>
@@ -693,7 +698,7 @@ export default function ProductDetailClient({
                         {product.imageUrl ? (
                           <Image
                             src={product.imageUrl}
-                            alt={product.productName || product.name}
+                            alt={product.name}
                             fill
                             className="object-cover"
                             sizes="240px"
@@ -710,9 +715,19 @@ export default function ProductDetailClient({
                           <span className="text-gray-600">
                             Tồn kho hiện tại
                           </span>
-                          <span className="font-semibold text-gray-900">
-                            {product.stock}
-                          </span>
+                          <div className="flex items-center gap-2">
+                            <span className="font-semibold text-gray-900">
+                              {product.stock}
+                            </span>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-6 px-2 text-xs text-[#23C4C1] border-[#23C4C1] hover:bg-[#23C4C1]/10"
+                              onClick={() => setShowStockDialog(true)}
+                            >
+                              Điều chỉnh
+                            </Button>
+                          </div>
                         </div>
                         <div className="flex items-center justify-between">
                           <span className="text-gray-600">Giá vốn</span>
@@ -1288,6 +1303,20 @@ export default function ProductDetailClient({
           )}
         </div>
       </main>
+
+      {/* Stock Adjustment Dialog */}
+      <StockAdjustmentDialog
+        product={product}
+        open={showStockDialog}
+        onOpenChange={setShowStockDialog}
+        isPending={adjustStockMutation.isPending}
+        onConfirm={(productId, data) => {
+          adjustStockMutation.mutate(
+            { productId, data },
+            { onSuccess: () => setShowStockDialog(false) },
+          );
+        }}
+      />
 
       {/* Delete Confirmation Dialog */}
       <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>

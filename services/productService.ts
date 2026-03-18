@@ -9,6 +9,8 @@ import type {
   ProductDetail,
   UpdateProductStatusRequest,
   UpdateProductRequest,
+  AdjustStockRequest,
+  AdjustSaleItemPriceRequest,
 } from "@/lib/types/product";
 import { authFetch } from "@/lib/auth/tokenManager";
 
@@ -68,6 +70,7 @@ export async function getProducts(
   params.append("LocationId", String(filters.locationId));
 
   // Optional filters
+  if (filters.search) params.append("Search", filters.search);
   if (filters.name) params.append("Name", filters.name);
   if (filters.sku) params.append("Sku", filters.sku);
   if (filters.businessTypeIds && filters.businessTypeIds.length > 0)
@@ -232,6 +235,49 @@ export async function updateProductStatus(
 
   if (!response.ok) {
     throw new Error(`Failed to update product status: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+/**
+ * Adjust selected sale-item selling prices by fixed delta. Owner only.
+ */
+export async function adjustSaleItemPrices(
+  data: AdjustSaleItemPriceRequest,
+): Promise<ApiResponse<null>> {
+  const response = await authFetch(`/api/products/sale-items/selling-price`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to adjust sale item prices: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+/**
+ * Adjust product stock manually (increase or decrease).
+ * Increase creates import + stock movement. Decrease creates stock movement only.
+ * Owner only.
+ */
+export async function adjustProductStock(
+  productId: number,
+  data: AdjustStockRequest,
+): Promise<ApiResponse<Product>> {
+  const response = await authFetch(`/api/products/${productId}/stock`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(data),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to adjust product stock: ${response.status}`);
   }
 
   return response.json();

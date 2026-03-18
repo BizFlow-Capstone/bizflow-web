@@ -1,15 +1,15 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
-  ArrowLeft,
-  Loader2,
-  Banknote,
-  Landmark,
-  CheckCircle2,
   AlertTriangle,
+  ArrowLeft,
   ArrowRight,
+  Banknote,
+  CheckCircle2,
+  Landmark,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,16 +18,12 @@ import { useDebtorDetail, useRecordPayment } from "@/hooks/useDebtors";
 import { getBalanceStatus } from "@/lib/types/debtor";
 import type { RecordPaymentRequest } from "@/lib/types/debtor";
 
-// --- Helpers ---
-
 function formatCurrency(amount: number): string {
   return new Intl.NumberFormat("vi-VN", {
     style: "currency",
     currency: "VND",
   }).format(amount);
 }
-
-// --- Main Component ---
 
 export default function RecordPaymentClient() {
   const params = useParams();
@@ -44,11 +40,10 @@ export default function RecordPaymentClient() {
   const [success, setSuccess] = useState(false);
 
   const parsedAmount = useMemo(() => {
-    const val = Number(amount);
-    return isNaN(val) ? 0 : val;
+    const value = Number(amount);
+    return Number.isFinite(value) ? value : 0;
   }, [amount]);
 
-  // Preview balance after payment
   const balanceAfter = useMemo(() => {
     if (!debtor) return 0;
     return debtor.currentBalance + parsedAmount;
@@ -56,8 +51,10 @@ export default function RecordPaymentClient() {
 
   const validate = (): boolean => {
     const errs: Record<string, string> = {};
-    if (!parsedAmount || parsedAmount <= 0)
-      errs.amount = "Vui lòng nhập số tiền thanh toán lớn hơn 0.";
+    if (!parsedAmount) {
+      errs.amount =
+        "Vui lòng nhập số điều chỉnh khác 0. Số âm giảm nợ, số dương tăng nợ.";
+    }
     setFormErrors(errs);
     return Object.keys(errs).length === 0;
   };
@@ -79,12 +76,10 @@ export default function RecordPaymentClient() {
     }
   };
 
-  // Quick amount buttons
   const quickAmounts = [
-    100_000, 200_000, 500_000, 1_000_000, 2_000_000, 5_000_000,
+    -500_000, -200_000, -100_000, 100_000, 200_000, 500_000,
   ];
 
-  // Loading
   if (isLoading) {
     return (
       <div className="flex-1 flex items-center justify-center bg-gray-50">
@@ -94,7 +89,6 @@ export default function RecordPaymentClient() {
     );
   }
 
-  // Error
   if (error || !debtor) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center bg-gray-50">
@@ -117,7 +111,6 @@ export default function RecordPaymentClient() {
   const balanceStatus = getBalanceStatus(debtor.currentBalance);
   const balanceAfterStatus = getBalanceStatus(balanceAfter);
 
-  // Success view
   if (success) {
     return (
       <div className="flex-1 flex items-center justify-center bg-gray-50">
@@ -126,14 +119,19 @@ export default function RecordPaymentClient() {
             <CheckCircle2 className="w-8 h-8 text-green-600" />
           </div>
           <h2 className="text-xl font-bold text-gray-900 mb-2">
-            Thanh toán thành công!
+            Điều chỉnh thành công!
           </h2>
           <p className="text-gray-600 mb-6">
-            Đã ghi nhận{" "}
-            <strong className="text-green-600">
+            Đã ghi nhận điều chỉnh{" "}
+            <strong
+              className={
+                parsedAmount < 0 ? "text-green-600" : "text-orange-600"
+              }
+            >
+              {parsedAmount > 0 ? "+" : ""}
               {formatCurrency(parsedAmount)}
             </strong>{" "}
-            từ <strong>{debtor.name}</strong>.
+            cho <strong>{debtor.name}</strong>.
           </p>
           <div className="bg-gray-50 rounded-lg p-4 mb-6">
             <div className="flex items-center justify-between">
@@ -177,7 +175,6 @@ export default function RecordPaymentClient() {
 
   return (
     <div className="flex-1 flex flex-col">
-      {/* Header */}
       <div className="px-8 pt-6">
         <div className="flex items-center gap-4">
           <Button
@@ -193,7 +190,6 @@ export default function RecordPaymentClient() {
 
       <main className="flex-1 p-8 bg-gray-50 flex justify-center">
         <div className="w-full max-w-xl space-y-6">
-          {/* Current Balance */}
           <div
             className={`rounded-xl border-2 p-5 ${
               balanceStatus === "DEBT"
@@ -221,22 +217,20 @@ export default function RecordPaymentClient() {
             </p>
           </div>
 
-          {/* Payment Amount */}
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 space-y-5">
             <h2 className="font-semibold text-gray-800 flex items-center gap-2">
               <Banknote className="w-4 h-4 text-[#23C4C1]" />
-              Số tiền thanh toán
+              Số tiền điều chỉnh
             </h2>
 
             <div className="space-y-1.5">
               <Label htmlFor="amount">
-                Số tiền (VND) <span className="text-red-500">*</span>
+                Số điều chỉnh (VND) <span className="text-red-500">*</span>
               </Label>
               <Input
                 id="amount"
                 type="number"
-                min={0}
-                placeholder="Nhập số tiền..."
+                placeholder="Âm: giảm nợ, dương: tăng nợ"
                 className={`text-lg font-semibold h-12 ${
                   formErrors.amount ? "border-red-400" : ""
                 }`}
@@ -248,7 +242,6 @@ export default function RecordPaymentClient() {
               )}
             </div>
 
-            {/* Quick amounts */}
             <div>
               <p className="text-xs text-gray-400 mb-2">Chọn nhanh:</p>
               <div className="grid grid-cols-3 gap-2">
@@ -263,6 +256,7 @@ export default function RecordPaymentClient() {
                     }`}
                     onClick={() => setAmount(String(q))}
                   >
+                    {q > 0 ? "+" : ""}
                     {new Intl.NumberFormat("vi-VN", {
                       notation: "compact",
                       compactDisplay: "short",
@@ -272,22 +266,20 @@ export default function RecordPaymentClient() {
               </div>
             </div>
 
-            {/* Full payoff shortcut */}
             {balanceStatus === "DEBT" && (
               <Button
                 variant="outline"
                 className="w-full gap-2 border-green-200 text-green-600 hover:bg-green-50"
-                onClick={() => setAmount(String(debtor.outstandingDebt))}
+                onClick={() => setAmount(String(-debtor.outstandingDebt))}
               >
-                Thanh toán hết nợ ({formatCurrency(debtor.outstandingDebt)})
+                Giảm hết nợ (-{formatCurrency(debtor.outstandingDebt)})
               </Button>
             )}
           </div>
 
-          {/* Payment Method */}
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 space-y-4">
             <h2 className="font-semibold text-gray-800">
-              Phương thức thanh toán
+              Phương thức ghi nhận
             </h2>
             <div className="grid grid-cols-2 gap-3">
               <button
@@ -345,7 +337,6 @@ export default function RecordPaymentClient() {
             </div>
           </div>
 
-          {/* Notes */}
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 space-y-3">
             <h2 className="font-semibold text-gray-800">Ghi chú</h2>
             <textarea
@@ -357,23 +348,13 @@ export default function RecordPaymentClient() {
             />
           </div>
 
-          {/* Balance Preview */}
-          {parsedAmount > 0 && (
+          {parsedAmount !== 0 && (
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
               <h2 className="font-semibold text-gray-800 mb-3">Xem trước</h2>
               <div className="flex items-center justify-between gap-4">
-                {/* Before */}
                 <div className="text-center">
                   <p className="text-xs text-gray-400 mb-1">Trước</p>
-                  <p
-                    className={`text-lg font-bold ${
-                      balanceStatus === "DEBT"
-                        ? "text-red-600"
-                        : balanceStatus === "CREDIT"
-                          ? "text-green-600"
-                          : "text-gray-600"
-                    }`}
-                  >
+                  <p className="text-lg font-bold text-gray-600">
                     {formatCurrency(debtor.currentBalance)}
                   </p>
                 </div>
@@ -381,11 +362,11 @@ export default function RecordPaymentClient() {
                 <div className="flex flex-col items-center gap-1 text-[#23C4C1]">
                   <ArrowRight className="w-5 h-5" />
                   <span className="text-xs font-medium">
-                    +{formatCurrency(parsedAmount)}
+                    {parsedAmount > 0 ? "+" : ""}
+                    {formatCurrency(parsedAmount)}
                   </span>
                 </div>
 
-                {/* After */}
                 <div className="text-center">
                   <p className="text-xs text-gray-400 mb-1">Sau</p>
                   <p
@@ -404,7 +385,6 @@ export default function RecordPaymentClient() {
             </div>
           )}
 
-          {/* Submit */}
           <Button
             className="w-full h-12 bg-green-600 hover:bg-green-700 text-white text-base font-medium"
             disabled={paymentMutation.isPending}
@@ -418,7 +398,7 @@ export default function RecordPaymentClient() {
             ) : (
               <>
                 <CheckCircle2 className="w-5 h-5 mr-2" />
-                Xác nhận thu nợ
+                Xác nhận điều chỉnh nợ
               </>
             )}
           </Button>

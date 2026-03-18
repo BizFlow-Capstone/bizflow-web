@@ -78,6 +78,7 @@ export interface ProductCostPriceHistory {
 
 export interface ProductFilters {
   locationId: number;
+  search?: string;
   name?: string;
   sku?: string;
   businessTypeIds?: string[];
@@ -145,4 +146,22 @@ export interface UpdateProductRequest {
 
 export interface UpdateProductStatusRequest {
   status: "active" | "inactive";
+}
+
+// --- Adjust Product Stock ---
+// Manual stock adjustment with optional memo.
+// Increase creates import + stock movement. Decrease creates stock movement only.
+// Owner only.
+export interface AdjustStockRequest {
+  stock: number;
+  memo?: string;
+  costPrice?: number;
+}
+
+// --- Adjust Sale Item Selling Prices ---
+// Adjust selected sale-item selling prices by fixed delta.
+// Positive delta increases price, negative delta decreases price. Owner only.
+export interface AdjustSaleItemPriceRequest {
+  deltaAmount: number;
+  saleItemIds: number[];
 }

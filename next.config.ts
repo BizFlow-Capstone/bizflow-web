@@ -4,20 +4,24 @@ const nextConfig: NextConfig = {
   images: {
     remotePatterns: [
       {
-        protocol: 'https',
-        hostname: 'lavievietnam.vn',
+        protocol: "https",
+        hostname: "lavievietnam.vn",
       },
       {
-        protocol: 'https',
-        hostname: 'www.coca-cola.com',
+        protocol: "https",
+        hostname: "www.coca-cola.com",
       },
       {
-        protocol: 'https',
-        hostname: 'github.com',
+        protocol: "https",
+        hostname: "github.com",
       },
       {
-        protocol: 'https',
-        hostname: '**.githubusercontent.com',
+        protocol: "https",
+        hostname: "**.githubusercontent.com",
+      },
+      {
+        protocol: "https",
+        hostname: "res.cloudinary.com",
       },
     ],
   },

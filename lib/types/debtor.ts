@@ -13,7 +13,7 @@ export interface ApiResponse<T> {
 export interface DebtorRecord {
   debtorId: number;
   businessLocationId: number;
-  businessLocationName: string;
+  businessLocationName?: string;
   name: string;
   phone?: string;
   address?: string;
@@ -24,8 +24,8 @@ export interface DebtorRecord {
   isActive: boolean;
   lastOrderDate?: string;
   lastPaymentDate?: string;
-  createdByUserId: string;
-  createdByUserName: string;
+  createdByUserId?: string;
+  createdByUserName?: string;
   createdAt: string;
   updatedAt?: string;
 }
@@ -50,7 +50,7 @@ export interface DebtorPaymentTransaction {
   notes?: string;
   balanceBefore: number;
   balanceAfter: number;
-  createdByUserName: string;
+  createdByUserName?: string;
   paidAt: string;
 }
 
@@ -84,7 +84,9 @@ export interface DebtorPagination {
 
 export interface DebtorFilters {
   locationId?: number;
+  businessLocationIds?: number[];
   hasDebt?: boolean;
+  isActive?: boolean;
   search?: string;
   sortBy?: "name" | "balance" | "createdAt";
   sortDir?: "asc" | "desc";
@@ -111,6 +113,10 @@ export interface UpdateDebtorRequest {
   notes?: string;
 }
 
+export interface UpdateDebtorStatusRequest {
+  isActive: boolean;
+}
+
 // --- Record Payment ---
 
 export interface RecordPaymentRequest {
@@ -124,11 +130,16 @@ export interface RecordPaymentResponse {
   debtorId: number;
   amount: number;
   paymentMethod: "cash" | "bank";
+  notes?: string;
   balanceBefore: number;
   balanceAfter: number;
-  outstandingDebtAfter: number;
+  outstandingDebtAfter?: number;
   paidAt: string;
-  createdByUserName: string;
+  createdByUserName?: string;
+}
+
+export interface DeleteDebtorOptions {
+  force?: boolean;
 }
 
 // --- Summary ---

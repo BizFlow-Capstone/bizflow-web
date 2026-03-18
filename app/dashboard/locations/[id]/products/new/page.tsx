@@ -136,6 +136,11 @@ export default function AddProductPage() {
     )
       return;
 
+    if (formData.trackInventory && formData.stock === "") {
+      setSubmitError("Vui lòng nhập số lượng sẵn có (có thể là 0).");
+      return;
+    }
+
     const normalizedBaseUnit = formData.unit.trim().toLowerCase();
     const sellingPrice = Number(formData.sellingPrice) || 0;
     const normalizedPriceTiers = formData.priceList
@@ -494,7 +499,11 @@ export default function AddProductPage() {
                   <Switch
                     checked={formData.trackInventory}
                     onCheckedChange={(checked) =>
-                      setFormData({ ...formData, trackInventory: checked })
+                      setFormData({
+                        ...formData,
+                        trackInventory: checked,
+                        stock: checked ? formData.stock : "",
+                      })
                     }
                     className="data-[state=checked]:bg-[#23C4C1]"
                   />
@@ -558,20 +567,38 @@ export default function AddProductPage() {
                     <div className="space-y-2">
                       <Label
                         htmlFor="stock"
-                        className="text-sm text-gray-700 font-normal"
+                        className={`text-sm font-normal ${
+                          formData.trackInventory
+                            ? "text-gray-700"
+                            : "text-gray-400"
+                        }`}
                       >
-                        Ngưỡng cảnh báo tồn kho
+                        Số lượng sẵn có
+                        {formData.trackInventory && (
+                          <span className="text-red-500">*</span>
+                        )}
                       </Label>
                       <Input
                         id="stock"
                         type="number"
-                        placeholder="0"
+                        min={0}
+                        placeholder={formData.trackInventory ? "0" : "—"}
                         value={formData.stock}
+                        disabled={!formData.trackInventory}
                         onChange={(e) =>
                           setFormData({ ...formData, stock: e.target.value })
                         }
-                        className="h-10"
+                        className={`h-10 ${
+                          !formData.trackInventory
+                            ? "bg-gray-100 cursor-not-allowed"
+                            : ""
+                        }`}
                       />
+                      {!formData.trackInventory && (
+                        <p className="text-xs text-gray-400">
+                          Bật theo dõi tồn kho để nhập số lượng.
+                        </p>
+                      )}
                     </div>
 
                     <div className="space-y-2">

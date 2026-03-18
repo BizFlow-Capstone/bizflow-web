@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   Search,
+  ScanLine,
   Loader2,
   RefreshCw,
   Package,
@@ -13,14 +14,28 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import type { Product } from "@/lib/types/product";
+import {
   useProducts,
   useUpdateProductStatus,
   useDeleteProduct,
+  useAdjustProductStock,
 } from "@/hooks/useProducts";
 import { useLocations } from "@/hooks/useLocations";
 import { useDashboardLocation } from "@/lib/providers/DashboardLocationProvider";
 import type { ProductFilters } from "@/lib/types/product";
 import ProductManagementTable from "@/components/products/ProductManagementTable";
+import { BarcodeScanModal } from "@/components/BarcodeScanModal";
+import StockAdjustmentDialog from "@/components/products/StockAdjustmentDialog";
 
 // --- Main Component ---
 
@@ -33,6 +48,13 @@ export default function ProductsClient() {
   // Mutations
   const updateStatusMutation = useUpdateProductStatus();
   const deleteProductMutation = useDeleteProduct();
+  const adjustStockMutation = useAdjustProductStock();
+
+  // Delete dialog state
+  const [deleteTarget, setDeleteTarget] = useState<Product | null>(null);
+
+  // Stock adjustment dialog state
+  const [stockTarget, setStockTarget] = useState<Product | null>(null);
 
   // Auto-select first location
   const locationId = useMemo(() => {
@@ -43,19 +65,35 @@ export default function ProductsClient() {
 
   // Filter & search state
   const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("");
+  const [scanOpen, setScanOpen] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [pageNumber, setPageNumber] = useState(1);
   const pageSize = 15;
+
+  // Debounce search to avoid sending a request on each keystroke
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery.trim());
+    }, 350);
+
+    return () => window.clearTimeout(timer);
+  }, [searchQuery]);
+
+  useEffect(() => {
+    setPageNumber(1);
+  }, [debouncedSearchQuery]);
 
   // Build filters
   const filters: ProductFilters = useMemo(
     () => ({
       locationId: locationId ?? 0,
+      ...(debouncedSearchQuery && { search: debouncedSearchQuery }),
       ...(statusFilter !== "all" && { status: statusFilter }),
       pageNumber,
       pageSize,
     }),
-    [locationId, statusFilter, pageNumber],
+    [locationId, debouncedSearchQuery, statusFilter, pageNumber],
   );
 
   // Data fetching
@@ -72,19 +110,6 @@ export default function ProductsClient() {
   const totalPages = productData?.totalPages ?? 0;
   const hasPreviousPage = productData?.hasPreviousPage ?? false;
   const hasNextPage = productData?.hasNextPage ?? false;
-
-  // Client-side search
-  const filteredProducts = useMemo(() => {
-    if (!searchQuery) return products;
-    const q = searchQuery.toLowerCase();
-    return products.filter(
-      (p) =>
-        p.name.toLowerCase().includes(q) ||
-        p.productName?.toLowerCase().includes(q) ||
-        p.sku?.toLowerCase().includes(q) ||
-        p.manufacturer?.toLowerCase().includes(q),
-    );
-  }, [products, searchQuery]);
 
   // No location selected
   if (!isLoadingLocations && locations.length === 0) {
@@ -153,11 +178,19 @@ export default function ProductsClient() {
             <Search className="w-4 h-4 absolute left-4 text-gray-400 z-10 pointer-events-none" />
             <Input
               type="text"
-              placeholder="Tìm theo tên, SKU, nhà sản xuất..."
-              className="pl-10 border-0 rounded-none focus:border-0 focus:ring-0 shadow-none bg-transparent"
+              placeholder="Tìm theo tên sản phẩm hoặc mã SKU..."
+              className="pl-10 pr-12 border-0 rounded-none focus:border-0 focus:ring-0 shadow-none bg-transparent"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
+            <button
+              type="button"
+              className="absolute right-2 top-1/2 -translate-y-1/2 p-1 hover:bg-gray-100 rounded"
+              onClick={() => setScanOpen(true)}
+              title="Quét mã vạch để tìm kiếm"
+            >
+              <ScanLine className="w-5 h-5 text-gray-500" />
+            </button>
           </div>
         </div>
 
@@ -193,7 +226,7 @@ export default function ProductsClient() {
         {!isLoading && !error && (
           <>
             <ProductManagementTable
-              products={filteredProducts}
+              products={products}
               locationId={locationId ?? 0}
               statusUpdating={updateStatusMutation.isPending}
               deleteUpdating={deleteProductMutation.isPending}
@@ -215,14 +248,8 @@ export default function ProductsClient() {
                   },
                 });
               }}
-              onDelete={(product) => {
-                const confirmed = window.confirm(
-                  `Bạn có chắc muốn xóa sản phẩm \"${product.name}\"?`,
-                );
-                if (!confirmed) return;
-
-                deleteProductMutation.mutate(product.productId);
-              }}
+              onDelete={(product) => setDeleteTarget(product)}
+              onAdjustStock={(product) => setStockTarget(product)}
             />
 
             {/* Pagination */}
@@ -255,6 +282,67 @@ export default function ProductsClient() {
             )}
           </>
         )}
+
+        <BarcodeScanModal
+          open={scanOpen}
+          onOpenChange={setScanOpen}
+          title="Quét mã vạch sản phẩm"
+          description="Quét xong sẽ tự điền vào ô tìm kiếm để tìm theo SKU."
+          onScanned={(code) => {
+            setSearchQuery(code);
+            setPageNumber(1);
+          }}
+        />
+
+        {/* Stock Adjustment Dialog */}
+        <StockAdjustmentDialog
+          product={stockTarget}
+          open={!!stockTarget}
+          onOpenChange={(open) => {
+            if (!open) setStockTarget(null);
+          }}
+          isPending={adjustStockMutation.isPending}
+          onConfirm={(productId, data) => {
+            adjustStockMutation.mutate(
+              { productId, data },
+              { onSuccess: () => setStockTarget(null) },
+            );
+          }}
+        />
+
+        {/* Delete Confirmation Dialog */}
+        <AlertDialog
+          open={!!deleteTarget}
+          onOpenChange={(open) => {
+            if (!open) setDeleteTarget(null);
+          }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Xác nhận xóa sản phẩm</AlertDialogTitle>
+              <AlertDialogDescription>
+                Bạn có chắc muốn xóa sản phẩm{" "}
+                <span className="font-semibold">{deleteTarget?.name}</span>?
+                Hành động này không thể hoàn tác.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Hủy</AlertDialogCancel>
+              <AlertDialogAction
+                className="bg-red-600 hover:bg-red-700 text-white"
+                disabled={deleteProductMutation.isPending}
+                onClick={() => {
+                  if (!deleteTarget) return;
+                  deleteProductMutation.mutate(deleteTarget.productId, {
+                    onSuccess: () => setDeleteTarget(null),
+                  });
+                }}
+              >
+                {deleteProductMutation.isPending ? "Đang xóa..." : "Xóa"}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </main>
     </div>
   );
