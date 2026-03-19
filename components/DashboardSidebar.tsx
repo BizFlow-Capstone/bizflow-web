@@ -9,6 +9,7 @@ import {
   MapPin,
   Users,
   BarChart3,
+  UserCircle,
   Settings,
   LogOut,
   PackagePlus,
@@ -44,6 +45,7 @@ export default function DashboardSidebar() {
   ];
 
   const bottomMenuItems = [
+    { href: "/dashboard/profile", label: "Tài Khoản", icon: UserCircle },
     { href: "/dashboard/settings", label: "Cài Đặt", icon: Settings },
     { href: "/auth/logout", label: "Đăng Xuất", icon: LogOut },
   ];

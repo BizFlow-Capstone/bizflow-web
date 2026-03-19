@@ -12,8 +12,13 @@ import {
   updateLocation,
   deleteLocation,
   getLocationEmployees,
+  assignLocationEmployees,
 } from "@/services/locationService";
-import type { Location, NewLocationForm } from "@/lib/types/location";
+import type {
+  Location,
+  NewLocationForm,
+  UpdateLocationPayload,
+} from "@/lib/types/location";
 
 // Query keys for cache management
 export const locationKeys = {
@@ -157,13 +162,8 @@ export function useUpdateLocation() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({
-      id,
-      data,
-    }: {
-      id: number;
-      data: Partial<NewLocationForm>;
-    }) => updateLocation(id, data),
+    mutationFn: ({ id, data }: { id: number; data: UpdateLocationPayload }) =>
+      updateLocation(id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: locationKeys.lists() });
     },
@@ -180,6 +180,29 @@ export function useDeleteLocation() {
     mutationFn: (id: number) => deleteLocation(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: locationKeys.lists() });
+    },
+  });
+}
+
+/**
+ * Hook to assign employees for a location
+ */
+export function useAssignLocationEmployees() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      locationId,
+      employeeIds,
+    }: {
+      locationId: number;
+      employeeIds: string[];
+    }) => assignLocationEmployees(locationId, employeeIds),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: locationKeys.lists() });
+      queryClient.invalidateQueries({
+        queryKey: locationKeys.employees(variables.locationId),
+      });
     },
   });
 }

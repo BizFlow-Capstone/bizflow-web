@@ -13,6 +13,7 @@ export async function GET(
 ) {
   try {
     const { importId } = await params;
+    const authHeader = request.headers.get("authorization");
 
     const response = await fetch(
       `${BACKEND_API_URL}/api/my-business/accounting/import/${importId}`,
@@ -20,6 +21,7 @@ export async function GET(
         method: "GET",
         headers: {
           "Content-Type": "application/json",
+          ...(authHeader && { Authorization: authHeader }),
         },
         cache: "no-store",
       },
@@ -51,6 +53,7 @@ export async function PUT(
   try {
     const { importId } = await params;
     const body = await request.json();
+    const authHeader = request.headers.get("authorization");
 
     const response = await fetch(
       `${BACKEND_API_URL}/api/my-business/accounting/import/${importId}`,
@@ -58,6 +61,7 @@ export async function PUT(
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
+          ...(authHeader && { Authorization: authHeader }),
         },
         body: JSON.stringify(body),
       },
@@ -89,6 +93,7 @@ export async function PATCH(
   try {
     const { importId } = await params;
     const body = await request.json();
+    const authHeader = request.headers.get("authorization");
 
     const response = await fetch(
       `${BACKEND_API_URL}/api/my-business/accounting/import/${importId}`,
@@ -96,6 +101,7 @@ export async function PATCH(
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
+          ...(authHeader && { Authorization: authHeader }),
         },
         body: JSON.stringify(body),
       },
@@ -126,6 +132,7 @@ export async function DELETE(
 ) {
   try {
     const { importId } = await params;
+    const authHeader = request.headers.get("authorization");
 
     const response = await fetch(
       `${BACKEND_API_URL}/api/my-business/accounting/import/${importId}`,
@@ -133,6 +140,7 @@ export async function DELETE(
         method: "DELETE",
         headers: {
           "Content-Type": "application/json",
+          ...(authHeader && { Authorization: authHeader }),
         },
       },
     );

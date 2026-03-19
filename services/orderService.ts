@@ -570,14 +570,20 @@ export async function createOrder(
   const newOrder: OrderRecord = {
     orderId: MOCK_ORDERS.length + 1,
     orderCode: `ORD-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}-${String(MOCK_ORDERS.length + 1).padStart(3, "0")}`,
-    status: "PENDING",
+    status: "pending",
     businessLocationId: data.businessLocationId,
     businessLocationName: "Cửa hàng Minh Phát",
     paymentType: data.paymentType,
     paymentStatus: data.paymentType === "debt" ? "UNPAID" : "PAID",
     debtorId: data.debtorId,
+    subTotal: 0,
+    discount: 0,
     totalAmount: 0,
+    cashAmount: 0,
+    bankAmount: 0,
+    debtAmount: 0,
     paidAmount: 0,
+    isFromAI: false,
     note: data.note,
     createdByUserId: "u-owner-001",
     createdByUserName: "Lê Văn Minh",
@@ -606,7 +612,7 @@ export async function confirmOrder(
   if (!order) throw new Error("Không tìm thấy đơn hàng");
 
   return {
-    data: { ...order, status: "PENDING", paymentType: data.paymentType },
+    data: { ...order, status: "pending", paymentType: data.paymentType },
     success: true,
     messageCode: "CONFIRMED",
     message: "Xác nhận đơn hàng thành công",
@@ -626,7 +632,7 @@ export async function cancelOrder(
   if (!order) throw new Error("Không tìm thấy đơn hàng");
 
   return {
-    data: { ...order, status: "CANCELLED" },
+    data: { ...order, status: "cancelled" },
     success: true,
     messageCode: "CANCELLED",
     message: "Hủy đơn hàng thành công",
@@ -648,7 +654,7 @@ export async function completeOrder(
   return {
     data: {
       ...order,
-      status: "COMPLETED",
+      status: "completed",
       paidAmount: order.totalAmount,
       paymentStatus: "PAID",
     },

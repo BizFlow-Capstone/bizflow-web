@@ -3,21 +3,27 @@
 export interface Product {
   productId: number;
   businessLocationId: number;
+  businessLocationName?: string;
   businessTypeId: string;
+  businessTypeName?: string;
   productName: string;
   name: string; // alias for backward compat (= productName)
-  sku?: string;
+  sku?: string | null;
   unit: string;
   sellingPrice: number;
   price: number; // alias for backward compat (= sellingPrice)
   costPrice: number;
   stock: number;
-  imageUrl?: string;
-  imagePublicId?: string;
-  manufacturer?: string;
+  imageUrl?: string | null;
+  imagePublicId?: string | null;
+  manufacturer?: string | null;
   trackInventory: boolean;
   status: string; // "active" | "inactive"
   deletedAt?: string;
+}
+
+export interface ProductDetail extends Product {
+  saleItems: SaleItem[];
 }
 
 export interface ProductPagination {
@@ -52,8 +58,27 @@ export interface ProductSaleItems {
   saleItems: SaleItem[];
 }
 
+export interface ProductCostPriceHistoryItem {
+  importId: number;
+  importCode: string;
+  costPrice: number;
+  quantity: number;
+  totalPrice: number;
+  supplier?: string | null;
+  receivedAt?: string;
+  createdAt?: string;
+}
+
+export interface ProductCostPriceHistory {
+  productId: number;
+  productName: string;
+  currentCostPrice: number;
+  history: ProductCostPriceHistoryItem[];
+}
+
 export interface ProductFilters {
   locationId: number;
+  search?: string;
   name?: string;
   sku?: string;
   businessTypeIds?: string[];
@@ -73,6 +98,8 @@ export interface ApiResponse<T> {
   messageCode: string;
   message: string;
   timestamp: string;
+  errors?: unknown;
+  warnings?: unknown;
 }
 
 // --- Create Product ---
@@ -87,18 +114,54 @@ export interface CreateProductRequest {
   locationId: number;
   businessTypeId: string;
   name: string;
-  sku: string;
+  sku?: string;
   trackInventory: boolean;
   unit: string;
+  sellingPrice?: number;
   costPrice: number;
   stock: number;
+  image?: File;
   imageUrl?: string;
   manufacturer?: string;
   priceTiers: PriceTier[];
+}
+
+export interface UpdateProductRequest {
+  locationId: number;
+  businessTypeId: string;
+  name: string;
+  sku?: string;
+  trackInventory: boolean;
+  unit: string;
+  sellingPrice?: number;
+  costPrice: number;
+  stock: number;
+  image?: File;
+  manufacturer?: string;
+  priceTiers: PriceTier[];
+  removeImage?: boolean;
 }
 
 // --- Update Product Status ---
 
 export interface UpdateProductStatusRequest {
   status: "active" | "inactive";
+}
+
+// --- Adjust Product Stock ---
+// Manual stock adjustment with optional memo.
+// Increase creates import + stock movement. Decrease creates stock movement only.
+// Owner only.
+export interface AdjustStockRequest {
+  stock: number;
+  memo?: string;
+  costPrice?: number;
+}
+
+// --- Adjust Sale Item Selling Prices ---
+// Adjust selected sale-item selling prices by fixed delta.
+// Positive delta increases price, negative delta decreases price. Owner only.
+export interface AdjustSaleItemPriceRequest {
+  deltaAmount: number;
+  saleItemIds: number[];
 }

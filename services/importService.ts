@@ -17,6 +17,7 @@ import type {
   ConfirmImportResponse,
   ImportTemplate,
 } from "@/lib/types/import";
+import { authFetch } from "@/lib/auth/tokenManager";
 
 /**
  * Fetch imports with filters and pagination
@@ -38,7 +39,7 @@ export async function getImports(
     params.append("PageNumber", String(filters.PageNumber));
   if (filters.PageSize) params.append("PageSize", String(filters.PageSize));
 
-  const response = await fetch(`/api/imports?${params.toString()}`, {
+  const response = await authFetch(`/api/imports?${params.toString()}`, {
     method: "GET",
     headers: {
       "Content-Type": "application/json",
@@ -59,7 +60,7 @@ export async function getImports(
 export async function getImportDetail(
   importId: number,
 ): Promise<ApiResponse<ImportDetail>> {
-  const response = await fetch(`/api/imports/${importId}`, {
+  const response = await authFetch(`/api/imports/${importId}`, {
     method: "GET",
     headers: {
       "Content-Type": "application/json",
@@ -80,7 +81,7 @@ export async function getImportDetail(
 export async function createImport(
   data: CreateImportRequest,
 ): Promise<ApiResponse<CreateImportResponse>> {
-  const response = await fetch("/api/imports", {
+  const response = await authFetch("/api/imports", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -105,7 +106,7 @@ export async function updateImport(
   importId: number,
   data: UpdateImportRequest,
 ): Promise<ApiResponse<ImportDetail>> {
-  const response = await fetch(`/api/imports/${importId}`, {
+  const response = await authFetch(`/api/imports/${importId}`, {
     method: "PUT",
     headers: {
       "Content-Type": "application/json",
@@ -130,7 +131,7 @@ export async function confirmImport(
   importId: number,
   data: ConfirmImportRequest,
 ): Promise<ApiResponse<ConfirmImportResponse>> {
-  const response = await fetch(`/api/imports/${importId}`, {
+  const response = await authFetch(`/api/imports/${importId}`, {
     method: "PATCH",
     headers: {
       "Content-Type": "application/json",
@@ -155,7 +156,7 @@ export async function confirmImport(
 export async function deleteImport(
   importId: number,
 ): Promise<ApiResponse<null>> {
-  const response = await fetch(`/api/imports/${importId}`, {
+  const response = await authFetch(`/api/imports/${importId}`, {
     method: "DELETE",
   });
 
@@ -175,7 +176,7 @@ export async function deleteImport(
 export async function getImportTemplate(): Promise<
   ApiResponse<ImportTemplate>
 > {
-  const response = await fetch("/api/imports/template", {
+  const response = await authFetch("/api/imports/template", {
     method: "GET",
     headers: {
       accept: "*/*",

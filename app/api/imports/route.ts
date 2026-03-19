@@ -10,6 +10,7 @@ const BACKEND_API_URL = process.env.BACKEND_API_URL || "http://localhost:5139";
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
+    const authHeader = request.headers.get("authorization");
 
     const backendUrl = new URL(
       `${BACKEND_API_URL}/api/my-business/accounting/imports`,
@@ -22,6 +23,7 @@ export async function GET(request: NextRequest) {
       method: "GET",
       headers: {
         "Content-Type": "application/json",
+        ...(authHeader && { Authorization: authHeader }),
       },
       cache: "no-store",
     });
@@ -57,6 +59,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
+    const authHeader = request.headers.get("authorization");
 
     const response = await fetch(
       `${BACKEND_API_URL}/api/my-business/accounting/import`,
@@ -64,6 +67,7 @@ export async function POST(request: NextRequest) {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          ...(authHeader && { Authorization: authHeader }),
         },
         body: JSON.stringify(body),
       },

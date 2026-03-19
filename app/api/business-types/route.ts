@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
 const BACKEND_API_URL = process.env.BACKEND_API_URL || "http://localhost:5139";
 
@@ -7,12 +7,15 @@ const BACKEND_API_URL = process.env.BACKEND_API_URL || "http://localhost:5139";
  * Proxy to backend: GET /api/business-types
  * Get all business types for filter tags
  */
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    const authHeader = request.headers.get("authorization");
+
     const response = await fetch(`${BACKEND_API_URL}/api/business-types`, {
       method: "GET",
       headers: {
         accept: "*/*",
+        ...(authHeader && { Authorization: authHeader }),
       },
       cache: "no-store",
     });

@@ -7,16 +7,26 @@ import {
 import {
   getProducts,
   getProductSaleItems,
+  getProductCostPriceHistory,
+  getProductDetail,
   createProduct,
+  updateProduct,
   updateProductStatus,
   deleteProduct,
+  adjustProductStock,
+  adjustSaleItemPrices,
 } from "@/services/productService";
 import type {
   ProductFilters,
   ProductPagination,
   ProductSaleItems,
+  ProductCostPriceHistory,
+  ProductDetail,
   CreateProductRequest,
+  UpdateProductRequest,
   UpdateProductStatusRequest,
+  AdjustStockRequest,
+  AdjustSaleItemPriceRequest,
 } from "@/lib/types/product";
 
 /**
@@ -26,8 +36,12 @@ export const productKeys = {
   all: ["products"] as const,
   lists: () => [...productKeys.all, "list"] as const,
   list: (filters: ProductFilters) => [...productKeys.lists(), filters] as const,
+  details: () => [...productKeys.all, "detail"] as const,
+  detail: (productId: number) => [...productKeys.details(), productId] as const,
   saleItems: (productId: number) =>
     [...productKeys.all, "sale-items", productId] as const,
+  costHistory: (productId: number) =>
+    [...productKeys.all, "cost-history", productId] as const,
 };
 
 /**
@@ -61,6 +75,34 @@ export function useProductSaleItems(productId: number) {
 }
 
 /**
+ * Hook to fetch cost price history for a product
+ */
+export function useProductCostPriceHistory(productId: number) {
+  return useQuery<ProductCostPriceHistory>({
+    queryKey: productKeys.costHistory(productId),
+    queryFn: async () => {
+      const response = await getProductCostPriceHistory(productId);
+      return response.data;
+    },
+    enabled: !!productId,
+  });
+}
+
+/**
+ * Hook to fetch a product detail
+ */
+export function useProductDetail(productId: number) {
+  return useQuery<ProductDetail>({
+    queryKey: productKeys.detail(productId),
+    queryFn: async () => {
+      const response = await getProductDetail(productId);
+      return response.data;
+    },
+    enabled: !!productId,
+  });
+}
+
+/**
  * Hook to create a new product
  * Invalidates product list queries on success
  */
@@ -72,6 +114,32 @@ export function useCreateProduct() {
     onSuccess: () => {
       // Invalidate all product list queries so they refetch
       queryClient.invalidateQueries({ queryKey: productKeys.lists() });
+    },
+  });
+}
+
+/**
+ * Hook to update a product
+ */
+export function useUpdateProduct() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      productId,
+      data,
+    }: {
+      productId: number;
+      data: UpdateProductRequest;
+    }) => updateProduct(productId, data),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: productKeys.lists() });
+      queryClient.invalidateQueries({
+        queryKey: productKeys.detail(variables.productId),
+      });
+      queryClient.invalidateQueries({
+        queryKey: productKeys.saleItems(variables.productId),
+      });
     },
   });
 }
@@ -91,8 +159,52 @@ export function useUpdateProductStatus() {
       productId: number;
       data: UpdateProductStatusRequest;
     }) => updateProductStatus(productId, data),
-    onSuccess: () => {
+    onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: productKeys.lists() });
+      queryClient.invalidateQueries({
+        queryKey: productKeys.detail(variables.productId),
+      });
+    },
+  });
+}
+
+/**
+ * Hook to adjust sale item selling prices by a fixed delta. Owner only.
+ */
+export function useAdjustSaleItemPrices() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (data: AdjustSaleItemPriceRequest) =>
+      adjustSaleItemPrices(data),
+    onSuccess: () => {
+      // Invalidate all sale-item queries since we don't know which products were affected
+      queryClient.invalidateQueries({ queryKey: productKeys.all });
+    },
+  });
+}
+
+/**
+ * Hook to adjust product stock manually.
+ * Increase creates import + stock movement. Decrease creates stock movement only.
+ * Owner only.
+ */
+export function useAdjustProductStock() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      productId,
+      data,
+    }: {
+      productId: number;
+      data: AdjustStockRequest;
+    }) => adjustProductStock(productId, data),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: productKeys.lists() });
+      queryClient.invalidateQueries({
+        queryKey: productKeys.detail(variables.productId),
+      });
     },
   });
 }
@@ -106,8 +218,10 @@ export function useDeleteProduct() {
 
   return useMutation({
     mutationFn: (productId: number) => deleteProduct(productId),
-    onSuccess: () => {
+    onSuccess: (_, productId) => {
       queryClient.invalidateQueries({ queryKey: productKeys.lists() });
+      queryClient.removeQueries({ queryKey: productKeys.detail(productId) });
+      queryClient.removeQueries({ queryKey: productKeys.saleItems(productId) });
     },
   });
 }

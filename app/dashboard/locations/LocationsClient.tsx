@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   MapPin,
@@ -53,6 +53,7 @@ import {
   useUpdateLocationStatus,
   useUpdateLocation,
   useDeleteLocation,
+  useAssignLocationEmployees,
   useLocationEmployees,
 } from "@/hooks/useLocations";
 
@@ -129,6 +130,7 @@ export default function LocationsClient() {
   const updateStatusMutation = useUpdateLocationStatus();
   const updateMutation = useUpdateLocation();
   const deleteMutation = useDeleteLocation();
+  const assignEmployeesMutation = useAssignLocationEmployees();
 
   // Fetch employees for dropdown
   const { data: employees = [], isLoading: isLoadingEmployees } =
@@ -141,8 +143,32 @@ export default function LocationsClient() {
       isDetailDialogOpen && !!detailLocation,
     );
 
+  // Fetch employees for edit dialog
+  const { data: editEmployeesData, isLoading: isLoadingEditEmployees } =
+    useLocationEmployees(
+      editingLocation?.id ?? 0,
+      isEditDialogOpen && !!editingLocation,
+    );
+
   // Employee dropdown state
   const [isEmployeeDropdownOpen, setIsEmployeeDropdownOpen] = useState(false);
+  const [isEditEmployeeDropdownOpen, setIsEditEmployeeDropdownOpen] =
+    useState(false);
+  const [editingEmployeeIds, setEditingEmployeeIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (!isEditDialogOpen || !editingLocation) return;
+    const nextEmployeeIds = (editEmployeesData ?? []).map((emp) => emp.userId);
+    setEditingEmployeeIds((prev) => {
+      if (
+        prev.length === nextEmployeeIds.length &&
+        prev.every((id, index) => id === nextEmployeeIds[index])
+      ) {
+        return prev;
+      }
+      return nextEmployeeIds;
+    });
+  }, [isEditDialogOpen, editingLocation, editEmployeesData]);
 
   // Filtered locations based on tab and search
   const filteredLocations = useMemo(() => {
@@ -158,12 +184,18 @@ export default function LocationsClient() {
       const matchesSearch =
         loc.name.toLowerCase().includes(searchLower) ||
         loc.address.toLowerCase().includes(searchLower) ||
-        loc.district.toLowerCase().includes(searchLower) ||
-        loc.city.toLowerCase().includes(searchLower);
+        (loc.district ?? "").toLowerCase().includes(searchLower) ||
+        (loc.city ?? "").toLowerCase().includes(searchLower);
 
       return matchesTab && matchesSearch;
     });
   }, [locations, activeTab, searchQuery]);
+
+  const hasOwnerPermission = useMemo(() => {
+    // Allow creating the very first location when account has no assigned locations yet.
+    if (locations.length === 0) return true;
+    return locations.some((loc) => loc.isOwner === true);
+  }, [locations]);
 
   // Stats calculation
   const stats = useMemo(
@@ -176,12 +208,29 @@ export default function LocationsClient() {
   );
 
   // Handle status toggle with optimistic update
-  const handleStatusToggle = (id: number, isActive: boolean) => {
-    updateStatusMutation.mutate({ id, isActive });
+  const handleStatusToggle = (
+    id: number,
+    nextIsActive: boolean,
+    currentIsActive: boolean,
+    canManage: boolean,
+  ) => {
+    if (nextIsActive === currentIsActive) {
+      return;
+    }
+    if (!canManage) {
+      alert("Bạn không có quyền đổi trạng thái địa điểm này");
+      return;
+    }
+    updateStatusMutation.mutate({ id, isActive: nextIsActive });
   };
 
   // Handle create new location
   const handleCreateLocation = async () => {
+    if (!hasOwnerPermission) {
+      alert("Bạn không có quyền tạo địa điểm kinh doanh");
+      return;
+    }
+
     try {
       const result = await createMutation.mutateAsync(newLocation);
       if (result.success) {
@@ -206,6 +255,10 @@ export default function LocationsClient() {
 
   // Handle edit location
   const handleEditClick = (location: Location) => {
+    if (!location.isOwner) {
+      alert("Bạn không có quyền sửa địa điểm này");
+      return;
+    }
     setEditingLocation(location);
     setIsEditDialogOpen(true);
   };
@@ -215,7 +268,7 @@ export default function LocationsClient() {
     if (!editingLocation) return;
 
     try {
-      const result = await updateMutation.mutateAsync({
+      const updateResult = await updateMutation.mutateAsync({
         id: editingLocation.id,
         data: {
           name: editingLocation.name,
@@ -223,13 +276,27 @@ export default function LocationsClient() {
           district: editingLocation.district,
           city: editingLocation.city,
           phone: editingLocation.phone,
+          taxCode: editingLocation.taxCode ?? "",
         },
       });
-      if (result.success) {
+
+      if (!updateResult.success) {
+        alert(updateResult.message || "Không thể cập nhật địa điểm");
+        return;
+      }
+
+      const assignResult = await assignEmployeesMutation.mutateAsync({
+        locationId: editingLocation.id,
+        employeeIds: editingEmployeeIds,
+      });
+
+      if (assignResult.success) {
         setIsEditDialogOpen(false);
         setEditingLocation(null);
+        setIsEditEmployeeDropdownOpen(false);
+        setEditingEmployeeIds([]);
       } else {
-        alert(result.message || "Không thể cập nhật địa điểm");
+        alert(assignResult.message || "Không thể cập nhật nhân viên phụ trách");
       }
     } catch (err) {
       console.error("Error updating location:", err);
@@ -239,6 +306,10 @@ export default function LocationsClient() {
 
   // Handle delete location
   const handleDeleteClick = (location: Location) => {
+    if (!location.isOwner) {
+      alert("Bạn không có quyền xóa địa điểm này");
+      return;
+    }
     setDeletingLocation(location);
     setIsDeleteDialogOpen(true);
   };
@@ -289,7 +360,13 @@ export default function LocationsClient() {
             </Button>
             <Button
               onClick={() => setIsDialogOpen(true)}
+              disabled={!hasOwnerPermission}
               className="bg-[#23C4C1] hover:bg-[#1da8a5] text-white shadow-lg shadow-[#23C4C1]/20 transition-all"
+              title={
+                hasOwnerPermission
+                  ? undefined
+                  : "Chỉ chủ sở hữu mới có quyền tạo địa điểm"
+              }
             >
               <Plus className="w-4 h-4 mr-2" />
               Tạo kho mới
@@ -425,9 +502,17 @@ export default function LocationsClient() {
                       <Switch
                         checked={location.isActive}
                         onCheckedChange={(checked) =>
-                          handleStatusToggle(location.id, checked)
+                          handleStatusToggle(
+                            location.id,
+                            checked,
+                            location.isActive,
+                            location.isOwner === true,
+                          )
                         }
-                        disabled={updateStatusMutation.isPending}
+                        disabled={
+                          updateStatusMutation.isPending ||
+                          location.isOwner !== true
+                        }
                         className="scale-150 data-[state=checked]:bg-[#23C4C1]"
                       />
                       <DropdownMenu>
@@ -452,18 +537,30 @@ export default function LocationsClient() {
                           <DropdownMenuItem
                             onClick={() => handleEditClick(location)}
                             className="cursor-pointer"
+                            disabled={location.isOwner !== true}
                           >
                             <Pencil className="w-4 h-4 mr-2" />
-                            <span>Sửa thông tin</span>
+                            <span>
+                              {location.isOwner
+                                ? "Sửa thông tin"
+                                : "Sửa thông tin (chỉ chủ sở hữu)"}
+                            </span>
                           </DropdownMenuItem>
                           <DropdownMenuSeparator />
                           <DropdownMenuItem
                             onClick={() => handleDeleteClick(location)}
                             className="cursor-pointer text-red-600 focus:text-red-600"
-                            disabled={deleteMutation.isPending}
+                            disabled={
+                              deleteMutation.isPending ||
+                              location.isOwner !== true
+                            }
                           >
                             <Trash2 className="w-4 h-4 mr-2" />
-                            <span>Xóa địa điểm</span>
+                            <span>
+                              {location.isOwner
+                                ? "Xóa địa điểm"
+                                : "Xóa địa điểm (chỉ chủ sở hữu)"}
+                            </span>
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
@@ -480,7 +577,8 @@ export default function LocationsClient() {
                     <div className="flex items-start gap-3 text-sm group-hover:translate-x-1 transition-transform duration-300">
                       <MapPin className="w-4 h-4 mt-0.5 text-gray-400 shrink-0" />
                       <span className="text-gray-600 leading-snug">
-                        {location.address}, {location.district}, {location.city}
+                        {location.address}, {location.district ?? "-"},{" "}
+                        {location.city ?? "-"}
                       </span>
                     </div>
                     <div className="flex items-center gap-3 text-sm group-hover:translate-x-1 transition-transform duration-300 delay-75">
@@ -530,6 +628,7 @@ export default function LocationsClient() {
             {locations.length === 0 && (
               <Button
                 onClick={() => setIsDialogOpen(true)}
+                disabled={!hasOwnerPermission}
                 className="mt-4 bg-[#23C4C1] hover:bg-[#1da8a5]"
               >
                 <Plus className="w-4 h-4 mr-2" />
@@ -957,6 +1056,139 @@ export default function LocationsClient() {
                     className="w-full"
                   />
                 </div>
+
+                {/* Tax Code */}
+                <div className="space-y-2">
+                  <Label
+                    htmlFor="edit-taxCode"
+                    className="text-sm font-medium text-gray-700"
+                  >
+                    Mã số thuế <span className="text-red-500">*</span>
+                  </Label>
+                  <Input
+                    id="edit-taxCode"
+                    placeholder="VD: 0312345678"
+                    value={editingLocation.taxCode ?? ""}
+                    onChange={(e) =>
+                      setEditingLocation({
+                        ...editingLocation,
+                        taxCode: e.target.value,
+                      })
+                    }
+                    className="w-full"
+                  />
+                </div>
+
+                {/* Employee Selection */}
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium text-gray-700">
+                    <div className="flex items-center gap-2">
+                      <Users className="w-4 h-4" />
+                      Nhân viên phụ trách
+                    </div>
+                  </Label>
+
+                  {editingEmployeeIds.length > 0 && (
+                    <div className="flex flex-wrap gap-2 mb-2">
+                      {editingEmployeeIds.map((empId) => {
+                        const emp = employees.find((e) => e.userId === empId);
+                        return (
+                          <span
+                            key={empId}
+                            className="inline-flex items-center gap-1 px-2 py-1 bg-[#23C4C1]/10 text-[#23C4C1] rounded-md text-sm"
+                          >
+                            {emp?.userName || empId}
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setEditingEmployeeIds(
+                                  editingEmployeeIds.filter(
+                                    (id) => id !== empId,
+                                  ),
+                                )
+                              }
+                              className="hover:bg-[#23C4C1]/20 rounded p-0.5"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </span>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setIsEditEmployeeDropdownOpen(
+                          !isEditEmployeeDropdownOpen,
+                        )
+                      }
+                      className="w-full flex items-center justify-between px-3 py-2 border border-gray-300 rounded-md bg-white hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-[#23C4C1] focus:border-transparent"
+                    >
+                      <span className="text-sm text-gray-500">
+                        {isLoadingEditEmployees || isLoadingEmployees
+                          ? "Đang tải..."
+                          : editingEmployeeIds.length > 0
+                            ? `Đã chọn ${editingEmployeeIds.length} nhân viên`
+                            : "Chọn nhân viên..."}
+                      </span>
+                      <ChevronDown
+                        className={`w-4 h-4 text-gray-400 transition-transform ${
+                          isEditEmployeeDropdownOpen ? "rotate-180" : ""
+                        }`}
+                      />
+                    </button>
+
+                    {isEditEmployeeDropdownOpen && (
+                      <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-48 overflow-y-auto">
+                        {isLoadingEditEmployees || isLoadingEmployees ? (
+                          <div className="px-3 py-2 text-sm text-gray-500 flex items-center gap-2">
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            Đang tải danh sách nhân viên...
+                          </div>
+                        ) : employees.length === 0 ? (
+                          <div className="px-3 py-2 text-sm text-gray-500">
+                            Không có nhân viên nào
+                          </div>
+                        ) : (
+                          employees.map((emp) => (
+                            <label
+                              key={emp.userId}
+                              className="flex items-center gap-3 px-3 py-2 hover:bg-gray-50 cursor-pointer"
+                            >
+                              <Checkbox
+                                checked={editingEmployeeIds.includes(
+                                  emp.userId,
+                                )}
+                                onCheckedChange={(
+                                  checked: boolean | "indeterminate",
+                                ) => {
+                                  if (checked === true) {
+                                    setEditingEmployeeIds([
+                                      ...editingEmployeeIds,
+                                      emp.userId,
+                                    ]);
+                                  } else {
+                                    setEditingEmployeeIds(
+                                      editingEmployeeIds.filter(
+                                        (id) => id !== emp.userId,
+                                      ),
+                                    );
+                                  }
+                                }}
+                              />
+                              <span className="text-sm text-gray-700">
+                                {emp.userName}
+                              </span>
+                            </label>
+                          ))
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
 
               <DialogFooter className="px-6 py-4 bg-gray-50 border-t border-gray-100">
@@ -966,9 +1198,14 @@ export default function LocationsClient() {
                   onClick={() => {
                     setIsEditDialogOpen(false);
                     setEditingLocation(null);
+                    setIsEditEmployeeDropdownOpen(false);
+                    setEditingEmployeeIds([]);
                   }}
                   className="mr-2"
-                  disabled={updateMutation.isPending}
+                  disabled={
+                    updateMutation.isPending ||
+                    assignEmployeesMutation.isPending
+                  }
                 >
                   Hủy
                 </Button>
@@ -977,15 +1214,18 @@ export default function LocationsClient() {
                   onClick={handleUpdateLocation}
                   disabled={
                     updateMutation.isPending ||
+                    assignEmployeesMutation.isPending ||
                     !editingLocation.name ||
                     !editingLocation.address ||
                     !editingLocation.district ||
                     !editingLocation.city ||
-                    !editingLocation.phone
+                    !editingLocation.phone ||
+                    !editingLocation.taxCode
                   }
                   className="bg-[#23C4C1] hover:bg-[#1da8a5] text-white"
                 >
-                  {updateMutation.isPending ? (
+                  {updateMutation.isPending ||
+                  assignEmployeesMutation.isPending ? (
                     <>
                       <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                       Đang cập nhật...
@@ -1087,8 +1327,9 @@ export default function LocationsClient() {
                     <div>
                       <span className="text-gray-500 text-xs">Địa chỉ</span>
                       <p className="text-gray-700">
-                        {detailLocation.address}, {detailLocation.district},{" "}
-                        {detailLocation.city}
+                        {detailLocation.address},{" "}
+                        {detailLocation.district ?? "-"},{" "}
+                        {detailLocation.city ?? "-"}
                       </p>
                     </div>
                   </div>
@@ -1098,7 +1339,9 @@ export default function LocationsClient() {
                       <span className="text-gray-500 text-xs">
                         Số điện thoại
                       </span>
-                      <p className="text-gray-700">{detailLocation.phone}</p>
+                      <p className="text-gray-700">
+                        {detailLocation.phone ?? "-"}
+                      </p>
                     </div>
                   </div>
                   <div className="flex items-center gap-3 text-sm">

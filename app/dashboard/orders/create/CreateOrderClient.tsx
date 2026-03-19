@@ -36,7 +36,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useDebtors } from "@/hooks/useDebtors";
 import type { PaymentType } from "@/lib/types/order";
+import type { DebtorFilters, DebtorRecord } from "@/lib/types/debtor";
 import { saveDraftOrder } from "@/lib/draftOrderStorage";
 
 // --- Mock Product Catalog ---
@@ -50,14 +52,6 @@ interface MockProduct {
   stock: number;
   trackInventory: boolean;
   category: string;
-}
-
-interface MockDebtor {
-  debtorId: number;
-  name: string;
-  phone?: string;
-  currentBalance: number;
-  creditLimit?: number;
 }
 
 const MOCK_PRODUCTS: MockProduct[] = [
@@ -160,37 +154,6 @@ const MOCK_PRODUCTS: MockProduct[] = [
     stock: 500,
     trackInventory: true,
     category: "Ống nước",
-  },
-];
-
-const MOCK_DEBTORS: MockDebtor[] = [
-  {
-    debtorId: 5,
-    name: "Anh Ba",
-    phone: "0912345678",
-    currentBalance: -4200000,
-    creditLimit: 20000000,
-  },
-  {
-    debtorId: 8,
-    name: "Chú Năm",
-    phone: "0987654321",
-    currentBalance: -1500000,
-    creditLimit: 10000000,
-  },
-  {
-    debtorId: 12,
-    name: "Cô Bảy",
-    phone: "0909123456",
-    currentBalance: 0,
-    creditLimit: 15000000,
-  },
-  {
-    debtorId: 15,
-    name: "Anh Tư",
-    phone: "0933456789",
-    currentBalance: -8000000,
-    creditLimit: 10000000,
   },
 ];
 
@@ -374,6 +337,31 @@ export default function CreateOrderClient() {
   // Submitting
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  const debtorFilters: DebtorFilters = useMemo(
+    () => ({
+      isActive: true,
+      page: 1,
+      pageSize: 200,
+    }),
+    [],
+  );
+  const { data: debtorPage, isLoading: isLoadingDebtors } =
+    useDebtors(debtorFilters);
+  const debtorOptions = useMemo<DebtorRecord[]>(
+    () => debtorPage?.items ?? [],
+    [debtorPage?.items],
+  );
+
+  useEffect(() => {
+    if (!selectedDebtorId || isLoadingDebtors) return;
+    const exists = debtorOptions.some(
+      (debtor) => debtor.debtorId === Number(selectedDebtorId),
+    );
+    if (!exists) {
+      setSelectedDebtorId("");
+    }
+  }, [selectedDebtorId, debtorOptions, isLoadingDebtors]);
+
   // Toggle accordion section
   const toggleMethod = (method: CreateMethod) => {
     setActiveMethod((prev) => (prev === method ? null : method));
@@ -485,8 +473,8 @@ export default function CreateOrderClient() {
 
   // Selected debtor
   const selectedDebtor = useMemo(
-    () => MOCK_DEBTORS.find((d) => d.debtorId === Number(selectedDebtorId)),
-    [selectedDebtorId],
+    () => debtorOptions.find((d) => d.debtorId === Number(selectedDebtorId)),
+    [debtorOptions, selectedDebtorId],
   );
 
   // Cart operations
@@ -1234,7 +1222,17 @@ export default function CreateOrderClient() {
                         <SelectValue placeholder="Chọn khách hàng nợ..." />
                       </SelectTrigger>
                       <SelectContent>
-                        {MOCK_DEBTORS.map((debtor) => (
+                        {isLoadingDebtors && (
+                          <SelectItem value="__loading__" disabled>
+                            Đang tải khách hàng...
+                          </SelectItem>
+                        )}
+                        {!isLoadingDebtors && debtorOptions.length === 0 && (
+                          <SelectItem value="__empty__" disabled>
+                            Không có khách hàng đang hoạt động
+                          </SelectItem>
+                        )}
+                        {debtorOptions.map((debtor) => (
                           <SelectItem
                             key={debtor.debtorId}
                             value={String(debtor.debtorId)}
@@ -1252,6 +1250,12 @@ export default function CreateOrderClient() {
                         ))}
                       </SelectContent>
                     </Select>
+
+                    <p className="mt-2 text-xs text-gray-500">
+                      Chỉ hiển thị khách hàng ở trạng thái hoạt động. Nếu không
+                      thấy tên khách, vào tab Khách Hàng Thân Thiết để kích hoạt
+                      lại.
+                    </p>
 
                     {selectedDebtor && selectedDebtor.creditLimit && (
                       <div className="mt-2 text-xs text-gray-500 bg-gray-50 rounded-lg p-2">

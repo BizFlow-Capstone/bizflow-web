@@ -1,0 +1,47 @@
+import { NextRequest, NextResponse } from "next/server";
+
+const BACKEND_API_URL = process.env.BACKEND_API_URL || "http://localhost:5139";
+
+/**
+ * GET /api/products/[productId]/cost-price-history
+ * Proxy to backend: GET /api/my-business/product/{productId}/cost-price-history
+ */
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ productId: string }> },
+) {
+  try {
+    const { productId } = await params;
+    const authHeader = request.headers.get("authorization");
+
+    const response = await fetch(
+      `${BACKEND_API_URL}/api/my-business/product/${productId}/cost-price-history`,
+      {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          ...(authHeader && { Authorization: authHeader }),
+        },
+        cache: "no-store",
+      },
+    );
+
+    const data = await response.json();
+    return NextResponse.json(data, { status: response.status });
+  } catch (error) {
+    console.error("Error fetching product cost price history:", error);
+    return NextResponse.json(
+      {
+        success: false,
+        message: "Failed to fetch product cost price history",
+        data: {
+          productId: 0,
+          productName: "",
+          currentCostPrice: 0,
+          history: [],
+        },
+      },
+      { status: 500 },
+    );
+  }
+}

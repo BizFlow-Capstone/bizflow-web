@@ -9,12 +9,15 @@ const BACKEND_API_URL = process.env.BACKEND_API_URL || "http://localhost:5139";
  */
 export async function GET(request: NextRequest) {
   try {
+    const authHeader = request.headers.get("authorization");
+
     const response = await fetch(
       `${BACKEND_API_URL}/api/my-business/accounting/import-template`,
       {
         method: "GET",
         headers: {
           accept: "*/*",
+          ...(authHeader && { Authorization: authHeader }),
         },
         cache: "no-store",
       },

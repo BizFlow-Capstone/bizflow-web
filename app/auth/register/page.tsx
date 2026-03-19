@@ -3,39 +3,47 @@
 import PublicHeader from "@/components/PublicHeader";
 import PublicFooter from "@/components/PublicFooter";
 import Link from "next/link";
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
+import {
+  signInWithPhoneNumber,
+  RecaptchaVerifier,
+  type ConfirmationResult,
+} from "firebase/auth";
+import { firebaseAuth } from "@/lib/firebase/client";
+import { registerWithPhone } from "@/services/authService";
+
+const ACCESS_TOKEN_KEY = "bizflow_access_token";
+const REFRESH_TOKEN_KEY = "bizflow_refresh_token";
+const AUTH_ACCOUNT_KEY = "bizflow_auth_account";
+const AUTH_CREDENTIALS_KEY = "bizflow_auth_credentials";
+const AUTH_UPDATED_EVENT = "bizflow-auth-updated";
 
 type Step = "register" | "otp" | "success";
-type RegisterMethod = "phone" | "google";
+
+function getDeviceInfo(): string {
+  if (typeof window === "undefined") return "";
+  return window.navigator?.userAgent ?? "";
+}
 
 export default function RegisterPage() {
   const router = useRouter();
   const [step, setStep] = useState<Step>("register");
-  const [registerMethod, setRegisterMethod] = useState<RegisterMethod>("phone");
-  const [showLinkPhoneModal, setShowLinkPhoneModal] = useState(false);
-  const [linkPhoneNumber, setLinkPhoneNumber] = useState("");
-  const [linkOtpSent, setLinkOtpSent] = useState(false);
-  const [linkOtpArray, setLinkOtpArray] = useState(["", "", "", "", "", ""]);
-  const [linkTimer, setLinkTimer] = useState(10);
-  const [canResendLink, setCanResendLink] = useState(false);
-  const linkOtpRefs = useRef<(HTMLInputElement | null)[]>([]);
-  const [showPasswordModal, setShowPasswordModal] = useState(false);
-  const [linkPassword, setLinkPassword] = useState("");
-  const [linkPasswordConfirm, setLinkPasswordConfirm] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
-  const [showPasswordConfirm, setShowPasswordConfirm] = useState(false);
-  const [showLinkSuccessModal, setShowLinkSuccessModal] = useState(false);
   const [formData, setFormData] = useState({
     phone: "",
     password: "",
     fullName: "",
   });
   const [otp, setOtp] = useState(["", "", "", "", "", ""]);
-  const [timer, setTimer] = useState(10);
+  const [timer, setTimer] = useState(60);
   const [canResend, setCanResend] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isSendingOtp, setIsSendingOtp] = useState(false);
+  const [error, setError] = useState("");
   const otpRefs = useRef<(HTMLInputElement | null)[]>([]);
+  const confirmationResultRef = useRef<ConfirmationResult | null>(null);
+  const recaptchaVerifierRef = useRef<RecaptchaVerifier | null>(null);
 
   useEffect(() => {
     if (step === "otp" && timer > 0) {
@@ -52,47 +60,129 @@ export default function RegisterPage() {
     }
   }, [step, timer]);
 
-  useEffect(() => {
-    if (linkOtpSent && linkTimer > 0) {
-      const interval = setInterval(() => {
-        setLinkTimer((prev) => {
-          if (prev <= 1) {
-            setCanResendLink(true);
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-      return () => clearInterval(interval);
-    }
-  }, [linkOtpSent, linkTimer]);
+  const getRecaptchaVerifier = useCallback(() => {
+    if (recaptchaVerifierRef.current) return recaptchaVerifierRef.current;
+    const verifier = new RecaptchaVerifier(
+      firebaseAuth,
+      "recaptcha-container",
+      {
+        size: "invisible",
+      },
+    );
+    recaptchaVerifierRef.current = verifier;
+    return verifier;
+  }, []);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const sendOtp = useCallback(
+    async (phone: string) => {
+      const formatted = phone.startsWith("+84")
+        ? phone
+        : `+84${phone.replace(/^0/, "")}`;
+      const verifier = getRecaptchaVerifier();
+      const confirmation = await signInWithPhoneNumber(
+        firebaseAuth,
+        formatted,
+        verifier,
+      );
+      confirmationResultRef.current = confirmation;
+    },
+    [getRecaptchaVerifier],
+  );
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log("Register:", formData);
-    setRegisterMethod("phone");
-    setStep("otp");
+    setError("");
+    if (!formData.phone || !formData.password || !formData.fullName) {
+      setError("Vui lòng điền đầy đủ thông tin.");
+      return;
+    }
+    if (formData.password.length < 6) {
+      setError("Mật khẩu tối thiểu 6 ký tự.");
+      return;
+    }
+    setIsSendingOtp(true);
+    try {
+      await sendOtp(formData.phone);
+      setTimer(60);
+      setCanResend(false);
+      setOtp(["", "", "", "", "", ""]);
+      setStep("otp");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "";
+      if (msg.includes("TOO_SHORT") || msg.includes("INVALID_PHONE")) {
+        setError("Số điện thoại không hợp lệ.");
+      } else if (msg.includes("TOO_MANY_REQUESTS") || msg.includes("quota")) {
+        setError("Gửi quá nhiều yêu cầu. Vui lòng thử lại sau.");
+      } else {
+        setError("Không thể gửi OTP. Vui lòng thử lại.");
+      }
+      recaptchaVerifierRef.current = null;
+    } finally {
+      setIsSendingOtp(false);
+    }
   };
 
-  const handleGoogleRegister = () => {
-    console.log("Register with Google");
-    setRegisterMethod("google");
-    setStep("success");
+  const handleVerifyOtp = async () => {
+    const otpCode = otp.join("");
+    if (otpCode.length < 6) return;
+    if (!confirmationResultRef.current) {
+      setError("Phiên OTP đã hết hạn. Vui lòng gửi lại.");
+      return;
+    }
+    setError("");
+    setIsLoading(true);
+    try {
+      const credential = await confirmationResultRef.current.confirm(otpCode);
+      const firebaseIdToken = await credential.user.getIdToken();
+      const result = await registerWithPhone(
+        formData.phone,
+        formData.password,
+        firebaseIdToken,
+        formData.fullName,
+        getDeviceInfo(),
+      );
+      const authData = result.data ?? {};
+      if (typeof window !== "undefined") {
+        if (authData.accessToken)
+          window.localStorage.setItem(ACCESS_TOKEN_KEY, authData.accessToken);
+        if (authData.refreshToken)
+          window.localStorage.setItem(REFRESH_TOKEN_KEY, authData.refreshToken);
+        if (authData.account)
+          window.localStorage.setItem(
+            AUTH_ACCOUNT_KEY,
+            JSON.stringify(authData.account),
+          );
+        window.localStorage.setItem(
+          AUTH_CREDENTIALS_KEY,
+          JSON.stringify({ credentials: authData.account?.credentials ?? [] }),
+        );
+        window.dispatchEvent(new Event(AUTH_UPDATED_EVENT));
+      }
+      setStep("success");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "";
+      if (
+        msg.includes("invalid-verification-code") ||
+        msg.includes("INVALID_CODE")
+      ) {
+        setError("Mã OTP không đúng. Vui lòng thử lại.");
+      } else if (msg.includes("PHONE_ALREADY_EXISTS")) {
+        setError("Số điện thoại đã được đăng ký. Vui lòng đăng nhập.");
+      } else {
+        setError(msg || "Đăng ký thất bại. Vui lòng thử lại.");
+      }
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleOtpChange = (index: number, value: string) => {
-    if (value.length > 1) {
-      value = value[0];
-    }
-
+    if (value.length > 1) value = value[0];
     if (/^\d*$/.test(value)) {
       const newOtp = [...otp];
       newOtp[index] = value;
       setOtp(newOtp);
-
-      if (value && index < 5) {
-        otpRefs.current[index + 1]?.focus();
-      }
+      if (value && index < 5) otpRefs.current[index + 1]?.focus();
     }
   };
 
@@ -100,131 +190,39 @@ export default function RegisterPage() {
     index: number,
     e: React.KeyboardEvent<HTMLInputElement>,
   ) => {
-    if (e.key === "Backspace" && !otp[index] && index > 0) {
+    if (e.key === "Backspace" && !otp[index] && index > 0)
       otpRefs.current[index - 1]?.focus();
+  };
+
+  const handleResendOtp = async () => {
+    setError("");
+    recaptchaVerifierRef.current = null;
+    setIsSendingOtp(true);
+    try {
+      await sendOtp(formData.phone);
+      setTimer(60);
+      setCanResend(false);
+      setOtp(["", "", "", "", "", ""]);
+      otpRefs.current[0]?.focus();
+    } catch {
+      setError("Không thể gửi lại OTP. Vui lòng thử lại.");
+    } finally {
+      setIsSendingOtp(false);
     }
-  };
-
-  const handleVerifyOtp = () => {
-    const otpCode = otp.join("");
-    console.log("Verify OTP:", otpCode);
-    setStep("success");
-  };
-
-  const handleResendOtp = () => {
-    setTimer(10);
-    setCanResend(false);
-    setOtp(["", "", "", "", "", ""]);
-    otpRefs.current[0]?.focus();
-    console.log("Resend OTP");
   };
 
   const handleChangePhone = () => {
     setStep("register");
     setOtp(["", "", "", "", "", ""]);
-    setTimer(10);
+    setTimer(60);
     setCanResend(false);
-  };
-
-  const handleLinkAccount = () => {
-    if (registerMethod === "google") {
-      console.log("Link phone number");
-      setShowLinkPhoneModal(true);
-    } else {
-      console.log("Link Google account");
-    }
-  };
-
-  const handleSendLinkOtp = () => {
-    if (linkPhoneNumber) {
-      console.log("Send OTP to:", linkPhoneNumber);
-      setLinkOtpSent(true);
-      setLinkTimer(10);
-      setCanResendLink(false);
-    }
-  };
-
-  const handleLinkOtpChange = (index: number, value: string) => {
-    if (value.length > 1) {
-      value = value[0];
-    }
-
-    if (/^\d*$/.test(value)) {
-      const newOtp = [...linkOtpArray];
-      newOtp[index] = value;
-      setLinkOtpArray(newOtp);
-
-      if (value && index < 5) {
-        linkOtpRefs.current[index + 1]?.focus();
-      }
-    }
-  };
-
-  const handleLinkOtpKeyDown = (
-    index: number,
-    e: React.KeyboardEvent<HTMLInputElement>,
-  ) => {
-    if (e.key === "Backspace" && !linkOtpArray[index] && index > 0) {
-      linkOtpRefs.current[index - 1]?.focus();
-    }
-  };
-
-  const handleResendLinkOtp = () => {
-    setLinkTimer(10);
-    setCanResendLink(false);
-    setLinkOtpArray(["", "", "", "", "", ""]);
-    linkOtpRefs.current[0]?.focus();
-    console.log("Resend Link OTP");
-  };
-
-  const handleVerifyLinkOtp = () => {
-    const otpCode = linkOtpArray.join("");
-    console.log("Verify link OTP:", otpCode);
-    setShowLinkPhoneModal(false);
-    setShowPasswordModal(true);
-  };
-
-  const handleSetupPassword = () => {
-    if (linkPassword && linkPassword === linkPasswordConfirm) {
-      console.log("Password set:", linkPassword);
-      setShowPasswordModal(false);
-      setShowLinkSuccessModal(true);
-    }
-  };
-
-  const handleSkipPassword = () => {
-    setShowPasswordModal(false);
-    setShowLinkSuccessModal(true);
-  };
-
-  const handleCloseLinkSuccess = () => {
-    setShowLinkSuccessModal(false);
-    setLinkPhoneNumber("");
-    setLinkOtpSent(false);
-    setLinkOtpArray(["", "", "", "", "", ""]);
-    setLinkPassword("");
-    setLinkPasswordConfirm("");
-  };
-
-  const isPasswordValid = () => {
-    return (
-      linkPassword.length >= 8 &&
-      /[A-Z]/.test(linkPassword) &&
-      /[a-z]/.test(linkPassword) &&
-      /[0-9]/.test(linkPassword)
-    );
-  };
-
-  const handleGoToHome = () => {
-    router.push("/dashboard");
-  };
-
-  const handleSkip = () => {
-    router.push("/dashboard");
+    setError("");
   };
 
   return (
     <>
+      <div id="recaptcha-container" />
+
       <PublicHeader />
       <div className="min-h-[80vh] flex items-center justify-center py-12 px-4 bg-gray-50">
         <div className="w-full max-w-md">
@@ -249,14 +247,13 @@ export default function RegisterPage() {
                     className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#23C4C1]/20 focus:border-[#23C4C1] outline-none transition-all duration-200"
                   />
                 </div>
-
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Mật khẩu
                   </label>
                   <input
                     type="password"
-                    placeholder="Nhập mật khẩu"
+                    placeholder="Nhập mật khẩu (tối thiểu 6 ký tự)"
                     value={formData.password}
                     onChange={(e) =>
                       setFormData({ ...formData, password: e.target.value })
@@ -264,7 +261,6 @@ export default function RegisterPage() {
                     className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#23C4C1]/20 focus:border-[#23C4C1] outline-none transition-all duration-200"
                   />
                 </div>
-
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Họ và Tên
@@ -280,44 +276,16 @@ export default function RegisterPage() {
                   />
                 </div>
 
+                {error && <p className="text-sm text-red-600">{error}</p>}
+
                 <button
                   type="submit"
-                  className="w-full bg-[#23C4C1] text-white py-3.5 rounded-xl font-semibold hover:bg-[#1a9b99] hover:shadow-lg hover:shadow-[#23C4C1]/25 transition-all duration-200 transform hover:scale-[1.01] active:scale-[0.99]"
+                  disabled={isSendingOtp}
+                  className="w-full bg-[#23C4C1] text-white py-3.5 rounded-xl font-semibold hover:bg-[#1a9b99] transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  Đăng ký
+                  {isSendingOtp ? "Đang gửi mã OTP..." : "Đăng ký"}
                 </button>
               </form>
-
-              <div className="my-6 flex items-center">
-                <div className="flex-1 border-t border-gray-300"></div>
-                <span className="px-4 text-sm text-gray-500">Hoặc</span>
-                <div className="flex-1 border-t border-gray-300"></div>
-              </div>
-
-              <button
-                onClick={handleGoogleRegister}
-                className="w-full border-2 border-gray-200 py-3.5 rounded-xl font-medium hover:bg-gray-50 hover:border-gray-300 transition-all duration-200 flex items-center justify-center gap-3 group"
-              >
-                <svg className="w-5 h-5" viewBox="0 0 24 24">
-                  <path
-                    fill="#4285F4"
-                    d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                  />
-                  <path
-                    fill="#34A853"
-                    d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                  />
-                  <path
-                    fill="#FBBC05"
-                    d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
-                  />
-                  <path
-                    fill="#EA4335"
-                    d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
-                  />
-                </svg>
-                Đăng ký với Google
-              </button>
 
               <div className="mt-6 text-center">
                 <span className="text-gray-600">Bạn đã có tài khoản? </span>
@@ -350,11 +318,11 @@ export default function RegisterPage() {
                   Chúng tôi đã gửi mã 6 số đến số điện thoại
                 </p>
                 <p className="text-sm font-medium text-gray-900">
-                  {formData.phone || "0363053659"}
+                  {formData.phone}
                 </p>
               </div>
 
-              <div className="flex justify-center gap-3 mb-8">
+              <div className="flex justify-center gap-3 mb-6">
                 {otp.map((digit, index) => (
                   <input
                     key={index}
@@ -372,21 +340,25 @@ export default function RegisterPage() {
                 ))}
               </div>
 
+              {error && (
+                <p className="text-sm text-red-600 text-center mb-4">{error}</p>
+              )}
+
               <button
                 onClick={handleVerifyOtp}
-                disabled={otp.some((digit) => !digit)}
-                className="w-full py-3.5 rounded-xl font-semibold mb-6 transition-all duration-200 disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed enabled:bg-[#23C4C1] enabled:text-white enabled:hover:bg-[#1a9b99] enabled:hover:shadow-lg enabled:hover:shadow-[#23C4C1]/25"
+                disabled={otp.some((digit) => !digit) || isLoading}
+                className="w-full py-3.5 rounded-xl font-semibold mb-6 transition-all duration-200 disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed enabled:bg-[#23C4C1] enabled:text-white enabled:hover:bg-[#1a9b99]"
               >
-                Xác thực OTP
+                {isLoading ? "Đang xác thực..." : "Xác thực OTP"}
               </button>
 
               <div className="flex items-center justify-center gap-3 text-sm mb-4">
                 <button
                   onClick={handleResendOtp}
-                  disabled={!canResend}
+                  disabled={!canResend || isSendingOtp}
                   className="text-[#23C4C1] font-medium hover:underline disabled:text-gray-400 disabled:no-underline disabled:cursor-not-allowed"
                 >
-                  Gửi lại mã
+                  {isSendingOtp ? "Đang gửi..." : "Gửi lại mã"}
                 </button>
                 <span className="text-gray-400">•</span>
                 <button
@@ -398,497 +370,46 @@ export default function RegisterPage() {
               </div>
 
               <p className="text-center text-xs text-gray-500">
-                Vì lí do bảo mật, mã xác nhận chỉ có hiệu lực trong {timer} phút
+                {canResend
+                  ? "Mã đã hết hạn. Vui lòng gửi lại."
+                  : `Gửi lại mã sau ${timer}s`}
               </p>
             </div>
           )}
 
           {step === "success" && (
-            <div className="bg-white rounded-2xl shadow-[0_4px_20px_rgba(0,0,0,0.08)] p-10 animate-scaleIn">
-              <div className="text-center mb-8">
-                <Image
-                  src="/pictures/auth/Container.png"
-                  alt="Success"
-                  width={80}
-                  height={80}
-                  className="mx-auto mb-4"
-                />
-                <h2 className="text-2xl font-bold text-gray-800 mb-2">
-                  Chào mừng đến với BizFlow!
-                </h2>
-                <p className="text-sm text-gray-600 mb-8">
-                  Tài khoản của bạn đã đăng ký thành công.
-                </p>
-              </div>
-
-              <div className="bg-gradient-to-br from-gray-50 to-gray-100/50 rounded-xl p-6 mb-6 border border-gray-100">
-                <h3 className="text-base font-semibold text-gray-800 mb-2">
-                  Bảo vệ tài khoản của bạn
-                </h3>
-                <p className="text-sm text-gray-600 mb-4">
-                  {registerMethod === "google"
-                    ? "Kết nối số điện thoại để dễ dàng đăng nhập và bảo mật."
-                    : "Kết nối tài khoản Google để dễ dàng đăng nhập và bảo mật."}
-                </p>
-                <button
-                  onClick={handleLinkAccount}
-                  className="w-full bg-white border-2 border-gray-200 py-3 rounded-xl font-medium hover:bg-gray-50 hover:border-gray-300 transition-all duration-200 flex items-center justify-center gap-2 group"
-                >
-                  {registerMethod === "google" ? (
-                    <>
-                      <svg
-                        className="w-5 h-5 text-[#23C4C1]"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"
-                        />
-                      </svg>
-                      <span className="text-gray-700">
-                        Kết nối số điện thoại
-                      </span>
-                    </>
-                  ) : (
-                    <>
-                      <svg className="w-5 h-5" viewBox="0 0 24 24">
-                        <path
-                          fill="#4285F4"
-                          d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                        />
-                        <path
-                          fill="#34A853"
-                          d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                        />
-                        <path
-                          fill="#FBBC05"
-                          d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
-                        />
-                        <path
-                          fill="#EA4335"
-                          d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
-                        />
-                      </svg>
-                      <span className="text-gray-700">
-                        Kết nối tài khoản Google
-                      </span>
-                    </>
-                  )}
-                </button>
-              </div>
+            <div className="bg-white rounded-2xl shadow-[0_4px_20px_rgba(0,0,0,0.08)] p-10 animate-scaleIn text-center">
+              <Image
+                src="/pictures/auth/Container.png"
+                alt="Success"
+                width={80}
+                height={80}
+                className="mx-auto mb-4"
+              />
+              <h2 className="text-2xl font-bold text-gray-800 mb-2">
+                Chào mừng đến với BizFlow!
+              </h2>
+              <p className="text-sm text-gray-600 mb-8">
+                Tài khoản của bạn đã đăng ký thành công.
+              </p>
 
               <button
-                onClick={handleGoToHome}
-                className="w-full bg-[#23C4C1] text-white py-4 rounded-xl font-semibold hover:bg-[#1a9b99] hover:shadow-lg hover:shadow-[#23C4C1]/25 transition-all duration-200 mb-4"
+                onClick={() => router.push("/dashboard")}
+                className="w-full bg-[#23C4C1] text-white py-4 rounded-xl font-semibold hover:bg-[#1a9b99] transition-all duration-200 mb-4"
               >
-                Đi đến trang chủ
+                Vào trang chủ
               </button>
 
               <button
-                onClick={handleSkip}
+                onClick={() => router.push("/auth/login")}
                 className="w-full text-gray-500 text-sm hover:text-gray-700 transition-colors"
               >
-                Tạm thời bỏ qua
+                Đến trang đăng nhập
               </button>
             </div>
           )}
         </div>
       </div>
-
-      {showLinkPhoneModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm"></div>
-
-          <div className="bg-white rounded-2xl p-8 w-full max-w-md relative z-10 shadow-2xl animate-scaleIn">
-            <button
-              onClick={() => {
-                setShowLinkPhoneModal(false);
-                setLinkOtpSent(false);
-                setLinkPhoneNumber("");
-                setLinkOtpArray(["", "", "", "", "", ""]);
-              }}
-              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors"
-            >
-              <svg
-                className="w-6 h-6"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M6 18L18 6M6 6l12 12"
-                />
-              </svg>
-            </button>
-
-            <h2 className="text-xl font-bold text-gray-900 mb-6">
-              Liên kết số điện thoại
-            </h2>
-
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Số điện thoại
-                </label>
-                <div className="flex gap-2">
-                  <input
-                    type="tel"
-                    placeholder={linkPhoneNumber || "0363053659"}
-                    value={linkPhoneNumber}
-                    onChange={(e) => setLinkPhoneNumber(e.target.value)}
-                    disabled={linkOtpSent}
-                    className="flex-1 px-4 py-3 bg-gray-100 border border-gray-300 rounded-lg outline-none disabled:text-gray-500"
-                  />
-                  <button
-                    onClick={handleSendLinkOtp}
-                    disabled={!linkPhoneNumber || linkOtpSent}
-                    className="px-6 py-3 bg-gray-200 text-gray-600 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
-                  >
-                    {linkOtpSent ? "Đã gửi" : "Gửi mã"}
-                  </button>
-                </div>
-              </div>
-
-              {linkOtpSent && (
-                <>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Mã xác thực
-                    </label>
-                    <p className="text-xs text-gray-500 mb-3">
-                      Nhập mã 6 chữ số đã được gửi đến số điện thoại của bạn
-                    </p>
-                    <div className="flex justify-center gap-2.5 mb-4">
-                      {linkOtpArray.map((digit, index) => (
-                        <input
-                          key={index}
-                          ref={(el) => {
-                            linkOtpRefs.current[index] = el;
-                          }}
-                          type="text"
-                          inputMode="numeric"
-                          maxLength={1}
-                          value={digit}
-                          onChange={(e) =>
-                            handleLinkOtpChange(index, e.target.value)
-                          }
-                          onKeyDown={(e) => handleLinkOtpKeyDown(index, e)}
-                          className="w-11 h-13 text-center text-lg font-bold border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-[#23C4C1]/20 focus:border-[#23C4C1] outline-none transition-all duration-200"
-                        />
-                      ))}
-                    </div>
-                    <div className="text-center">
-                      <button
-                        onClick={handleResendLinkOtp}
-                        disabled={!canResendLink}
-                        className="text-sm text-[#23C4C1] hover:underline disabled:text-gray-400 disabled:no-underline disabled:cursor-not-allowed"
-                      >
-                        Gửi lại mã
-                      </button>
-                    </div>
-                  </div>
-                </>
-              )}
-
-              <button
-                onClick={handleVerifyLinkOtp}
-                disabled={linkOtpArray.some((digit) => !digit)}
-                className="w-full py-3.5 rounded-xl font-semibold transition-all duration-200 disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed enabled:bg-[#23C4C1] enabled:text-white enabled:hover:bg-[#1a9b99] enabled:hover:shadow-lg enabled:hover:shadow-[#23C4C1]/25"
-              >
-                Xác nhận
-              </button>
-
-              {linkOtpSent && (
-                <p className="text-center text-xs text-gray-500">
-                  Mã xác thực sẽ hết hạn sau {linkTimer} phút
-                </p>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {showPasswordModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm"></div>
-
-          <div className="bg-white rounded-2xl p-8 w-full max-w-md relative z-10 shadow-2xl animate-scaleIn">
-            <button
-              onClick={() => setShowPasswordModal(false)}
-              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors"
-            >
-              <svg
-                className="w-6 h-6"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M6 18L18 6M6 6l12 12"
-                />
-              </svg>
-            </button>
-
-            <h2 className="text-xl font-bold text-gray-900 mb-2">
-              Thiết lập mật khẩu
-            </h2>
-            <p className="text-sm text-gray-600 mb-6">
-              Tạo mật khẩu để dễ dàng nhập bằng số điện thoại
-            </p>
-
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Mật khẩu mới
-                </label>
-                <div className="relative">
-                  <input
-                    type={showPassword ? "text" : "password"}
-                    placeholder="Nhập mật khẩu mới"
-                    value={linkPassword}
-                    onChange={(e) => setLinkPassword(e.target.value)}
-                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-[#23C4C1]/20 focus:border-[#23C4C1] outline-none transition-all duration-200 pr-12"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                  >
-                    <svg
-                      className="w-5 h-5"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                    >
-                      {showPassword ? (
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"
-                        />
-                      ) : (
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M15 12a3 3 0 11-6 0 3 3 0 016 0z M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
-                        />
-                      )}
-                    </svg>
-                  </button>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Nhập lại mật khẩu
-                </label>
-                <div className="relative">
-                  <input
-                    type={showPasswordConfirm ? "text" : "password"}
-                    placeholder="Nhập lại mật khẩu"
-                    value={linkPasswordConfirm}
-                    onChange={(e) => setLinkPasswordConfirm(e.target.value)}
-                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-[#23C4C1]/20 focus:border-[#23C4C1] outline-none transition-all duration-200 pr-12"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPasswordConfirm(!showPasswordConfirm)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                  >
-                    <svg
-                      className="w-5 h-5"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                    >
-                      {showPasswordConfirm ? (
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"
-                        />
-                      ) : (
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M15 12a3 3 0 11-6 0 3 3 0 016 0z M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
-                        />
-                      )}
-                    </svg>
-                  </button>
-                </div>
-              </div>
-
-              <div className="bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-100 rounded-xl p-4">
-                <p className="text-sm font-semibold text-gray-700 mb-3">
-                  Mật khẩu mạnh nên có:
-                </p>
-                <ul className="text-sm space-y-2">
-                  <li
-                    className={`flex items-center gap-2 ${linkPassword.length >= 8 ? "text-green-600" : "text-blue-600"}`}
-                  >
-                    <span
-                      className={`w-1.5 h-1.5 rounded-full ${linkPassword.length >= 8 ? "bg-green-500" : "bg-blue-400"}`}
-                    ></span>
-                    <span>Ít nhất 8 ký tự</span>
-                  </li>
-                  <li
-                    className={`flex items-center gap-2 ${/[A-Z]/.test(linkPassword) && /[a-z]/.test(linkPassword) ? "text-green-600" : "text-blue-600"}`}
-                  >
-                    <span
-                      className={`w-1.5 h-1.5 rounded-full ${/[A-Z]/.test(linkPassword) && /[a-z]/.test(linkPassword) ? "bg-green-500" : "bg-blue-400"}`}
-                    ></span>
-                    <span>Chữ hoa và chữ thường</span>
-                  </li>
-                  <li
-                    className={`flex items-center gap-2 ${/[0-9]/.test(linkPassword) ? "text-green-600" : "text-blue-600"}`}
-                  >
-                    <span
-                      className={`w-1.5 h-1.5 rounded-full ${/[0-9]/.test(linkPassword) ? "bg-green-500" : "bg-blue-400"}`}
-                    ></span>
-                    <span>Ít nhất một số</span>
-                  </li>
-                </ul>
-              </div>
-
-              <button
-                onClick={handleSetupPassword}
-                disabled={
-                  !linkPassword ||
-                  !linkPasswordConfirm ||
-                  linkPassword !== linkPasswordConfirm ||
-                  !isPasswordValid()
-                }
-                className="w-full py-3.5 rounded-xl font-semibold transition-all duration-200 disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed enabled:bg-[#23C4C1] enabled:text-white enabled:hover:bg-[#1a9b99] enabled:hover:shadow-lg enabled:hover:shadow-[#23C4C1]/25"
-              >
-                Hoàn tất
-              </button>
-
-              <button
-                onClick={handleSkipPassword}
-                className="w-full text-gray-600 text-sm hover:text-gray-800 transition-colors"
-              >
-                Bỏ qua
-              </button>
-
-              <p className="text-center text-xs text-gray-500">
-                Bạn có thể thiết lập mật khẩu sau trong phần cài đặt tài khoản
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {showLinkSuccessModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm"></div>
-
-          <div className="bg-white rounded-2xl p-8 w-full max-w-md relative z-10 text-center shadow-2xl animate-scaleIn">
-            <div className="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-br from-green-400 to-green-500 rounded-full mb-6 shadow-lg shadow-green-200">
-              <svg
-                className="w-12 h-12 text-white"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={3}
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M5 13l4 4L19 7"
-                />
-              </svg>
-            </div>
-
-            <h2 className="text-2xl font-bold text-gray-900 mb-3">
-              Liên kết thành công!
-            </h2>
-            <p className="text-sm text-gray-600 mb-8">
-              Tài khoản của bạn giờ đã có thể đăng nhập bằng cả
-              <br />
-              Số điện thoại và Google.
-            </p>
-
-            <div className="flex items-center justify-center gap-6 mb-8 py-4 px-6 bg-gray-50 rounded-xl">
-              <div className="flex flex-col items-center gap-2">
-                <div className="w-14 h-14 bg-gradient-to-br from-blue-100 to-blue-200 rounded-full flex items-center justify-center shadow-sm">
-                  <svg
-                    className="w-6 h-6 text-blue-600"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"
-                    />
-                  </svg>
-                </div>
-                <span className="text-xs text-gray-600">Điện thoại</span>
-              </div>
-
-              <div className="text-2xl text-gray-300 font-light">+</div>
-
-              <div className="flex flex-col items-center gap-2">
-                <div className="w-14 h-14 bg-gradient-to-br from-red-50 to-orange-50 rounded-full flex items-center justify-center shadow-sm">
-                  <svg className="w-6 h-6" viewBox="0 0 24 24">
-                    <path
-                      fill="#4285F4"
-                      d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                    />
-                    <path
-                      fill="#34A853"
-                      d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                    />
-                    <path
-                      fill="#FBBC05"
-                      d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
-                    />
-                    <path
-                      fill="#EA4335"
-                      d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
-                    />
-                  </svg>
-                </div>
-                <span className="text-xs text-gray-600">Google</span>
-              </div>
-            </div>
-
-            <button
-              onClick={() => {
-                handleCloseLinkSuccess();
-                handleGoToHome();
-              }}
-              className="w-full bg-gradient-to-r from-blue-600 to-blue-700 text-white py-3.5 rounded-xl font-semibold hover:from-blue-700 hover:to-blue-800 hover:shadow-lg hover:shadow-blue-200 transition-all duration-200 mb-3"
-            >
-              Về trang chủ
-            </button>
-
-            <button
-              onClick={handleCloseLinkSuccess}
-              className="w-full text-gray-600 text-sm hover:text-gray-800 transition-colors"
-            >
-              Đóng
-            </button>
-          </div>
-        </div>
-      )}
 
       <PublicFooter />
 

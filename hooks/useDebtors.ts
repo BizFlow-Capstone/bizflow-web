@@ -9,8 +9,10 @@ import {
   getDebtorDetail,
   createDebtor,
   updateDebtor,
+  updateDebtorStatus,
   deleteDebtor,
   recordPayment,
+  getDebtorPayments,
   getDebtSummary,
 } from "@/services/debtorService";
 import type {
@@ -19,7 +21,10 @@ import type {
   DebtorFull,
   CreateDebtorRequest,
   UpdateDebtorRequest,
+  UpdateDebtorStatusRequest,
+  DeleteDebtorOptions,
   RecordPaymentRequest,
+  DebtorPaymentTransaction,
   DebtSummary,
 } from "@/lib/types/debtor";
 
@@ -29,6 +34,7 @@ export const debtorKeys = {
   list: (filters: DebtorFilters) => [...debtorKeys.lists(), filters] as const,
   details: () => [...debtorKeys.all, "detail"] as const,
   detail: (id: number) => [...debtorKeys.details(), id] as const,
+  payments: (id: number) => [...debtorKeys.all, "payments", id] as const,
   summary: () => [...debtorKeys.all, "summary"] as const,
 };
 
@@ -64,6 +70,17 @@ export function useDebtSummary() {
   });
 }
 
+export function useDebtorPayments(debtorId: number) {
+  return useQuery<DebtorPaymentTransaction[]>({
+    queryKey: debtorKeys.payments(debtorId),
+    queryFn: async () => {
+      const response = await getDebtorPayments(debtorId);
+      return response.data;
+    },
+    enabled: !!debtorId,
+  });
+}
+
 export function useCreateDebtor() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -91,10 +108,33 @@ export function useUpdateDebtor() {
   });
 }
 
+export function useUpdateDebtorStatus() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      debtorId,
+      data,
+    }: {
+      debtorId: number;
+      data: UpdateDebtorStatusRequest;
+    }) => updateDebtorStatus(debtorId, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: debtorKeys.all });
+    },
+  });
+}
+
 export function useDeleteDebtor() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (debtorId: number) => deleteDebtor(debtorId),
+    mutationFn: ({
+      debtorId,
+      options,
+    }: {
+      debtorId: number;
+      options?: DeleteDebtorOptions;
+    }) => deleteDebtor(debtorId, options),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: debtorKeys.lists() });
       queryClient.invalidateQueries({ queryKey: debtorKeys.summary() });

@@ -2,21 +2,83 @@ import { NextRequest, NextResponse } from "next/server";
 
 const BACKEND_URL = process.env.BACKEND_API_URL;
 
+type LocationDto = {
+  id: number;
+  name: string;
+  address: string;
+  district: string | null;
+  city: string | null;
+  phone: string | null;
+  taxCode: string | null;
+  isActive: boolean;
+  ownerName: string | null;
+  isOwner?: boolean;
+};
+
+type ApiResult<T> = {
+  data: T;
+  success: boolean;
+  messageCode: string;
+  message: string;
+  errors?: unknown;
+  timestamp?: string;
+};
+
 //trong request chứa token, nếu có thì mới truyền vào header Authorization ocnf không thì không truyền
 export async function GET(request: NextRequest) {
   try {
     const authHeader = request.headers.get("authorization");
-    const response = await fetch(`${BACKEND_URL}/api/location/me/owned`, {
-      method: "GET",
-      headers: {
-        accept: "*/*",
-        ...(authHeader && { Authorization: authHeader }),
+
+    const headers = {
+      accept: "*/*",
+      ...(authHeader && { Authorization: authHeader }),
+    };
+
+    const [ownedResponse, workResponse] = await Promise.all([
+      fetch(`${BACKEND_URL}/api/location/me/owned`, {
+        method: "GET",
+        headers,
+      }),
+      fetch(`${BACKEND_URL}/api/location/work-at-locations`, {
+        method: "GET",
+        headers,
+      }),
+    ]);
+
+    const [ownedData, workData] = (await Promise.all([
+      ownedResponse.json(),
+      workResponse.json(),
+    ])) as [ApiResult<LocationDto[]>, ApiResult<LocationDto[]>];
+
+    if (!ownedResponse.ok && !workResponse.ok) {
+      return NextResponse.json(ownedData, {
+        status: ownedResponse.status,
+      });
+    }
+
+    const mergedMap = new Map<number, LocationDto>();
+
+    for (const location of workData?.data ?? []) {
+      mergedMap.set(location.id, { ...location, isOwner: false });
+    }
+
+    for (const location of ownedData?.data ?? []) {
+      mergedMap.set(location.id, { ...location, isOwner: true });
+    }
+
+    const mergedData = Array.from(mergedMap.values());
+
+    return NextResponse.json(
+      {
+        data: mergedData,
+        success: true,
+        messageCode: "COMMON_DATA_RETRIEVED",
+        message: "Data retrieved successfully",
+        errors: null,
+        timestamp: new Date().toISOString(),
       },
-    });
-
-    const data = await response.json();
-
-    return NextResponse.json(data, { status: response.status });
+      { status: 200 },
+    );
   } catch (error) {
     console.error("Error fetching locations:", error);
     return NextResponse.json(

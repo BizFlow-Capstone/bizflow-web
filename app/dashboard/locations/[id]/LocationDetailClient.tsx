@@ -9,12 +9,9 @@ import {
   Search,
   Plus,
   Filter,
-  MoreVertical,
   ArrowLeft,
   Package,
   Upload,
-  Pencil,
-  Info,
   ScanLine,
   AlertTriangle,
   FileText,
@@ -33,21 +30,6 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import {
   Dialog,
   DialogContent,
@@ -79,6 +61,7 @@ import {
   useUpdateProductStatus,
   useDeleteProduct,
 } from "@/hooks/useProducts";
+import ProductManagementTable from "@/components/products/ProductManagementTable";
 import { useBusinessTypes } from "@/hooks/useBusinessTypes";
 import type { ProductFilters } from "@/lib/types/product";
 import { useLocationDetail } from "@/hooks/useLocations";
@@ -804,203 +787,26 @@ export default function LocationDetailClient({
 
         {/* Products Table */}
         {!isLoading && (
-          <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-            <Table>
-              <TableHeader>
-                <TableRow className="bg-gray-50">
-                  <TableHead className="font-semibold text-gray-700">
-                    Sản phẩm
-                  </TableHead>
-                  <TableHead className="font-semibold text-gray-700">
-                    Tồn kho
-                  </TableHead>
-                  <TableHead className="font-semibold text-gray-700">
-                    Giá bán
-                  </TableHead>
-                  <TableHead className="font-semibold text-gray-700">
-                    Theo dõi kho
-                  </TableHead>
-                  <TableHead className="font-semibold text-gray-700">
-                    Trạng thái
-                  </TableHead>
-                  <TableHead className="font-semibold text-gray-700">
-                    Thao Tác
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredProducts.length > 0 ? (
-                  filteredProducts.map((product) => (
-                    <TableRow
-                      key={product.productId}
-                      className={`hover:bg-gray-50 ${product.status !== "active" ? "opacity-50 bg-gray-50/50" : ""}`}
-                    >
-                      <TableCell>
-                        <div className="flex items-center gap-3">
-                          <div className="w-12 h-12 bg-gray-100 rounded overflow-hidden flex items-center justify-center">
-                            <Package className="w-6 h-6 text-gray-400" />
-                          </div>
-                          <div className="flex flex-col">
-                            <span
-                              className={`font-medium ${product.status === "active" ? "text-gray-900" : "text-gray-500"}`}
-                            >
-                              {product.name}
-                            </span>
-                            {product.status !== "active" && (
-                              <span className="text-xs text-gray-500">
-                                Đã ẩn
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <span
-                            className={`font-medium ${
-                              product.stock <= 10
-                                ? "text-orange-600"
-                                : "text-gray-900"
-                            }`}
-                          >
-                            {product.stock}
-                          </span>
-                          {product.stock <= 10 &&
-                            product.status === "active" && (
-                              <Badge
-                                variant="secondary"
-                                className="bg-orange-100 text-[#BB4D00] hover:bg-orange-100 text-xs"
-                              >
-                                Sắp hết
-                              </Badge>
-                            )}
-                        </div>
-                      </TableCell>
-                      <TableCell className="font-medium text-gray-900">
-                        {product.price.toLocaleString()}đ
-                      </TableCell>
-                      <TableCell>
-                        <Badge
-                          variant="secondary"
-                          className={
-                            product.trackInventory
-                              ? "bg-blue-50 text-blue-700"
-                              : "bg-gray-100 text-gray-500"
-                          }
-                        >
-                          {product.trackInventory ? "Có" : "Không"}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <Badge
-                          variant="secondary"
-                          className={
-                            product.status === "active"
-                              ? "bg-green-50 text-green-700 ring-1 ring-green-600/20"
-                              : "bg-gray-100 text-gray-600 ring-1 ring-gray-500/10"
-                          }
-                        >
-                          {product.status === "active"
-                            ? "Đang bán"
-                            : "Ngừng bán"}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="text-gray-400 hover:text-gray-600"
-                            >
-                              <MoreVertical className="w-5 h-5" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end" className="w-48">
-                            <DropdownMenuItem
-                              onClick={() => {
-                                router.push(
-                                  `/dashboard/locations/${locationId}/products/${product.productId}`,
-                                );
-                              }}
-                              className="cursor-pointer"
-                            >
-                              <Info className="w-4 h-4 mr-2" />
-                              <span>Xem chi tiết</span>
-                            </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem
-                              onClick={() => {
-                                router.push(
-                                  `/dashboard/locations/${locationId}/products/new?productId=${product.productId}`,
-                                );
-                              }}
-                              className="cursor-pointer"
-                            >
-                              <Pencil className="w-4 h-4 mr-2" />
-                              <span>Sửa sản phẩm</span>
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onClick={() => {
-                                updateStatusMutation.mutate({
-                                  productId: product.productId,
-                                  data: {
-                                    status:
-                                      product.status === "active"
-                                        ? "inactive"
-                                        : "active",
-                                  },
-                                });
-                              }}
-                              className="cursor-pointer"
-                            >
-                              {product.status === "active" ? (
-                                <>
-                                  <AlertTriangle className="w-4 h-4 mr-2" />
-                                  <span>Ngừng bán</span>
-                                </>
-                              ) : (
-                                <>
-                                  <Package className="w-4 h-4 mr-2" />
-                                  <span>Kích hoạt lại</span>
-                                </>
-                              )}
-                            </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem
-                              onClick={() =>
-                                setDeleteTarget({
-                                  productId: product.productId,
-                                  name: product.name,
-                                })
-                              }
-                              className="cursor-pointer text-red-600 focus:text-red-600"
-                            >
-                              <AlertTriangle className="w-4 h-4 mr-2" />
-                              <span>Xóa sản phẩm</span>
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </TableCell>
-                    </TableRow>
-                  ))
-                ) : (
-                  <TableRow>
-                    <TableCell
-                      colSpan={6}
-                      className="text-center py-12 text-gray-500"
-                    >
-                      <Package className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-                      <p className="font-medium">Không tìm thấy sản phẩm</p>
-                      <p className="text-sm">
-                        Thử thay đổi từ khóa hoặc thêm sản phẩm mới
-                      </p>
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </div>
+          <ProductManagementTable
+            products={filteredProducts}
+            locationId={locationId}
+            statusUpdating={updateStatusMutation.isPending}
+            deleteUpdating={deleteProductMutation.isPending}
+            onToggleStatus={(product) => {
+              updateStatusMutation.mutate({
+                productId: product.productId,
+                data: {
+                  status: product.status === "active" ? "inactive" : "active",
+                },
+              });
+            }}
+            onDelete={(product) =>
+              setDeleteTarget({
+                productId: product.productId,
+                name: product.productName || product.name,
+              })
+            }
+          />
         )}
       </main>
 
@@ -1358,6 +1164,29 @@ export default function LocationDetailClient({
               onClick={async () => {
                 setCreateError(null);
                 try {
+                  const normalizedBaseUnit = newProduct.unit
+                    .trim()
+                    .toLowerCase();
+                  const normalizedPriceTiers = newProduct.priceTiers
+                    .map((t) => ({
+                      unit: t.unit.trim(),
+                      quantity: t.quantity,
+                      price: t.price,
+                    }))
+                    .filter(
+                      (t) =>
+                        t.unit.length > 0 &&
+                        t.price > 0 &&
+                        t.unit.toLowerCase() !== normalizedBaseUnit,
+                    );
+
+                  const baseTier = newProduct.priceTiers.find(
+                    (t) =>
+                      t.price > 0 &&
+                      t.quantity === 1 &&
+                      t.unit.trim().toLowerCase() === normalizedBaseUnit,
+                  );
+
                   const result = await createProductMutation.mutateAsync({
                     locationId: Number(locationId),
                     businessTypeId: newProduct.businessTypeId,
@@ -1365,14 +1194,14 @@ export default function LocationDetailClient({
                     sku: newProduct.sku.trim() || undefined,
                     trackInventory: newProduct.trackInventory,
                     unit: newProduct.unit.trim(),
+                    sellingPrice:
+                      baseTier?.price ||
+                      newProduct.priceTiers.find((t) => t.price > 0)?.price ||
+                      0,
                     costPrice: newProduct.costPrice,
                     stock: newProduct.stock,
                     manufacturer: newProduct.manufacturer.trim() || undefined,
-                    priceTiers: newProduct.priceTiers.map((t) => ({
-                      unit: t.unit || newProduct.unit.trim(),
-                      quantity: t.quantity,
-                      price: t.price,
-                    })),
+                    priceTiers: normalizedPriceTiers,
                   });
                   if (result.success) {
                     setIsAddDialogOpen(false);

@@ -29,6 +29,9 @@ import {
   UserCheck,
   BadgeDollarSign,
   FileText,
+  CircleHelp,
+  ToggleLeft,
+  ToggleRight,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -54,7 +57,11 @@ import {
   useDebtors,
   useDebtSummary,
   useDeleteDebtor,
+  useUpdateDebtorStatus,
 } from "@/hooks/useDebtors";
+import { useLocations } from "@/hooks/useLocations";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Switch } from "@/components/ui/switch";
 import type {
   DebtorFilters,
   DebtorRecord,
@@ -135,6 +142,10 @@ export default function CustomersClient() {
     "name",
   );
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+  const [activityFilter, setActivityFilter] = useState<
+    "ALL" | "ACTIVE" | "INACTIVE"
+  >("ALL");
+  const [selectedLocationIds, setSelectedLocationIds] = useState<number[]>([]);
   const [showFilters, setShowFilters] = useState(false);
   const [pageNumber, setPageNumber] = useState(1);
   const pageSize = 20;
@@ -144,27 +155,60 @@ export default function CustomersClient() {
 
   // Delete dialog
   const [deleteTarget, setDeleteTarget] = useState<DebtorRecord | null>(null);
+  const [deleteForce, setDeleteForce] = useState(false);
+  const [statusUpdatingId, setStatusUpdatingId] = useState<number | null>(null);
+  const { data: locations } = useLocations();
 
   // Build filters
   const filters: DebtorFilters = useMemo(
     () => ({
       ...(balanceFilter === "DEBT" && { hasDebt: true }),
+      ...(activityFilter === "ACTIVE" && { isActive: true }),
+      ...(activityFilter === "INACTIVE" && { isActive: false }),
+      ...(selectedLocationIds.length > 0 && {
+        businessLocationIds: selectedLocationIds,
+      }),
       search: searchQuery || undefined,
       sortBy,
       sortDir,
       page: pageNumber,
       pageSize,
     }),
-    [balanceFilter, searchQuery, sortBy, sortDir, pageNumber],
+    [
+      balanceFilter,
+      activityFilter,
+      selectedLocationIds,
+      searchQuery,
+      sortBy,
+      sortDir,
+      pageNumber,
+    ],
   );
 
   const hasActiveFilters =
-    balanceFilter !== "ALL" || sortBy !== "name" || sortDir !== "asc";
+    balanceFilter !== "ALL" ||
+    activityFilter !== "ALL" ||
+    selectedLocationIds.length > 0 ||
+    sortBy !== "name" ||
+    sortDir !== "asc";
 
   const clearFilters = () => {
     setBalanceFilter("ALL");
+    setActivityFilter("ALL");
+    setSelectedLocationIds([]);
     setSortBy("name");
     setSortDir("asc");
+    setPageNumber(1);
+  };
+
+  const toggleLocation = (locationId: number, checked: boolean) => {
+    setSelectedLocationIds((current) => {
+      if (checked) {
+        if (current.includes(locationId)) return current;
+        return [...current, locationId];
+      }
+      return current.filter((id) => id !== locationId);
+    });
     setPageNumber(1);
   };
 
@@ -178,6 +222,7 @@ export default function CustomersClient() {
   } = useDebtors(filters);
   const { data: summary } = useDebtSummary();
   const deleteMutation = useDeleteDebtor();
+  const statusMutation = useUpdateDebtorStatus();
 
   const debtors = useMemo(() => debtorData?.items ?? [], [debtorData?.items]);
   const totalCount = debtorData?.totalCount ?? 0;
@@ -197,10 +242,26 @@ export default function CustomersClient() {
   const handleDelete = async () => {
     if (!deleteTarget) return;
     try {
-      await deleteMutation.mutateAsync(deleteTarget.debtorId);
+      await deleteMutation.mutateAsync({
+        debtorId: deleteTarget.debtorId,
+        options: { force: deleteForce },
+      });
       setDeleteTarget(null);
+      setDeleteForce(false);
     } catch {
       // Error handled by mutation
+    }
+  };
+
+  const handleToggleDebtorStatus = async (debtor: DebtorRecord) => {
+    setStatusUpdatingId(debtor.debtorId);
+    try {
+      await statusMutation.mutateAsync({
+        debtorId: debtor.debtorId,
+        data: { isActive: !debtor.isActive },
+      });
+    } finally {
+      setStatusUpdatingId(null);
     }
   };
 
@@ -299,6 +360,15 @@ export default function CustomersClient() {
           </div>
         </div>
 
+        <div className="mb-6 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800 flex items-start gap-2.5">
+          <CircleHelp className="w-4 h-4 mt-0.5 shrink-0" />
+          <p>
+            Ghi chú: Khách hàng <strong>Đang hoạt động</strong> sẽ xuất hiện khi
+            nhân viên tạo đơn ghi nợ. Nếu chuyển sang <strong>Tạm ngưng</strong>
+            , khách hàng sẽ bị ẩn khỏi danh sách chọn khi tạo đơn.
+          </p>
+        </div>
+
         {/* Filters & Search */}
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm mb-6">
           <div className="p-1 flex flex-col sm:flex-row gap-2">
@@ -372,6 +442,60 @@ export default function CustomersClient() {
           {/* Expanded Sort Panel */}
           {showFilters && (
             <div className="border-t border-gray-100 px-4 py-3 flex flex-wrap items-end gap-4">
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-medium text-gray-500">
+                  Địa điểm kinh doanh
+                </label>
+                <div className="w-72 max-h-36 overflow-auto rounded-md border border-gray-200 px-3 py-2 space-y-2 bg-white">
+                  <label className="flex items-center gap-2 text-sm text-gray-700">
+                    <Checkbox
+                      checked={selectedLocationIds.length === 0}
+                      onCheckedChange={(checked) => {
+                        if (checked) {
+                          setSelectedLocationIds([]);
+                          setPageNumber(1);
+                        }
+                      }}
+                    />
+                    Tất cả địa điểm
+                  </label>
+                  {(locations ?? []).map((loc) => (
+                    <label
+                      key={loc.id}
+                      className="flex items-center gap-2 text-sm text-gray-700"
+                    >
+                      <Checkbox
+                        checked={selectedLocationIds.includes(loc.id)}
+                        onCheckedChange={(checked) =>
+                          toggleLocation(loc.id, checked === true)
+                        }
+                      />
+                      {loc.name}
+                    </label>
+                  ))}
+                </div>
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-medium text-gray-500">
+                  Trạng thái sử dụng
+                </label>
+                <Select
+                  value={activityFilter}
+                  onValueChange={(val) => {
+                    setActivityFilter(val as "ALL" | "ACTIVE" | "INACTIVE");
+                    setPageNumber(1);
+                  }}
+                >
+                  <SelectTrigger className="w-48 h-9 text-sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ALL">Tất cả</SelectItem>
+                    <SelectItem value="ACTIVE">Đang hoạt động</SelectItem>
+                    <SelectItem value="INACTIVE">Tạm ngưng</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
               <div className="flex flex-col gap-1">
                 <label className="text-xs font-medium text-gray-500">
                   Sắp xếp theo
@@ -490,6 +614,25 @@ export default function CustomersClient() {
                     {/* Name */}
                     <span className="w-44 shrink-0 text-sm font-semibold text-gray-800 truncate">
                       {debtor.name}
+                    </span>
+
+                    {/* Active status */}
+                    <span className="w-28 shrink-0">
+                      {debtor.isActive ? (
+                        <Badge
+                          variant="outline"
+                          className="bg-emerald-50 text-emerald-700 border-emerald-200"
+                        >
+                          Đang hoạt động
+                        </Badge>
+                      ) : (
+                        <Badge
+                          variant="outline"
+                          className="bg-gray-100 text-gray-600 border-gray-300"
+                        >
+                          Tạm ngưng
+                        </Badge>
+                      )}
                     </span>
 
                     {/* Balance Badge */}
@@ -623,6 +766,27 @@ export default function CustomersClient() {
                           </div>
                         </div>
 
+                        {/* Usage status */}
+                        <div className="flex items-start gap-3">
+                          <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center shrink-0 mt-0.5">
+                            {debtor.isActive ? (
+                              <ToggleRight className="w-4 h-4 text-emerald-600" />
+                            ) : (
+                              <ToggleLeft className="w-4 h-4 text-gray-500" />
+                            )}
+                          </div>
+                          <div>
+                            <p className="text-xs text-gray-400">
+                              Dùng khi tạo đơn ghi nợ
+                            </p>
+                            <p className="text-sm font-medium text-gray-800">
+                              {debtor.isActive
+                                ? "Đang hoạt động (nhân viên nhìn thấy)"
+                                : "Tạm ngưng (nhân viên không nhìn thấy)"}
+                            </p>
+                          </div>
+                        </div>
+
                         {/* Notes */}
                         {debtor.notes && (
                           <div className="flex items-start gap-3 sm:col-span-2 lg:col-span-3">
@@ -674,35 +838,31 @@ export default function CustomersClient() {
                           <Eye className="w-4 h-4" />
                           Xem Chi Tiết
                         </Button>
-                        <div className="grid grid-cols-3 gap-2">
-                          {balanceStatus === "DEBT" && (
-                            <Button
-                              variant="outline"
-                              className="gap-1.5 h-10 text-green-600 border-green-200 hover:bg-green-50"
-                              onClick={() =>
-                                router.push(
-                                  `/dashboard/customers/${debtor.debtorId}/payment`,
-                                )
-                              }
-                            >
-                              <Banknote className="w-4 h-4" />
-                              Thu nợ
-                            </Button>
-                          )}
-                          {balanceStatus !== "DEBT" && (
-                            <Button
-                              variant="outline"
-                              className="gap-1.5 h-10"
-                              onClick={() =>
-                                router.push(
-                                  `/dashboard/customers/${debtor.debtorId}`,
-                                )
-                              }
-                            >
-                              <FileText className="w-4 h-4" />
-                              Lịch sử
-                            </Button>
-                          )}
+                        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                          <Button
+                            variant="outline"
+                            className="gap-1.5 h-10 text-green-600 border-green-200 hover:bg-green-50"
+                            onClick={() =>
+                              router.push(
+                                `/dashboard/customers/${debtor.debtorId}/payment`,
+                              )
+                            }
+                          >
+                            <Banknote className="w-4 h-4" />
+                            Điều chỉnh
+                          </Button>
+                          <Button
+                            variant="outline"
+                            className="gap-1.5 h-10"
+                            onClick={() =>
+                              router.push(
+                                `/dashboard/customers/${debtor.debtorId}`,
+                              )
+                            }
+                          >
+                            <FileText className="w-4 h-4" />
+                            Lịch sử
+                          </Button>
                           <Button
                             variant="outline"
                             className="gap-1.5 h-10"
@@ -714,6 +874,25 @@ export default function CustomersClient() {
                           >
                             <Pencil className="w-4 h-4" />
                             Chỉnh sửa
+                          </Button>
+                          <Button
+                            variant="outline"
+                            className="gap-1.5 h-10"
+                            disabled={
+                              statusMutation.isPending &&
+                              statusUpdatingId === debtor.debtorId
+                            }
+                            onClick={() => handleToggleDebtorStatus(debtor)}
+                          >
+                            {statusMutation.isPending &&
+                            statusUpdatingId === debtor.debtorId ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : debtor.isActive ? (
+                              <ToggleLeft className="w-4 h-4" />
+                            ) : (
+                              <ToggleRight className="w-4 h-4" />
+                            )}
+                            {debtor.isActive ? "Tạm ngưng" : "Kích hoạt"}
                           </Button>
                           <Button
                             variant="outline"
@@ -793,7 +972,12 @@ export default function CustomersClient() {
       {/* Delete Dialog */}
       <AlertDialog
         open={!!deleteTarget}
-        onOpenChange={() => setDeleteTarget(null)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDeleteTarget(null);
+            setDeleteForce(false);
+          }
+        }}
       >
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -804,21 +988,27 @@ export default function CustomersClient() {
               {deleteTarget && deleteTarget.currentBalance < 0 && (
                 <span className="block mt-2 text-red-600 font-medium">
                   ⚠ Khách hàng này đang nợ{" "}
-                  {formatCurrency(deleteTarget.outstandingDebt)}. Không thể xóa
-                  khi còn nợ.
+                  {formatCurrency(deleteTarget.outstandingDebt)}. Bật &quot;Xóa
+                  cưỡng bức&quot; nếu vẫn muốn xóa.
                 </span>
               )}
             </AlertDialogDescription>
           </AlertDialogHeader>
+          <div className="rounded-lg border border-gray-200 px-3 py-2 flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-700">Xóa cưỡng bức</p>
+              <p className="text-xs text-gray-500">
+                Dùng khi khách còn nợ nhưng vẫn cần xóa hồ sơ.
+              </p>
+            </div>
+            <Switch checked={deleteForce} onCheckedChange={setDeleteForce} />
+          </div>
           <AlertDialogFooter>
             <AlertDialogCancel>Đóng</AlertDialogCancel>
             <AlertDialogAction
               onClick={handleDelete}
               className="bg-red-600 hover:bg-red-700"
-              disabled={
-                deleteMutation.isPending ||
-                (deleteTarget?.currentBalance ?? 0) < 0
-              }
+              disabled={deleteMutation.isPending}
             >
               {deleteMutation.isPending ? (
                 <>
