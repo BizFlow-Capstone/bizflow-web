@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getBearerAuthorizationHeader } from "../../_utils/authHeader";
 
 const BACKEND_API_URL = process.env.BACKEND_API_URL || "http://localhost:5139";
 
@@ -13,7 +14,17 @@ export async function GET(
 ) {
   try {
     const { importId } = await params;
-    const authHeader = request.headers.get("authorization");
+    const authHeader = getBearerAuthorizationHeader(request);
+    if (!authHeader) {
+      return NextResponse.json(
+        {
+          success: false,
+          messageCode: "AUTH_UNAUTHORIZED",
+          message: "Missing Authorization Bearer token",
+        },
+        { status: 401 },
+      );
+    }
 
     const response = await fetch(
       `${BACKEND_API_URL}/api/my-business/accounting/import/${importId}`,
@@ -21,7 +32,7 @@ export async function GET(
         method: "GET",
         headers: {
           "Content-Type": "application/json",
-          ...(authHeader && { Authorization: authHeader }),
+          Authorization: authHeader,
         },
         cache: "no-store",
       },
@@ -53,7 +64,17 @@ export async function PUT(
   try {
     const { importId } = await params;
     const body = await request.json();
-    const authHeader = request.headers.get("authorization");
+    const authHeader = getBearerAuthorizationHeader(request);
+    if (!authHeader) {
+      return NextResponse.json(
+        {
+          success: false,
+          messageCode: "AUTH_UNAUTHORIZED",
+          message: "Missing Authorization Bearer token",
+        },
+        { status: 401 },
+      );
+    }
 
     const response = await fetch(
       `${BACKEND_API_URL}/api/my-business/accounting/import/${importId}`,
@@ -61,7 +82,7 @@ export async function PUT(
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
-          ...(authHeader && { Authorization: authHeader }),
+          Authorization: authHeader,
         },
         body: JSON.stringify(body),
       },
@@ -93,7 +114,17 @@ export async function PATCH(
   try {
     const { importId } = await params;
     const body = await request.json();
-    const authHeader = request.headers.get("authorization");
+    const authHeader = getBearerAuthorizationHeader(request);
+    if (!authHeader) {
+      return NextResponse.json(
+        {
+          success: false,
+          messageCode: "AUTH_UNAUTHORIZED",
+          message: "Missing Authorization Bearer token",
+        },
+        { status: 401 },
+      );
+    }
 
     const response = await fetch(
       `${BACKEND_API_URL}/api/my-business/accounting/import/${importId}`,
@@ -101,7 +132,7 @@ export async function PATCH(
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
-          ...(authHeader && { Authorization: authHeader }),
+          Authorization: authHeader,
         },
         body: JSON.stringify(body),
       },
@@ -132,7 +163,17 @@ export async function DELETE(
 ) {
   try {
     const { importId } = await params;
-    const authHeader = request.headers.get("authorization");
+    const authHeader = getBearerAuthorizationHeader(request);
+    if (!authHeader) {
+      return NextResponse.json(
+        {
+          success: false,
+          messageCode: "AUTH_UNAUTHORIZED",
+          message: "Missing Authorization Bearer token",
+        },
+        { status: 401 },
+      );
+    }
 
     const response = await fetch(
       `${BACKEND_API_URL}/api/my-business/accounting/import/${importId}`,
@@ -140,7 +181,7 @@ export async function DELETE(
         method: "DELETE",
         headers: {
           "Content-Type": "application/json",
-          ...(authHeader && { Authorization: authHeader }),
+          Authorization: authHeader,
         },
       },
     );
