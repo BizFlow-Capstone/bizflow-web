@@ -1,13 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getBearerAuthorizationHeader } from "../_utils/authHeader";
+import { getBearerAuthorizationHeader } from "../../_utils/authHeader";
 
 const BACKEND_API_URL = process.env.BACKEND_API_URL || "http://localhost:5139";
 
-/**
- * GET /api/employees
- * Proxy to backend: GET /api/my-employee/employees/details
- * Get detailed employee list for management page
- */
 export async function GET(request: NextRequest) {
   try {
     const authHeader = getBearerAuthorizationHeader(request);
@@ -23,7 +18,7 @@ export async function GET(request: NextRequest) {
     }
 
     const response = await fetch(
-      `${BACKEND_API_URL}/api/my-employee/employees/details`,
+      `${BACKEND_API_URL}/api/my-employee/invitations`,
       {
         method: "GET",
         headers: {
@@ -37,11 +32,11 @@ export async function GET(request: NextRequest) {
     const data = await response.json();
     return NextResponse.json(data, { status: response.status });
   } catch (error) {
-    console.error("Error fetching employees:", error);
+    console.error("Error fetching invitations:", error);
     return NextResponse.json(
       {
         success: false,
-        message: "Failed to fetch employees",
+        message: "Failed to fetch invitations",
         data: [],
       },
       { status: 500 },

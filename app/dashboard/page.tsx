@@ -43,14 +43,20 @@ export default function DashboardPage() {
   const { data: locations, isLoading: locLoading } = useLocations();
   const { selectedLocationId } = useDashboardLocation();
   const [chartPeriod, setChartPeriod] = useState<ChartPeriod>("7d");
+  const locationList = locations ?? [];
+  const hasLocations = locationList.length > 0;
 
-  // Auto-select first location
-  const activeLocationId =
-    selectedLocationId && selectedLocationId > 0
-      ? selectedLocationId
-      : locations && locations.length > 0
-        ? locations[0].id
-        : 0;
+  // Use selected location only when it exists in the current location list.
+  const selectedLocationExists =
+    selectedLocationId != null &&
+    selectedLocationId > 0 &&
+    locationList.some((location) => location.id === selectedLocationId);
+
+  const activeLocationId = hasLocations
+    ? selectedLocationExists
+      ? (selectedLocationId as number)
+      : locationList[0].id
+    : 0;
 
   const { data: summary, isLoading: sumLoading } =
     useDashboardSummary(activeLocationId);
@@ -66,6 +72,41 @@ export default function DashboardPage() {
     return (
       <div className="flex-1 flex items-center justify-center">
         <Loader2 className="w-8 h-8 animate-spin text-[#23C4C1]" />
+      </div>
+    );
+  }
+
+  if (!hasLocations) {
+    return (
+      <div className="flex-1 flex flex-col">
+        <main className="flex-1 p-8 bg-gray-50 space-y-6 overflow-auto">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div
+                key={i}
+                className="bg-white rounded-xl border p-5 animate-pulse h-28"
+              />
+            ))}
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="lg:col-span-2 bg-white rounded-xl border p-6">
+              <div className="h-64 animate-pulse bg-gray-100 rounded-lg" />
+            </div>
+            <div className="bg-white rounded-xl border p-6">
+              <div className="h-32 animate-pulse bg-gray-100 rounded-lg" />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="bg-white rounded-xl border p-6">
+              <div className="h-40 animate-pulse bg-gray-100 rounded-lg" />
+            </div>
+            <div className="bg-white rounded-xl border p-6">
+              <div className="h-32 animate-pulse bg-gray-100 rounded-lg" />
+            </div>
+          </div>
+        </main>
       </div>
     );
   }

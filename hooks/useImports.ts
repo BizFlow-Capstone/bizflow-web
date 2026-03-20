@@ -44,7 +44,7 @@ export const importKeys = {
  * Hook to fetch imports with filters and pagination
  * Uses keepPreviousData for smooth pagination transitions
  */
-export function useImports(filters: ImportFilters) {
+export function useImports(filters: ImportFilters, enabled = true) {
   return useQuery<ImportPagination>({
     queryKey: importKeys.list(filters),
     queryFn: async () => {
@@ -52,6 +52,7 @@ export function useImports(filters: ImportFilters) {
       return response.data;
     },
     placeholderData: keepPreviousData,
+    enabled,
   });
 }
 

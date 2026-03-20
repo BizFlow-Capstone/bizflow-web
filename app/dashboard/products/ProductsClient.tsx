@@ -36,6 +36,7 @@ import type { ProductFilters } from "@/lib/types/product";
 import ProductManagementTable from "@/components/products/ProductManagementTable";
 import { BarcodeScanModal } from "@/components/BarcodeScanModal";
 import StockAdjustmentDialog from "@/components/products/StockAdjustmentDialog";
+import NoLocationScreenSkeleton from "@/components/NoLocationScreenSkeleton";
 
 // --- Main Component ---
 
@@ -44,6 +45,7 @@ export default function ProductsClient() {
   const { data: locations = [], isLoading: isLoadingLocations } =
     useLocations();
   const { selectedLocationId } = useDashboardLocation();
+  const hasLocations = locations.length > 0;
 
   // Mutations
   const updateStatusMutation = useUpdateProductStatus();
@@ -56,12 +58,20 @@ export default function ProductsClient() {
   // Stock adjustment dialog state
   const [stockTarget, setStockTarget] = useState<Product | null>(null);
 
-  // Auto-select first location
+  // Auto-select a valid location from the current location list.
   const locationId = useMemo(() => {
-    if (selectedLocationId) return selectedLocationId;
+    if (!hasLocations) return null;
+
+    if (
+      selectedLocationId &&
+      locations.some((location) => location.id === selectedLocationId)
+    ) {
+      return selectedLocationId;
+    }
+
     if (locations.length > 0) return locations[0].id;
     return null;
-  }, [selectedLocationId, locations]);
+  }, [selectedLocationId, locations, hasLocations]);
 
   // Filter & search state
   const [searchQuery, setSearchQuery] = useState("");
@@ -111,22 +121,20 @@ export default function ProductsClient() {
   const hasPreviousPage = productData?.hasPreviousPage ?? false;
   const hasNextPage = productData?.hasNextPage ?? false;
 
-  // No location selected
-  if (!isLoadingLocations && locations.length === 0) {
+  if (isLoadingLocations) {
     return (
-      <div className="flex-1 flex items-center justify-center min-h-screen bg-gray-50">
-        <div className="text-center">
-          <div className="mx-auto bg-gray-50 w-16 h-16 rounded-full flex items-center justify-center mb-4">
-            <MapPin className="w-8 h-8 text-gray-400" />
-          </div>
-          <h3 className="text-lg font-medium text-gray-900">
-            Chưa có địa điểm kinh doanh
-          </h3>
-          <p className="text-gray-500 mt-1">
-            Vui lòng tạo địa điểm kinh doanh trước khi quản lý sản phẩm.
-          </p>
-        </div>
+      <div className="flex-1 flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-[#23C4C1]" />
       </div>
+    );
+  }
+
+  if (!hasLocations) {
+    return (
+      <NoLocationScreenSkeleton
+        title="Sản phẩm"
+        description="Đang chờ bạn tạo địa điểm hoặc nhận lời mời trước khi tải dữ liệu."
+      />
     );
   }
 

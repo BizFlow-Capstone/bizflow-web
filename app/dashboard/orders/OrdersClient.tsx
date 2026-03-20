@@ -72,6 +72,8 @@ import {
   useConfirmOrder,
   useCompleteOrder,
 } from "@/hooks/useOrders";
+import { useLocations } from "@/hooks/useLocations";
+import NoLocationScreenSkeleton from "@/components/NoLocationScreenSkeleton";
 import type {
   OrderFilters,
   OrderStatus,
@@ -222,6 +224,9 @@ function getPaymentStatusText(paymentStatus: PaymentStatus) {
 
 export default function OrdersClient() {
   const router = useRouter();
+  const { data: locations = [], isLoading: isLoadingLocations } =
+    useLocations();
+  const hasLocations = locations.length > 0;
 
   // Filter state
   const [statusFilter, setStatusFilter] = useState<OrderStatus | "ALL">("ALL");
@@ -288,7 +293,7 @@ export default function OrdersClient() {
     isRefetching,
     error,
     refetch,
-  } = useOrders(filters);
+  } = useOrders(filters, hasLocations);
 
   const cancelMutation = useCancelOrder();
   const confirmMutation = useConfirmOrder();
@@ -369,6 +374,23 @@ export default function OrdersClient() {
       console.error("Error completing order:", err);
     }
   };
+
+  if (isLoadingLocations) {
+    return (
+      <div className="flex-1 flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-[#23C4C1]" />
+      </div>
+    );
+  }
+
+  if (!hasLocations) {
+    return (
+      <NoLocationScreenSkeleton
+        title="Đơn hàng"
+        description="Đang chờ bạn tạo địa điểm hoặc nhận lời mời trước khi tải dữ liệu."
+      />
+    );
+  }
 
   return (
     <div className="flex-1 flex flex-col">

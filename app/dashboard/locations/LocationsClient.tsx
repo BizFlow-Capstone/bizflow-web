@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import {
   MapPin,
   User,
@@ -86,6 +87,7 @@ const StatusBadge = ({ isActive }: { isActive: boolean }) => (
  * - Loading and error states handled by Query
  */
 export default function LocationsClient() {
+  const searchParams = useSearchParams();
   // UI State (client-only)
   const [activeTab, setActiveTab] = useState<"ALL" | "ACTIVE" | "INACTIVE">(
     "ALL",
@@ -155,6 +157,12 @@ export default function LocationsClient() {
   const [isEditEmployeeDropdownOpen, setIsEditEmployeeDropdownOpen] =
     useState(false);
   const [editingEmployeeIds, setEditingEmployeeIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (searchParams.get("openCreate") === "1") {
+      setIsDialogOpen(true);
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     if (!isEditDialogOpen || !editingLocation) return;

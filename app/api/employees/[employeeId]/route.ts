@@ -1,14 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getBearerAuthorizationHeader } from "../_utils/authHeader";
+import { getBearerAuthorizationHeader } from "../../_utils/authHeader";
 
 const BACKEND_API_URL = process.env.BACKEND_API_URL || "http://localhost:5139";
 
-/**
- * GET /api/employees
- * Proxy to backend: GET /api/my-employee/employees/details
- * Get detailed employee list for management page
- */
-export async function GET(request: NextRequest) {
+export async function DELETE(
+  request: NextRequest,
+  context: { params: Promise<{ employeeId: string }> },
+) {
   try {
     const authHeader = getBearerAuthorizationHeader(request);
     if (!authHeader) {
@@ -22,27 +20,26 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    const { employeeId } = await context.params;
     const response = await fetch(
-      `${BACKEND_API_URL}/api/my-employee/employees/details`,
+      `${BACKEND_API_URL}/api/my-employee/${employeeId}`,
       {
-        method: "GET",
+        method: "DELETE",
         headers: {
           "Content-Type": "application/json",
           Authorization: authHeader,
         },
-        cache: "no-store",
       },
     );
 
     const data = await response.json();
     return NextResponse.json(data, { status: response.status });
   } catch (error) {
-    console.error("Error fetching employees:", error);
+    console.error("Error removing employee:", error);
     return NextResponse.json(
       {
         success: false,
-        message: "Failed to fetch employees",
-        data: [],
+        message: "Failed to remove employee",
       },
       { status: 500 },
     );
