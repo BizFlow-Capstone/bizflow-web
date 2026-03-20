@@ -1,3 +1,4 @@
+import { authFetch } from "@/lib/auth/tokenManager";
 import type {
   ApiResponse,
   CashFlowReport,
@@ -6,439 +7,323 @@ import type {
   RevenuePagination,
   AccountingPeriod,
   CreatePeriodRequest,
+  CreateCustomPeriodRequest,
+  OpeningBalanceSuggestion,
+  OpeningBalanceSuggestionRequest,
   PeriodAuditLog,
   AccountingTemplate,
   AccountingBook,
+  CostRecord,
 } from "@/lib/types/accounting";
+import type { ImportPagination, ImportRecord } from "@/lib/types/import";
 
-/**
- * Accounting Service — Mock data
- * Will be replaced by real API calls when backend is ready
- */
-
-// ═══ Mock Data ═══
-
-const MOCK_COSTS: CostPagination = {
-  items: [
-    {
-      costId: 1,
-      businessLocationId: 1,
-      costType: "import",
-      importId: 1,
-      description: "Nhập xi măng Hà Tiên 500 bao",
-      amount: 23750000,
-      costDate: "2026-03-01",
-      paymentMethod: "cash",
-      createdByUserName: "Lê Văn A",
-      createdAt: "2026-03-01T08:00:00Z",
-    },
-    {
-      costId: 2,
-      businessLocationId: 1,
-      costType: "salary",
-      description: "Lương nhân viên T3/2026",
-      amount: 15000000,
-      costDate: "2026-03-05",
-      paymentMethod: "bank",
-      createdByUserName: "Lê Văn A",
-      createdAt: "2026-03-05T10:00:00Z",
-    },
-    {
-      costId: 3,
-      businessLocationId: 1,
-      costType: "rent",
-      description: "Tiền thuê mặt bằng T3/2026",
-      amount: 8000000,
-      costDate: "2026-03-01",
-      paymentMethod: "bank",
-      createdByUserName: "Lê Văn A",
-      createdAt: "2026-03-01T07:00:00Z",
-    },
-    {
-      costId: 4,
-      businessLocationId: 1,
-      costType: "utilities",
-      description: "Tiền điện + nước T2/2026",
-      amount: 2500000,
-      costDate: "2026-03-03",
-      paymentMethod: "cash",
-      createdByUserName: "Lê Văn A",
-      createdAt: "2026-03-03T09:00:00Z",
-    },
-    {
-      costId: 5,
-      businessLocationId: 1,
-      costType: "transport",
-      description: "Vận chuyển sắt phi 12",
-      amount: 1200000,
-      costDate: "2026-03-02",
-      paymentMethod: "cash",
-      createdByUserName: "Nguyễn Thị B",
-      createdAt: "2026-03-02T14:00:00Z",
-    },
-  ],
-  totalCount: 5,
+const DEFAULT_EMPTY_REVENUE: RevenuePagination = {
+  items: [],
+  totalCount: 0,
   pageNumber: 1,
   pageSize: 10,
-  totalPages: 1,
+  totalPages: 0,
 };
 
-const MOCK_REVENUES: RevenuePagination = {
-  items: [
-    {
-      revenueId: 1,
-      businessLocationId: 1,
-      revenueType: "sale",
-      orderId: 1001,
-      description: "Đơn hàng #ORD-2026-001 hoàn tất",
-      amount: 4750000,
-      revenueDate: "2026-03-01",
-      paymentMethod: "cash",
-      createdByUserName: "Hệ thống",
-      createdAt: "2026-03-01T10:30:00Z",
-    },
-    {
-      revenueId: 2,
-      businessLocationId: 1,
-      revenueType: "sale",
-      orderId: 1002,
-      description: "Đơn hàng #ORD-2026-002 hoàn tất",
-      amount: 2300000,
-      revenueDate: "2026-03-01",
-      paymentMethod: "bank",
-      createdByUserName: "Hệ thống",
-      createdAt: "2026-03-01T14:00:00Z",
-    },
-    {
-      revenueId: 3,
-      businessLocationId: 1,
-      revenueType: "sale",
-      orderId: 1003,
-      description: "Đơn hàng #ORD-2026-003 hoàn tất",
-      amount: 8200000,
-      revenueDate: "2026-03-02",
-      paymentMethod: "mixed",
-      createdByUserName: "Hệ thống",
-      createdAt: "2026-03-02T09:00:00Z",
-    },
-    {
-      revenueId: 4,
-      businessLocationId: 1,
-      revenueType: "manual",
-      description: "Thu nhập dịch vụ cắt sắt",
-      amount: 500000,
-      revenueDate: "2026-03-02",
-      paymentMethod: "cash",
-      createdByUserName: "Lê Văn A",
-      createdAt: "2026-03-02T16:00:00Z",
-    },
-  ],
-  totalCount: 4,
-  pageNumber: 1,
-  pageSize: 10,
-  totalPages: 1,
+const DEFAULT_EMPTY_TEMPLATE_RESPONSE: ApiResponse<AccountingTemplate[]> = {
+  data: [],
+  success: true,
+  messageCode: "COMMON_DATA_RETRIEVED",
+  message: "Data retrieved successfully",
+  timestamp: new Date().toISOString(),
 };
 
-const MOCK_CASHFLOW: CashFlowReport = {
-  startDate: "2026-03-01",
-  endDate: "2026-03-31",
-  channels: [
-    { channel: "cash", totalIn: 450000000, totalOut: 85000000, net: 365000000 },
-    { channel: "bank", totalIn: 120000000, totalOut: 15000000, net: 105000000 },
-    { channel: "debt", totalIn: 50000000, totalOut: 0, net: 50000000 },
-  ],
+const DEFAULT_EMPTY_BOOK_RESPONSE: ApiResponse<AccountingBook[]> = {
+  data: [],
+  success: true,
+  messageCode: "COMMON_DATA_RETRIEVED",
+  message: "Data retrieved successfully",
+  timestamp: new Date().toISOString(),
 };
 
-const MOCK_PERIODS: AccountingPeriod[] = [
-  {
-    periodId: 1,
-    businessLocationId: 1,
-    periodType: "quarter",
-    year: 2026,
-    quarter: 1,
-    startDate: "2026-01-01",
-    endDate: "2026-03-31",
-    openingCashBalance: 50000000,
-    openingBankBalance: 120000000,
-    status: "open",
-    createdAt: "2026-01-01T00:00:00Z",
-  },
-  {
-    periodId: 2,
-    businessLocationId: 1,
-    periodType: "year",
-    year: 2025,
-    startDate: "2025-01-01",
-    endDate: "2025-12-31",
-    openingCashBalance: 30000000,
-    openingBankBalance: 80000000,
-    status: "finalized",
-    finalizedAt: "2026-01-15T09:00:00Z",
-    createdAt: "2025-01-01T00:00:00Z",
-  },
-];
+function toAccountingCost(item: ImportRecord): CostRecord {
+  return {
+    costId: item.importId,
+    businessLocationId: item.businessLocationId,
+    costType: "import",
+    importId: item.importId,
+    description: item.note || `Import ${item.importCode}`,
+    amount: item.totalAmount,
+    costDate: item.receivedAt || item.createdAt,
+    createdByUserName: item.confirmedByUserId ? "System" : "Unknown",
+    createdAt: item.createdAt,
+  };
+}
 
-const MOCK_AUDIT_LOGS: PeriodAuditLog[] = [
-  {
-    logId: 1,
-    periodId: 1,
-    action: "period_created",
-    newValue: JSON.stringify({ periodType: "quarter", year: 2026, quarter: 1 }),
-    createdByUserName: "Lê Văn A",
-    createdAt: "2026-01-01T00:00:00Z",
-  },
-  {
-    logId: 2,
-    periodId: 2,
-    action: "period_finalized",
-    newValue: JSON.stringify({ finalizedAt: "2026-01-15T09:00:00Z" }),
-    createdByUserName: "Lê Văn A",
-    createdAt: "2026-01-15T09:00:00Z",
-  },
-];
-
-const MOCK_TEMPLATES: AccountingTemplate[] = [
-  {
-    templateId: 1,
-    templateCode: "S1a",
-    name: "Sổ chi tiết bán hàng",
-    applicableGroups: [1],
-    isActive: true,
-  },
-  {
-    templateId: 2,
-    templateCode: "S2a",
-    name: "Sổ doanh thu bán hàng hóa, dịch vụ",
-    applicableGroups: [2],
-    applicableMethods: ["method_1"],
-    isActive: true,
-  },
-  {
-    templateId: 3,
-    templateCode: "S2b",
-    name: "Sổ doanh thu bán hàng hóa, dịch vụ",
-    applicableGroups: [2, 3, 4],
-    applicableMethods: ["method_2"],
-    isActive: true,
-  },
-  {
-    templateId: 4,
-    templateCode: "S2c",
-    name: "Sổ chi tiết doanh thu, chi phí",
-    applicableGroups: [2, 3, 4],
-    applicableMethods: ["method_2"],
-    isActive: true,
-  },
-  {
-    templateId: 5,
-    templateCode: "S2d",
-    name: "Sổ chi tiết vật liệu, dụng cụ, sản phẩm, hàng hóa",
-    applicableGroups: [2, 3, 4],
-    applicableMethods: ["method_2"],
-    isActive: true,
-  },
-  {
-    templateId: 6,
-    templateCode: "S2e",
-    name: "Sổ chi tiết tiền",
-    applicableGroups: [2, 3, 4],
-    applicableMethods: ["method_2"],
-    isActive: true,
-  },
-];
-
-const MOCK_BOOKS: AccountingBook[] = [
-  {
-    bookId: 1,
-    periodId: 1,
-    templateCode: "S2a",
-    templateName: "Sổ doanh thu bán hàng hóa, dịch vụ",
-    groupNumber: 2,
-    taxMethod: "method_1",
-    status: "active",
-    createdAt: "2026-01-05T10:00:00Z",
-  },
-  {
-    bookId: 2,
-    periodId: 1,
-    templateCode: "S2e",
-    templateName: "Sổ chi tiết tiền",
-    groupNumber: 2,
-    taxMethod: "method_2",
-    status: "active",
-    createdAt: "2026-01-05T10:30:00Z",
-  },
-  {
-    bookId: 3,
-    periodId: 2,
-    templateCode: "S1a",
-    templateName: "Sổ chi tiết bán hàng",
-    groupNumber: 1,
-    status: "archived",
-    createdAt: "2025-01-10T08:00:00Z",
-  },
-];
-
-// ═══ Service Functions ═══
-
-const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
+async function parseApiResponse<T>(
+  response: Response,
+): Promise<ApiResponse<T>> {
+  const payload = (await response.json()) as ApiResponse<T>;
+  return payload;
+}
 
 export async function getCosts(
-  _filters: CostFilters,
+  filters: CostFilters,
 ): Promise<ApiResponse<CostPagination>> {
-  await delay(300);
+  const params = new URLSearchParams();
+  params.append("BusinessLocationId", String(filters.locationId));
+  params.append("Status", "CONFIRMED");
+
+  if (filters.fromDate) params.append("FromDate", filters.fromDate);
+  if (filters.toDate) params.append("ToDate", filters.toDate);
+  if (filters.pageNumber)
+    params.append("PageNumber", String(filters.pageNumber));
+  if (filters.pageSize) params.append("PageSize", String(filters.pageSize));
+
+  const response = await authFetch(`/api/imports?${params.toString()}`, {
+    method: "GET",
+    headers: { "Content-Type": "application/json" },
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch accounting costs: ${response.status}`);
+  }
+
+  const result = await parseApiResponse<ImportPagination>(response);
+  const mappedItems = (result.data?.items ?? []).map(toAccountingCost);
+
   return {
-    data: MOCK_COSTS,
-    success: true,
-    messageCode: "SUCCESS",
-    message: "OK",
-    timestamp: new Date().toISOString(),
+    ...result,
+    data: {
+      items: mappedItems,
+      totalCount: result.data?.totalCount ?? 0,
+      pageNumber: result.data?.pageNumber ?? 1,
+      pageSize: result.data?.pageSize ?? 10,
+      totalPages: result.data?.totalPages ?? 0,
+    },
   };
 }
 
 export async function getRevenues(
   _locationId: number,
 ): Promise<ApiResponse<RevenuePagination>> {
-  await delay(300);
   return {
-    data: MOCK_REVENUES,
+    data: DEFAULT_EMPTY_REVENUE,
     success: true,
-    messageCode: "SUCCESS",
-    message: "OK",
+    messageCode: "COMMON_DATA_RETRIEVED",
+    message: "Revenue API is not available in current backend controllers yet.",
     timestamp: new Date().toISOString(),
   };
 }
 
 export async function getCashFlowReport(
-  _locationId: number,
-  _startDate: string,
-  _endDate: string,
+  locationId: number,
+  startDate: string,
+  endDate: string,
 ): Promise<ApiResponse<CashFlowReport>> {
-  await delay(350);
+  const [costResult, revenueResult] = await Promise.all([
+    getCosts({ locationId, fromDate: startDate, toDate: endDate }),
+    getRevenues(locationId),
+  ]);
+
+  const channels: Record<
+    "cash" | "bank" | "debt",
+    { totalIn: number; totalOut: number }
+  > = {
+    cash: { totalIn: 0, totalOut: 0 },
+    bank: { totalIn: 0, totalOut: 0 },
+    debt: { totalIn: 0, totalOut: 0 },
+  };
+
+  for (const revenue of revenueResult.data.items) {
+    const channel = revenue.paymentMethod;
+    if (channel && channel !== "mixed") {
+      channels[channel].totalIn += revenue.amount;
+    }
+  }
+
+  for (const cost of costResult.data.items) {
+    const channel = cost.paymentMethod ?? "cash";
+    channels[channel].totalOut += cost.amount;
+  }
+
   return {
-    data: MOCK_CASHFLOW,
     success: true,
-    messageCode: "SUCCESS",
-    message: "OK",
+    messageCode: "COMMON_DATA_RETRIEVED",
+    message: "Data retrieved successfully",
     timestamp: new Date().toISOString(),
+    data: {
+      startDate,
+      endDate,
+      channels: (Object.keys(channels) as Array<"cash" | "bank" | "debt">).map(
+        (channel) => ({
+          channel,
+          totalIn: channels[channel].totalIn,
+          totalOut: channels[channel].totalOut,
+          net: channels[channel].totalIn - channels[channel].totalOut,
+        }),
+      ),
+    },
   };
 }
 
 export async function getAccountingPeriods(
-  _locationId: number,
+  locationId: number,
 ): Promise<ApiResponse<AccountingPeriod[]>> {
-  await delay(300);
-  return {
-    data: MOCK_PERIODS,
-    success: true,
-    messageCode: "SUCCESS",
-    message: "OK",
-    timestamp: new Date().toISOString(),
-  };
+  const response = await authFetch(
+    `/api/locations/${locationId}/accounting/periods`,
+    {
+      method: "GET",
+      headers: { "Content-Type": "application/json" },
+      cache: "no-store",
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch accounting periods: ${response.status}`);
+  }
+
+  return parseApiResponse<AccountingPeriod[]>(response);
 }
 
 export async function createAccountingPeriod(
-  _locationId: number,
-  _data: CreatePeriodRequest,
+  locationId: number,
+  data: CreatePeriodRequest,
 ): Promise<ApiResponse<AccountingPeriod>> {
-  await delay(400);
-  const newPeriod: AccountingPeriod = {
-    periodId: Date.now(),
-    businessLocationId: _locationId,
-    ..._data,
-    startDate: _data.quarter
-      ? `${_data.year}-${String((_data.quarter - 1) * 3 + 1).padStart(2, "0")}-01`
-      : `${_data.year}-01-01`,
-    endDate: _data.quarter
-      ? `${_data.year}-${String(_data.quarter * 3).padStart(2, "0")}-${_data.quarter === 1 ? 31 : _data.quarter === 2 ? 30 : _data.quarter === 3 ? 30 : 31}`
-      : `${_data.year}-12-31`,
-    status: "open",
-    createdAt: new Date().toISOString(),
-  };
-  return {
-    data: newPeriod,
-    success: true,
-    messageCode: "SUCCESS",
-    message: "Tạo kỳ kế toán thành công",
-    timestamp: new Date().toISOString(),
-  };
+  const response = await authFetch(
+    `/api/locations/${locationId}/accounting/periods`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(`Failed to create accounting period: ${response.status}`);
+  }
+
+  return parseApiResponse<AccountingPeriod>(response);
+}
+
+export async function createCustomPeriod(
+  locationId: number,
+  data: CreateCustomPeriodRequest,
+): Promise<ApiResponse<AccountingPeriod>> {
+  const response = await authFetch(
+    `/api/locations/${locationId}/accounting/periods/custom`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      `Failed to create custom accounting period: ${response.status}`,
+    );
+  }
+
+  return parseApiResponse<AccountingPeriod>(response);
+}
+
+export async function getOpeningBalanceSuggestion(
+  locationId: number,
+  params: OpeningBalanceSuggestionRequest,
+): Promise<ApiResponse<OpeningBalanceSuggestion>> {
+  const response = await authFetch(
+    `/api/locations/${locationId}/accounting/periods/opening-balance-suggestion`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(params),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      `Failed to fetch opening balance suggestion: ${response.status}`,
+    );
+  }
+
+  return parseApiResponse<OpeningBalanceSuggestion>(response);
 }
 
 export async function finalizePeriod(
-  _locationId: number,
-  _periodId: number,
+  locationId: number,
+  periodId: number,
 ): Promise<ApiResponse<AccountingPeriod>> {
-  await delay(400);
-  const period = MOCK_PERIODS.find((p) => p.periodId === _periodId);
-  return {
-    data: {
-      ...period!,
-      status: "finalized",
-      finalizedAt: new Date().toISOString(),
+  const response = await authFetch(
+    `/api/locations/${locationId}/accounting/periods/${periodId}/finalize`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
     },
-    success: true,
-    messageCode: "SUCCESS",
-    message: "Chốt kỳ thành công",
-    timestamp: new Date().toISOString(),
-  };
+  );
+
+  if (!response.ok) {
+    throw new Error(`Failed to finalize period: ${response.status}`);
+  }
+
+  return parseApiResponse<AccountingPeriod>(response);
 }
 
 export async function reopenPeriod(
-  _locationId: number,
-  _periodId: number,
-  _reason: string,
+  locationId: number,
+  periodId: number,
+  reason: string,
 ): Promise<ApiResponse<AccountingPeriod>> {
-  await delay(400);
-  const period = MOCK_PERIODS.find((p) => p.periodId === _periodId);
-  return {
-    data: { ...period!, status: "reopened" },
-    success: true,
-    messageCode: "SUCCESS",
-    message: "Mở lại kỳ thành công",
-    timestamp: new Date().toISOString(),
-  };
+  const response = await authFetch(
+    `/api/locations/${locationId}/accounting/periods/${periodId}/reopen`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reason }),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(`Failed to reopen period: ${response.status}`);
+  }
+
+  return parseApiResponse<AccountingPeriod>(response);
 }
 
 export async function getPeriodAuditLogs(
-  _locationId: number,
+  locationId: number,
   periodId: number,
 ): Promise<ApiResponse<PeriodAuditLog[]>> {
-  await delay(250);
+  const response = await authFetch(
+    `/api/locations/${locationId}/accounting/periods/${periodId}/audit-logs`,
+    {
+      method: "GET",
+      headers: { "Content-Type": "application/json" },
+      cache: "no-store",
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch period audit logs: ${response.status}`);
+  }
+
+  const result = await parseApiResponse<PeriodAuditLog[]>(response);
+
   return {
-    data: MOCK_AUDIT_LOGS.filter((l) => l.periodId === periodId),
-    success: true,
-    messageCode: "SUCCESS",
-    message: "OK",
-    timestamp: new Date().toISOString(),
+    ...result,
+    data: (result.data ?? []).map((log) => ({
+      ...log,
+      createdByUserName:
+        log.createdByUserName || log.createdByUserId || "Unknown user",
+    })),
   };
 }
 
 export async function getAccountingTemplates(): Promise<
   ApiResponse<AccountingTemplate[]>
 > {
-  await delay(200);
-  return {
-    data: MOCK_TEMPLATES,
-    success: true,
-    messageCode: "SUCCESS",
-    message: "OK",
-    timestamp: new Date().toISOString(),
-  };
+  return DEFAULT_EMPTY_TEMPLATE_RESPONSE;
 }
 
 export async function getAccountingBooks(
   _locationId: number,
   _periodId?: number,
 ): Promise<ApiResponse<AccountingBook[]>> {
-  await delay(300);
-  const books = _periodId
-    ? MOCK_BOOKS.filter((b) => b.periodId === _periodId)
-    : MOCK_BOOKS;
-  return {
-    data: books,
-    success: true,
-    messageCode: "SUCCESS",
-    message: "OK",
-    timestamp: new Date().toISOString(),
-  };
+  return DEFAULT_EMPTY_BOOK_RESPONSE;
 }

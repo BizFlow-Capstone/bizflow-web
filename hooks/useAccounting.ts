@@ -5,13 +5,20 @@ import {
   getCashFlowReport,
   getAccountingPeriods,
   createAccountingPeriod,
+  createCustomPeriod,
+  getOpeningBalanceSuggestion,
   finalizePeriod,
   reopenPeriod,
   getPeriodAuditLogs,
   getAccountingTemplates,
   getAccountingBooks,
 } from "@/services/accountingService";
-import type { CostFilters, CreatePeriodRequest } from "@/lib/types/accounting";
+import type {
+  CostFilters,
+  CreatePeriodRequest,
+  CreateCustomPeriodRequest,
+  OpeningBalanceSuggestionRequest,
+} from "@/lib/types/accounting";
 
 export const accountingKeys = {
   all: ["accounting"] as const,
@@ -152,5 +159,25 @@ export function useAccountingBooks(locationId: number, periodId?: number) {
       return result.data;
     },
     enabled: locationId > 0,
+  });
+}
+
+export function useCreateCustomPeriod(locationId: number) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: CreateCustomPeriodRequest) =>
+      createCustomPeriod(locationId, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: accountingKeys.periods(locationId),
+      });
+    },
+  });
+}
+
+export function useOpeningBalanceSuggestion(locationId: number) {
+  return useMutation({
+    mutationFn: (params: OpeningBalanceSuggestionRequest) =>
+      getOpeningBalanceSuggestion(locationId, params),
   });
 }

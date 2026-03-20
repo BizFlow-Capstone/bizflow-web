@@ -125,7 +125,8 @@ export interface PeriodAuditLog {
   oldValue?: string;
   newValue?: string;
   reason?: string;
-  createdByUserName: string;
+  createdByUserId?: string;
+  createdByUserName?: string;
   createdAt: string;
 }
 
@@ -135,6 +136,45 @@ export interface CreatePeriodRequest {
   quarter?: number;
   openingCashBalance?: number;
   openingBankBalance?: number;
+  useSuggestedOpeningBalances?: boolean;
+}
+
+export interface CreateCustomPeriodRequest {
+  startDate: string;
+  endDate: string;
+  openingCashBalance?: number;
+  openingBankBalance?: number;
+  useSuggestedOpeningBalances?: boolean;
+}
+
+export interface OpeningBalanceSuggestionRequest {
+  periodType: "quarter" | "year" | "custom";
+  year?: number;
+  quarter?: number;
+  startDate?: string;
+}
+
+export interface OpeningBalanceSuggestion {
+  hasSuggestion: boolean;
+  suggestionReason: string;
+  calculationExplanation?: string;
+  openingCashBalance?: number;
+  openingBankBalance?: number;
+  sourcePeriodId?: number;
+  sourceStartDate?: string;
+  sourceEndDate?: string;
+  calculationBreakdown?: {
+    previousOpeningCashBalance: number;
+    previousOpeningBankBalance: number;
+    netCashInSourcePeriod: number;
+    netBankInSourcePeriod: number;
+    suggestedOpeningCashBalance: number;
+    suggestedOpeningBankBalance: number;
+  };
+}
+
+export interface ReopenPeriodRequest {
+  reason: string;
 }
 
 // ═══ Accounting Book ═══
