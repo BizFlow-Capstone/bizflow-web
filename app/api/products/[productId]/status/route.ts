@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getBearerAuthorizationHeader } from "../../../_utils/authHeader";
 
 const BACKEND_API_URL = process.env.BACKEND_API_URL || "http://localhost:5139";
 
@@ -14,7 +15,17 @@ export async function PATCH(
   try {
     const { productId } = await params;
     const body = await request.json();
-    const authHeader = request.headers.get("authorization");
+    const authHeader = getBearerAuthorizationHeader(request);
+    if (!authHeader) {
+      return NextResponse.json(
+        {
+          success: false,
+          messageCode: "AUTH_UNAUTHORIZED",
+          message: "Missing Authorization Bearer token",
+        },
+        { status: 401 },
+      );
+    }
 
     const response = await fetch(
       `${BACKEND_API_URL}/api/my-business/product/${productId}/status`,
@@ -22,7 +33,7 @@ export async function PATCH(
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
-          ...(authHeader && { Authorization: authHeader }),
+          Authorization: authHeader,
         },
         body: JSON.stringify(body),
       },

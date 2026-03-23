@@ -9,28 +9,13 @@ import {
   Landmark,
   CreditCard,
   Calendar,
-  Lock,
-  Unlock,
-  FileText,
   BookOpen,
-  Plus,
-  ChevronDown,
-  ChevronUp,
-  Clock,
-  CheckCircle2,
-  RotateCcw,
+  BarChart3,
+  ArrowUpRight,
+  ArrowDownRight,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -39,24 +24,18 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog";
 import { useLocations } from "@/hooks/useLocations";
 import {
   useCosts,
   useRevenues,
   useCashFlowReport,
-  useAccountingPeriods,
   useAccountingTemplates,
   useAccountingBooks,
 } from "@/hooks/useAccounting";
 import { useDashboardLocation } from "@/lib/providers/DashboardLocationProvider";
-import type { PeriodStatus } from "@/lib/types/accounting";
+import AccountingPeriodsTab from "./AccountingPeriodsTab";
+import GeneralLedgerTab from "./GeneralLedgerTab";
+import NoLocationScreenSkeleton from "@/components/NoLocationScreenSkeleton";
 
 const fmt = new Intl.NumberFormat("vi-VN", {
   style: "currency",
@@ -69,14 +48,20 @@ type Tab = "reports" | "periods" | "books";
 export default function ReportsClient() {
   const { data: locations, isLoading: locLoading } = useLocations();
   const { selectedLocationId } = useDashboardLocation();
-  const [activeTab, setActiveTab] = useState<Tab>("reports");
+  const [activeTab, setActiveTab] = useState<Tab>("periods");
+  const locationList = locations ?? [];
+  const hasLocations = locationList.length > 0;
 
-  const activeLocationId =
-    selectedLocationId && selectedLocationId > 0
-      ? selectedLocationId
-      : locations && locations.length > 0
-        ? locations[0].id
-        : 0;
+  const selectedLocationExists =
+    selectedLocationId != null &&
+    selectedLocationId > 0 &&
+    locationList.some((location) => location.id === selectedLocationId);
+
+  const activeLocationId = hasLocations
+    ? selectedLocationExists
+      ? (selectedLocationId as number)
+      : locationList[0].id
+    : 0;
 
   if (locLoading) {
     return (
@@ -86,11 +71,20 @@ export default function ReportsClient() {
     );
   }
 
+  if (!hasLocations) {
+    return (
+      <NoLocationScreenSkeleton
+        title="Báo cáo thống kê"
+        description="Đang chờ bạn tạo địa điểm hoặc nhận lời mời trước khi tải dữ liệu."
+      />
+    );
+  }
+
   const tabs: { key: Tab; label: string; icon: React.ReactNode }[] = [
     {
       key: "reports",
       label: "Báo cáo",
-      icon: <TrendingDown className="w-4 h-4" />,
+      icon: <BarChart3 className="w-4 h-4" />,
     },
     {
       key: "periods",
@@ -105,17 +99,21 @@ export default function ReportsClient() {
   ];
 
   return (
-    <div className="flex-1 flex flex-col">
-      <div className="px-8 pt-6">
-        <div className="flex gap-1 mt-4 flex-wrap">
+    <div className="flex-1 flex flex-col min-h-0">
+      {/* Top tab bar */}
+      <div className="px-8 pt-6 pb-0 border-b bg-white">
+        <h1 className="text-xl font-bold text-gray-900 mb-4">
+          Báo cáo &amp; Thống kê
+        </h1>
+        <div className="flex gap-0">
           {tabs.map((tab) => (
             <button
               key={tab.key}
               onClick={() => setActiveTab(tab.key)}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+              className={`flex items-center gap-2 px-5 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px ${
                 activeTab === tab.key
-                  ? "bg-[#23C4C1] text-white"
-                  : "text-gray-600 hover:bg-gray-100"
+                  ? "border-[#23C4C1] text-[#23C4C1]"
+                  : "border-transparent text-gray-500 hover:text-gray-800 hover:border-gray-200"
               }`}
             >
               {tab.icon}
@@ -130,7 +128,7 @@ export default function ReportsClient() {
           <ReportsTab locationId={activeLocationId} />
         )}
         {activeTab === "periods" && (
-          <PeriodsTab locationId={activeLocationId} />
+          <AccountingPeriodsTab locationId={activeLocationId} />
         )}
         {activeTab === "books" && <BooksTab locationId={activeLocationId} />}
       </main>
@@ -138,14 +136,12 @@ export default function ReportsClient() {
   );
 }
 
-// ═══════════════════════════════════════════════
-// Tab 1: Báo cáo (Revenue, Cost, Cash Flow)
-// ═══════════════════════════════════════════════
+// ─── Tab 1: Báo cáo ─────────────────────────────────────────────────────────
 
 function ReportsTab({ locationId }: { locationId: number }) {
-  const [subTab, setSubTab] = useState<"revenue" | "cost" | "cashflow">(
-    "revenue",
-  );
+  const [subTab, setSubTab] = useState<
+    "revenue" | "cost" | "cashflow" | "ledger"
+  >("ledger");
   const { data: revenues, isLoading: revLoading } = useRevenues(locationId);
   const { data: costs, isLoading: costLoading } = useCosts({ locationId });
   const { data: cashFlow, isLoading: cfLoading } = useCashFlowReport(
@@ -154,34 +150,71 @@ function ReportsTab({ locationId }: { locationId: number }) {
     "2026-03-31",
   );
 
+  const totalRevenue = revenues?.items.reduce((s, r) => s + r.amount, 0) ?? 0;
+  const totalCost = costs?.items.reduce((s, c) => s + c.amount, 0) ?? 0;
+
   const subTabs = [
+    {
+      key: "ledger" as const,
+      label: "Sổ cái",
+      icon: <BookOpen className="w-3.5 h-3.5" />,
+    },
     {
       key: "revenue" as const,
       label: "Doanh thu",
-      icon: <DollarSign className="w-4 h-4" />,
+      icon: <DollarSign className="w-3.5 h-3.5" />,
     },
     {
       key: "cost" as const,
       label: "Chi phí",
-      icon: <TrendingDown className="w-4 h-4" />,
+      icon: <TrendingDown className="w-3.5 h-3.5" />,
     },
     {
       key: "cashflow" as const,
       label: "Dòng tiền",
-      icon: <Banknote className="w-4 h-4" />,
+      icon: <Banknote className="w-3.5 h-3.5" />,
     },
   ];
 
   return (
-    <div className="space-y-6">
-      <div className="flex gap-2">
+    <div className="space-y-5">
+      {/* Summary KPIs */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <KpiCard
+          label="Tổng doanh thu"
+          value={fmt.format(totalRevenue)}
+          trend="+12.4%"
+          up
+          icon={<ArrowUpRight className="w-4 h-4 text-emerald-500" />}
+          color="emerald"
+        />
+        <KpiCard
+          label="Tổng chi phí"
+          value={fmt.format(totalCost)}
+          trend="+3.1%"
+          up={false}
+          icon={<ArrowDownRight className="w-4 h-4 text-red-500" />}
+          color="red"
+        />
+        <KpiCard
+          label="Lợi nhuận ròng"
+          value={fmt.format(totalRevenue - totalCost)}
+          trend="+18.2%"
+          up
+          icon={<ArrowUpRight className="w-4 h-4 text-emerald-500" />}
+          color="emerald"
+        />
+      </div>
+
+      {/* Sub tabs */}
+      <div className="flex gap-1 bg-gray-100 p-1 rounded-lg w-fit">
         {subTabs.map((t) => (
           <button
             key={t.key}
             onClick={() => setSubTab(t.key)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
               subTab === t.key
-                ? "bg-white border border-gray-200 text-gray-800 shadow-sm"
+                ? "bg-white text-gray-800 shadow-sm"
                 : "text-gray-500 hover:text-gray-700"
             }`}
           >
@@ -191,539 +224,241 @@ function ReportsTab({ locationId }: { locationId: number }) {
         ))}
       </div>
 
-      {/* Revenue Table */}
+      {subTab === "ledger" && <GeneralLedgerTab locationId={locationId} />}
+
+      {/* Revenue */}
       {subTab === "revenue" && (
-        <div className="bg-white rounded-xl border">
-          <div className="p-4 border-b">
-            <h3 className="font-semibold text-gray-800">Báo cáo doanh thu</h3>
-            {revenues && (
-              <p className="text-sm text-gray-500 mt-1">
-                Tổng:{" "}
-                <span className="font-medium text-emerald-600">
-                  {fmt.format(revenues.items.reduce((s, r) => s + r.amount, 0))}
-                </span>
-                {" · "}
-                {revenues.totalCount} bản ghi
-              </p>
-            )}
-          </div>
-          {revLoading ? (
-            <div className="p-8 flex justify-center">
-              <Loader2 className="w-6 h-6 animate-spin text-[#23C4C1]" />
-            </div>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Ngày</TableHead>
-                  <TableHead>Loại</TableHead>
-                  <TableHead>Mô tả</TableHead>
-                  <TableHead>PTTT</TableHead>
-                  <TableHead className="text-right">Số tiền</TableHead>
+        <DataCard
+          title="Doanh thu"
+          subtitle={
+            revenues
+              ? `${revenues.totalCount} giao dịch · Tổng: ${fmt.format(totalRevenue)}`
+              : undefined
+          }
+          loading={revLoading}
+        >
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-gray-50/70 hover:bg-gray-50/70">
+                <TableHead className="pl-5">Ngày</TableHead>
+                <TableHead>Loại</TableHead>
+                <TableHead>Mô tả</TableHead>
+                <TableHead>PTTT</TableHead>
+                <TableHead className="text-right pr-5">Số tiền</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {revenues?.items.map((r) => (
+                <TableRow key={r.revenueId} className="hover:bg-gray-50/50">
+                  <TableCell className="pl-5 text-sm text-gray-500">
+                    {new Date(r.revenueDate).toLocaleDateString("vi-VN")}
+                  </TableCell>
+                  <TableCell>
+                    <Badge
+                      className={
+                        r.revenueType === "sale"
+                          ? "bg-blue-100 text-blue-700"
+                          : "bg-gray-100 text-gray-600"
+                      }
+                    >
+                      {r.revenueType === "sale" ? "Bán hàng" : "Thủ công"}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-sm max-w-xs truncate text-gray-700">
+                    {r.description}
+                  </TableCell>
+                  <TableCell>
+                    <PaymentBadge method={r.paymentMethod} />
+                  </TableCell>
+                  <TableCell className="text-right pr-5 font-semibold text-emerald-600">
+                    {fmt.format(r.amount)}
+                  </TableCell>
                 </TableRow>
-              </TableHeader>
-              <TableBody>
-                {revenues?.items.map((r) => (
-                  <TableRow key={r.revenueId}>
-                    <TableCell className="text-sm">
-                      {new Date(r.revenueDate).toLocaleDateString("vi-VN")}
-                    </TableCell>
-                    <TableCell>
-                      <Badge
-                        variant={
-                          r.revenueType === "sale" ? "default" : "secondary"
-                        }
-                        className={
-                          r.revenueType === "sale"
-                            ? "bg-blue-100 text-blue-700"
-                            : ""
-                        }
-                      >
-                        {r.revenueType === "sale" ? "Bán hàng" : "Thủ công"}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-sm max-w-xs truncate">
-                      {r.description}
-                    </TableCell>
-                    <TableCell>
-                      <PaymentMethodBadge method={r.paymentMethod} />
-                    </TableCell>
-                    <TableCell className="text-right font-medium text-emerald-600">
-                      {fmt.format(r.amount)}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-        </div>
+              ))}
+            </TableBody>
+          </Table>
+        </DataCard>
       )}
 
-      {/* Cost Table */}
+      {/* Cost */}
       {subTab === "cost" && (
-        <div className="bg-white rounded-xl border">
-          <div className="p-4 border-b">
-            <h3 className="font-semibold text-gray-800">Báo cáo chi phí</h3>
-            {costs && (
-              <p className="text-sm text-gray-500 mt-1">
-                Tổng:{" "}
-                <span className="font-medium text-red-600">
-                  {fmt.format(costs.items.reduce((s, c) => s + c.amount, 0))}
-                </span>
-                {" · "}
-                {costs.totalCount} bản ghi
-              </p>
-            )}
-          </div>
-          {costLoading ? (
-            <div className="p-8 flex justify-center">
-              <Loader2 className="w-6 h-6 animate-spin text-[#23C4C1]" />
-            </div>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Ngày</TableHead>
-                  <TableHead>Phân loại</TableHead>
-                  <TableHead>Mô tả</TableHead>
-                  <TableHead>PTTT</TableHead>
-                  <TableHead className="text-right">Số tiền</TableHead>
+        <DataCard
+          title="Chi phí"
+          subtitle={
+            costs
+              ? `${costs.totalCount} giao dịch · Tổng: ${fmt.format(totalCost)}`
+              : undefined
+          }
+          loading={costLoading}
+        >
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-gray-50/70 hover:bg-gray-50/70">
+                <TableHead className="pl-5">Ngày</TableHead>
+                <TableHead>Phân loại</TableHead>
+                <TableHead>Mô tả</TableHead>
+                <TableHead>PTTT</TableHead>
+                <TableHead className="text-right pr-5">Số tiền</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {costs?.items.map((c) => (
+                <TableRow key={c.costId} className="hover:bg-gray-50/50">
+                  <TableCell className="pl-5 text-sm text-gray-500">
+                    {new Date(c.costDate).toLocaleDateString("vi-VN")}
+                  </TableCell>
+                  <TableCell>
+                    <CostBadge type={c.costType} />
+                  </TableCell>
+                  <TableCell className="text-sm max-w-xs truncate text-gray-700">
+                    {c.description}
+                  </TableCell>
+                  <TableCell>
+                    <PaymentBadge method={c.paymentMethod} />
+                  </TableCell>
+                  <TableCell className="text-right pr-5 font-semibold text-red-500">
+                    {fmt.format(c.amount)}
+                  </TableCell>
                 </TableRow>
-              </TableHeader>
-              <TableBody>
-                {costs?.items.map((c) => (
-                  <TableRow key={c.costId}>
-                    <TableCell className="text-sm">
-                      {new Date(c.costDate).toLocaleDateString("vi-VN")}
-                    </TableCell>
-                    <TableCell>
-                      <CostTypeBadge type={c.costType} />
-                    </TableCell>
-                    <TableCell className="text-sm max-w-xs truncate">
-                      {c.description}
-                    </TableCell>
-                    <TableCell>
-                      <PaymentMethodBadge method={c.paymentMethod} />
-                    </TableCell>
-                    <TableCell className="text-right font-medium text-red-600">
-                      {fmt.format(c.amount)}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-        </div>
+              ))}
+            </TableBody>
+          </Table>
+        </DataCard>
       )}
 
       {/* Cash Flow */}
-      {subTab === "cashflow" && (
-        <div className="space-y-4">
-          {cfLoading ? (
-            <div className="bg-white rounded-xl border p-8 flex justify-center">
-              <Loader2 className="w-6 h-6 animate-spin text-[#23C4C1]" />
+      {subTab === "cashflow" &&
+        (cfLoading ? (
+          <div className="bg-white rounded-2xl border p-12 flex justify-center">
+            <Loader2 className="w-6 h-6 animate-spin text-[#23C4C1]" />
+          </div>
+        ) : cashFlow ? (
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {cashFlow.channels.map((ch) => (
+                <div
+                  key={ch.channel}
+                  className="bg-white rounded-2xl border p-5 space-y-4"
+                >
+                  <div className="flex items-center gap-2">
+                    {ch.channel === "cash" && (
+                      <Banknote className="w-5 h-5 text-emerald-500" />
+                    )}
+                    {ch.channel === "bank" && (
+                      <Landmark className="w-5 h-5 text-blue-500" />
+                    )}
+                    {ch.channel === "debt" && (
+                      <CreditCard className="w-5 h-5 text-amber-500" />
+                    )}
+                    <h4 className="font-semibold text-gray-800">
+                      {ch.channel === "cash"
+                        ? "Tiền mặt"
+                        : ch.channel === "bank"
+                          ? "Ngân hàng"
+                          : "Công nợ"}
+                    </h4>
+                  </div>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-gray-500">Vào</span>
+                      <span className="font-medium text-emerald-600">
+                        +{fmt.format(ch.totalIn)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-500">Ra</span>
+                      <span className="font-medium text-red-500">
+                        -{fmt.format(ch.totalOut)}
+                      </span>
+                    </div>
+                    <Separator />
+                    <div className="flex justify-between">
+                      <span className="font-medium text-gray-700">Ròng</span>
+                      <span className="font-bold text-gray-900">
+                        {fmt.format(ch.net)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
-          ) : cashFlow ? (
-            <>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {cashFlow.channels.map((ch) => (
-                  <div
-                    key={ch.channel}
-                    className="bg-white rounded-xl border p-5"
-                  >
-                    <div className="flex items-center gap-2 mb-3">
-                      {ch.channel === "cash" && (
-                        <Banknote className="w-5 h-5 text-emerald-500" />
-                      )}
-                      {ch.channel === "bank" && (
-                        <Landmark className="w-5 h-5 text-blue-500" />
-                      )}
-                      {ch.channel === "debt" && (
-                        <CreditCard className="w-5 h-5 text-amber-500" />
-                      )}
-                      <h4 className="font-semibold text-gray-800">
-                        {ch.channel === "cash"
-                          ? "Tiền mặt"
-                          : ch.channel === "bank"
-                            ? "Ngân hàng"
-                            : "Công nợ"}
-                      </h4>
-                    </div>
-                    <div className="space-y-2 text-sm">
-                      <div className="flex justify-between">
-                        <span className="text-gray-500">Tổng vào</span>
-                        <span className="font-medium text-emerald-600">
-                          +{fmt.format(ch.totalIn)}
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-gray-500">Tổng ra</span>
-                        <span className="font-medium text-red-500">
-                          -{fmt.format(ch.totalOut)}
-                        </span>
-                      </div>
-                      <Separator />
-                      <div className="flex justify-between">
-                        <span className="text-gray-600 font-medium">Ròng</span>
-                        <span className="font-bold text-gray-800">
-                          {fmt.format(ch.net)}
-                        </span>
-                      </div>
-                    </div>
+            <div className="bg-white rounded-2xl border p-5">
+              <h4 className="font-semibold text-gray-800 mb-4">
+                Tổng hợp dòng tiền
+              </h4>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                {[
+                  {
+                    label: "Tổng vào",
+                    value: cashFlow.channels.reduce((s, c) => s + c.totalIn, 0),
+                    color: "text-emerald-600",
+                  },
+                  {
+                    label: "Tổng ra",
+                    value: cashFlow.channels.reduce(
+                      (s, c) => s + c.totalOut,
+                      0,
+                    ),
+                    color: "text-red-500",
+                  },
+                  {
+                    label: "Ròng tiền mặt",
+                    value:
+                      cashFlow.channels.find((c) => c.channel === "cash")
+                        ?.net ?? 0,
+                    color: "text-gray-900",
+                  },
+                  {
+                    label: "Nợ phát sinh",
+                    value:
+                      cashFlow.channels.find((c) => c.channel === "debt")
+                        ?.totalIn ?? 0,
+                    color: "text-amber-600",
+                  },
+                ].map((item) => (
+                  <div key={item.label}>
+                    <p className="text-gray-400 text-xs mb-1">{item.label}</p>
+                    <p className={`font-bold text-lg ${item.color}`}>
+                      {fmt.format(item.value)}
+                    </p>
                   </div>
                 ))}
               </div>
-
-              {/* Summary row */}
-              <div className="bg-white rounded-xl border p-5">
-                <h4 className="font-semibold text-gray-800 mb-2">Tổng hợp</h4>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                  <div>
-                    <p className="text-gray-500">Tổng doanh thu</p>
-                    <p className="font-bold text-lg text-gray-800">
-                      {fmt.format(
-                        cashFlow.channels.reduce((s, c) => s + c.totalIn, 0),
-                      )}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-gray-500">Tiền thực thu</p>
-                    <p className="font-bold text-lg text-emerald-600">
-                      {fmt.format(
-                        cashFlow.channels
-                          .filter((c) => c.channel !== "debt")
-                          .reduce((s, c) => s + c.net, 0),
-                      )}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-gray-500">Tổng chi</p>
-                    <p className="font-bold text-lg text-red-500">
-                      {fmt.format(
-                        cashFlow.channels.reduce((s, c) => s + c.totalOut, 0),
-                      )}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-gray-500">Nợ phát sinh</p>
-                    <p className="font-bold text-lg text-amber-600">
-                      {fmt.format(
-                        cashFlow.channels.find((c) => c.channel === "debt")
-                          ?.totalIn ?? 0,
-                      )}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </>
-          ) : null}
-        </div>
-      )}
+            </div>
+          </div>
+        ) : null)}
     </div>
   );
 }
 
-// ═══════════════════════════════════════════════
-// Tab 2: Kỳ kế toán (Accounting Periods)
-// ═══════════════════════════════════════════════
-
-function PeriodsTab({ locationId }: { locationId: number }) {
-  const { data: periods, isLoading } = useAccountingPeriods(locationId);
-  const [expandedId, setExpandedId] = useState<number | null>(null);
-  const [showCreate, setShowCreate] = useState(false);
-
-  const getStatusBadge = (status: PeriodStatus) => {
-    switch (status) {
-      case "open":
-        return (
-          <Badge className="bg-emerald-100 text-emerald-700">
-            <Clock className="w-3 h-3 mr-1" />
-            Đang mở
-          </Badge>
-        );
-      case "finalized":
-        return (
-          <Badge className="bg-blue-100 text-blue-700">
-            <Lock className="w-3 h-3 mr-1" />
-            Đã chốt
-          </Badge>
-        );
-      case "reopened":
-        return (
-          <Badge className="bg-amber-100 text-amber-700">
-            <Unlock className="w-3 h-3 mr-1" />
-            Mở lại
-          </Badge>
-        );
-    }
-  };
-
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h3 className="font-semibold text-gray-800">Danh sách kỳ kế toán</h3>
-        <Button
-          onClick={() => setShowCreate(true)}
-          className="bg-[#23C4C1] hover:bg-[#1ba8a6]"
-        >
-          <Plus className="w-4 h-4 mr-1" />
-          Tạo kỳ mới
-        </Button>
-      </div>
-
-      {isLoading ? (
-        <div className="bg-white rounded-xl border p-8 flex justify-center">
-          <Loader2 className="w-6 h-6 animate-spin text-[#23C4C1]" />
-        </div>
-      ) : periods && periods.length > 0 ? (
-        <div className="space-y-3">
-          {periods.map((period) => (
-            <div
-              key={period.periodId}
-              className="bg-white rounded-xl border overflow-hidden"
-            >
-              <button
-                onClick={() =>
-                  setExpandedId(
-                    expandedId === period.periodId ? null : period.periodId,
-                  )
-                }
-                className="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition-colors"
-              >
-                <div className="flex items-center gap-3">
-                  <Calendar className="w-5 h-5 text-gray-400" />
-                  <div className="text-left">
-                    <p className="font-medium text-gray-800">
-                      {period.periodType === "quarter"
-                        ? `Quý ${period.quarter}/${period.year}`
-                        : `Năm ${period.year}`}
-                    </p>
-                    <p className="text-xs text-gray-500">
-                      {new Date(period.startDate).toLocaleDateString("vi-VN")} —{" "}
-                      {new Date(period.endDate).toLocaleDateString("vi-VN")}
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-3">
-                  {getStatusBadge(period.status)}
-                  {expandedId === period.periodId ? (
-                    <ChevronUp className="w-4 h-4 text-gray-400" />
-                  ) : (
-                    <ChevronDown className="w-4 h-4 text-gray-400" />
-                  )}
-                </div>
-              </button>
-
-              {expandedId === period.periodId && (
-                <div className="px-4 pb-4 border-t bg-gray-50/50">
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 py-4 text-sm">
-                    <div>
-                      <p className="text-gray-500 text-xs mb-1">
-                        Số dư TM đầu kỳ
-                      </p>
-                      <p className="font-medium">
-                        {period.openingCashBalance != null
-                          ? fmt.format(period.openingCashBalance)
-                          : "—"}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-gray-500 text-xs mb-1">
-                        Số dư NH đầu kỳ
-                      </p>
-                      <p className="font-medium">
-                        {period.openingBankBalance != null
-                          ? fmt.format(period.openingBankBalance)
-                          : "—"}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-gray-500 text-xs mb-1">Trạng thái</p>
-                      <p className="font-medium capitalize">{period.status}</p>
-                    </div>
-                    <div>
-                      <p className="text-gray-500 text-xs mb-1">Ngày chốt</p>
-                      <p className="font-medium">
-                        {period.finalizedAt
-                          ? new Date(period.finalizedAt).toLocaleDateString(
-                              "vi-VN",
-                            )
-                          : "Chưa chốt"}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex gap-2">
-                    {(period.status === "open" ||
-                      period.status === "reopened") && (
-                      <Button size="sm" variant="outline">
-                        <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
-                        Chốt kỳ
-                      </Button>
-                    )}
-                    {period.status === "finalized" && (
-                      <Button size="sm" variant="outline">
-                        <RotateCcw className="w-3.5 h-3.5 mr-1" />
-                        Mở lại
-                      </Button>
-                    )}
-                    <Button size="sm" variant="outline">
-                      <FileText className="w-3.5 h-3.5 mr-1" />
-                      Xem sổ
-                    </Button>
-                  </div>
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-      ) : (
-        <div className="bg-white rounded-xl border p-8 text-center text-gray-500">
-          <Calendar className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-          <p className="font-medium">Chưa có kỳ kế toán</p>
-          <p className="text-sm mt-1">
-            Tạo kỳ kế toán đầu tiên để bắt đầu quản lý sổ sách
-          </p>
-        </div>
-      )}
-
-      {/* Create Period Dialog */}
-      <CreatePeriodDialog
-        open={showCreate}
-        onClose={() => setShowCreate(false)}
-      />
-    </div>
-  );
-}
-
-function CreatePeriodDialog({
-  open,
-  onClose,
-}: {
-  open: boolean;
-  onClose: () => void;
-}) {
-  const [periodType, setPeriodType] = useState<"quarter" | "year">("quarter");
-  const [year, setYear] = useState(String(new Date().getFullYear()));
-  const [quarter, setQuarter] = useState("1");
-  const [cashBalance, setCashBalance] = useState("");
-  const [bankBalance, setBankBalance] = useState("");
-
-  return (
-    <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Tạo kỳ kế toán mới</DialogTitle>
-        </DialogHeader>
-        <div className="space-y-4 py-2">
-          <div>
-            <label className="text-sm font-medium text-gray-700 mb-1 block">
-              Loại kỳ
-            </label>
-            <Select
-              value={periodType}
-              onValueChange={(v) => setPeriodType(v as "quarter" | "year")}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="quarter">Quý</SelectItem>
-                <SelectItem value="year">Năm</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="text-sm font-medium text-gray-700 mb-1 block">
-                Năm
-              </label>
-              <Input
-                type="number"
-                value={year}
-                onChange={(e) => setYear(e.target.value)}
-              />
-            </div>
-            {periodType === "quarter" && (
-              <div>
-                <label className="text-sm font-medium text-gray-700 mb-1 block">
-                  Quý
-                </label>
-                <Select value={quarter} onValueChange={setQuarter}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="1">Quý 1</SelectItem>
-                    <SelectItem value="2">Quý 2</SelectItem>
-                    <SelectItem value="3">Quý 3</SelectItem>
-                    <SelectItem value="4">Quý 4</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-          </div>
-          <Separator />
-          <p className="text-xs text-gray-500">
-            Số dư đầu kỳ (bắt buộc cho kỳ đầu tiên, kỳ sau tự động carry từ kỳ
-            trước)
-          </p>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="text-sm font-medium text-gray-700 mb-1 block">
-                Tiền mặt đầu kỳ
-              </label>
-              <Input
-                type="number"
-                placeholder="VD: 50000000"
-                value={cashBalance}
-                onChange={(e) => setCashBalance(e.target.value)}
-              />
-            </div>
-            <div>
-              <label className="text-sm font-medium text-gray-700 mb-1 block">
-                Ngân hàng đầu kỳ
-              </label>
-              <Input
-                type="number"
-                placeholder="VD: 120000000"
-                value={bankBalance}
-                onChange={(e) => setBankBalance(e.target.value)}
-              />
-            </div>
-          </div>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
-            Hủy
-          </Button>
-          <Button className="bg-[#23C4C1] hover:bg-[#1ba8a6]" onClick={onClose}>
-            Tạo kỳ
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-// ═══════════════════════════════════════════════
-// Tab 3: Sổ kế toán (Accounting Books)
-// ═══════════════════════════════════════════════
+// ─── Tab 3: Sổ kế toán ──────────────────────────────────────────────────────
 
 function BooksTab({ locationId }: { locationId: number }) {
   const { data: templates, isLoading: tplLoading } = useAccountingTemplates();
   const { data: books, isLoading: bookLoading } =
     useAccountingBooks(locationId);
 
-  const isLoading = tplLoading || bookLoading;
+  const BOOK_COLORS: Record<string, string> = {
+    S1a: "bg-violet-100 text-violet-700",
+    S2a: "bg-blue-100 text-blue-700",
+    S2b: "bg-cyan-100 text-cyan-700",
+    S2c: "bg-teal-100 text-teal-700",
+    S2d: "bg-emerald-100 text-emerald-700",
+    S2e: "bg-green-100 text-green-700",
+  };
 
   return (
     <div className="space-y-6">
-      {/* Templates overview */}
+      {/* Templates */}
       <div>
-        <h3 className="font-semibold text-gray-800 mb-3">Mẫu sổ theo TT152</h3>
-        {isLoading ? (
-          <div className="bg-white rounded-xl border p-8 flex justify-center">
+        <h2 className="text-lg font-bold text-gray-900 mb-1">
+          Mẫu sổ kế toán (TT152)
+        </h2>
+        <p className="text-sm text-gray-500 mb-4">
+          Danh sách mẫu sổ theo Thông tư 152/2025/TT-BTC
+        </p>
+        {tplLoading ? (
+          <div className="bg-white rounded-2xl border p-10 flex justify-center">
             <Loader2 className="w-6 h-6 animate-spin text-[#23C4C1]" />
           </div>
         ) : (
@@ -731,27 +466,25 @@ function BooksTab({ locationId }: { locationId: number }) {
             {templates?.map((tpl) => (
               <div
                 key={tpl.templateId}
-                className="bg-white rounded-xl border p-4 hover:shadow-sm transition-shadow"
+                className="bg-white rounded-2xl border p-4 hover:shadow-md transition-all group"
               >
-                <div className="flex items-start justify-between mb-2">
-                  <Badge variant="outline" className="text-xs font-mono">
-                    {tpl.templateCode}
-                  </Badge>
-                  <Badge
-                    className={
-                      tpl.isActive
-                        ? "bg-emerald-100 text-emerald-700"
-                        : "bg-gray-100 text-gray-500"
-                    }
+                <div className="flex items-start justify-between mb-3">
+                  <span
+                    className={`text-xs font-bold font-mono px-2.5 py-1 rounded-lg ${BOOK_COLORS[tpl.templateCode] ?? "bg-gray-100 text-gray-700"}`}
                   >
-                    {tpl.isActive ? "Active" : "Inactive"}
-                  </Badge>
+                    {tpl.templateCode}
+                  </span>
+                  <span
+                    className={`text-xs px-2 py-0.5 rounded-full font-medium ${tpl.isActive ? "bg-emerald-50 text-emerald-600" : "bg-gray-100 text-gray-500"}`}
+                  >
+                    {tpl.isActive ? "Đang dùng" : "Không dùng"}
+                  </span>
                 </div>
-                <p className="text-sm font-medium text-gray-800 mb-1">
+                <p className="text-sm font-semibold text-gray-800 mb-2 leading-snug">
                   {tpl.name}
                 </p>
-                <p className="text-xs text-gray-500">
-                  Nhóm: {tpl.applicableGroups.join(", ")}
+                <p className="text-xs text-gray-400">
+                  Nhóm {tpl.applicableGroups.join(", ")}
                   {tpl.applicableMethods &&
                     ` · ${tpl.applicableMethods.map((m) => (m === "method_1" ? "Cách 1" : "Cách 2")).join(", ")}`}
                 </p>
@@ -765,39 +498,56 @@ function BooksTab({ locationId }: { locationId: number }) {
 
       {/* Books created */}
       <div>
-        <h3 className="font-semibold text-gray-800 mb-3">Sổ đã tạo</h3>
+        <h2 className="text-lg font-bold text-gray-900 mb-1">Sổ đã tạo</h2>
+        <p className="text-sm text-gray-500 mb-4">
+          Các sổ kế toán đã được tạo trong các kỳ
+        </p>
         {bookLoading ? (
-          <div className="bg-white rounded-xl border p-8 flex justify-center">
+          <div className="bg-white rounded-2xl border p-10 flex justify-center">
             <Loader2 className="w-6 h-6 animate-spin text-[#23C4C1]" />
           </div>
         ) : books && books.length > 0 ? (
-          <div className="bg-white rounded-xl border">
+          <div className="bg-white rounded-2xl border shadow-sm overflow-hidden">
             <Table>
               <TableHeader>
-                <TableRow>
-                  <TableHead>Mã sổ</TableHead>
-                  <TableHead>Tên mẫu</TableHead>
-                  <TableHead>Nhóm</TableHead>
-                  <TableHead>Phương pháp</TableHead>
-                  <TableHead>Trạng thái</TableHead>
-                  <TableHead>Ngày tạo</TableHead>
+                <TableRow className="bg-gray-50/70 hover:bg-gray-50/70">
+                  <TableHead className="pl-5 font-semibold text-gray-600">
+                    Mã sổ
+                  </TableHead>
+                  <TableHead className="font-semibold text-gray-600">
+                    Tên mẫu
+                  </TableHead>
+                  <TableHead className="font-semibold text-gray-600">
+                    Nhóm
+                  </TableHead>
+                  <TableHead className="font-semibold text-gray-600">
+                    Phương pháp
+                  </TableHead>
+                  <TableHead className="font-semibold text-gray-600">
+                    Trạng thái
+                  </TableHead>
+                  <TableHead className="font-semibold text-gray-600 pr-5">
+                    Ngày tạo
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {books.map((book) => (
-                  <TableRow key={book.bookId}>
-                    <TableCell>
-                      <Badge variant="outline" className="font-mono text-xs">
+                  <TableRow key={book.bookId} className="hover:bg-gray-50/50">
+                    <TableCell className="pl-5">
+                      <span
+                        className={`text-xs font-bold font-mono px-2 py-0.5 rounded-md ${BOOK_COLORS[book.templateCode] ?? "bg-gray-100 text-gray-700"}`}
+                      >
                         {book.templateCode}
-                      </Badge>
+                      </span>
                     </TableCell>
-                    <TableCell className="text-sm">
+                    <TableCell className="text-sm text-gray-700">
                       {book.templateName}
                     </TableCell>
-                    <TableCell className="text-sm">
+                    <TableCell className="text-sm text-gray-600">
                       Nhóm {book.groupNumber}
                     </TableCell>
-                    <TableCell className="text-sm">
+                    <TableCell className="text-sm text-gray-600">
                       {book.taxMethod
                         ? book.taxMethod === "method_1"
                           ? "Cách 1"
@@ -805,17 +555,13 @@ function BooksTab({ locationId }: { locationId: number }) {
                         : "—"}
                     </TableCell>
                     <TableCell>
-                      <Badge
-                        className={
-                          book.status === "active"
-                            ? "bg-emerald-100 text-emerald-700"
-                            : "bg-gray-100 text-gray-500"
-                        }
+                      <span
+                        className={`text-xs px-2 py-0.5 rounded-full font-medium ${book.status === "active" ? "bg-emerald-50 text-emerald-600" : "bg-gray-100 text-gray-500"}`}
                       >
                         {book.status === "active" ? "Đang dùng" : "Lưu trữ"}
-                      </Badge>
+                      </span>
                     </TableCell>
-                    <TableCell className="text-sm text-gray-500">
+                    <TableCell className="text-sm text-gray-400 pr-5">
                       {new Date(book.createdAt).toLocaleDateString("vi-VN")}
                     </TableCell>
                   </TableRow>
@@ -824,10 +570,10 @@ function BooksTab({ locationId }: { locationId: number }) {
             </Table>
           </div>
         ) : (
-          <div className="bg-white rounded-xl border p-8 text-center text-gray-500">
-            <BookOpen className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-            <p className="font-medium">Chưa có sổ kế toán</p>
-            <p className="text-sm mt-1">
+          <div className="bg-white rounded-2xl border p-12 text-center">
+            <BookOpen className="w-12 h-12 mx-auto mb-3 text-gray-200" />
+            <p className="font-semibold text-gray-500">Chưa có sổ kế toán</p>
+            <p className="text-sm text-gray-400 mt-1">
               Tạo kỳ kế toán và chọn mẫu sổ để bắt đầu
             </p>
           </div>
@@ -837,35 +583,89 @@ function BooksTab({ locationId }: { locationId: number }) {
   );
 }
 
-// ═══════════════════════════════════════════════
-// Shared badge components
-// ═══════════════════════════════════════════════
+// ─── Shared micro-components ─────────────────────────────────────────────────
 
-function PaymentMethodBadge({ method }: { method?: string }) {
-  if (!method) return <span className="text-xs text-gray-400">—</span>;
-  const styles: Record<string, string> = {
-    cash: "bg-emerald-100 text-emerald-700",
-    bank: "bg-blue-100 text-blue-700",
-    debt: "bg-amber-100 text-amber-700",
-    mixed: "bg-purple-100 text-purple-700",
-  };
-  const labels: Record<string, string> = {
-    cash: "Tiền mặt",
-    bank: "Ngân hàng",
-    debt: "Công nợ",
-    mixed: "Hỗn hợp",
-  };
+function KpiCard({
+  label,
+  value,
+  trend,
+  up,
+  icon,
+  color,
+}: {
+  label: string;
+  value: string;
+  trend: string;
+  up: boolean;
+  icon: React.ReactNode;
+  color: "emerald" | "red";
+}) {
+  const colorCls =
+    color === "emerald"
+      ? "text-emerald-600 bg-emerald-50"
+      : "text-red-500 bg-red-50";
   return (
-    <Badge className={styles[method] || "bg-gray-100 text-gray-600"}>
-      {labels[method] || method}
-    </Badge>
+    <div className="bg-white rounded-2xl border p-5 space-y-2">
+      <p className="text-sm text-gray-500">{label}</p>
+      <p className="text-2xl font-bold text-gray-900">{value}</p>
+      <div
+        className={`flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full w-fit ${colorCls}`}
+      >
+        {icon}
+        <span>{trend} so với kỳ trước</span>
+      </div>
+    </div>
   );
 }
 
-const COST_TYPE_LABELS: Record<string, string> = {
+function DataCard({
+  title,
+  subtitle,
+  loading,
+  children,
+}: {
+  title: string;
+  subtitle?: string;
+  loading: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="bg-white rounded-2xl border shadow-sm overflow-hidden">
+      <div className="p-5 border-b">
+        <h3 className="font-semibold text-gray-800">{title}</h3>
+        {subtitle && <p className="text-sm text-gray-400 mt-0.5">{subtitle}</p>}
+      </div>
+      {loading ? (
+        <div className="p-10 flex justify-center">
+          <Loader2 className="w-6 h-6 animate-spin text-[#23C4C1]" />
+        </div>
+      ) : (
+        children
+      )}
+    </div>
+  );
+}
+
+const PAYMENT_STYLES: Record<string, { cls: string; label: string }> = {
+  cash: { cls: "bg-emerald-100 text-emerald-700", label: "Tiền mặt" },
+  bank: { cls: "bg-blue-100 text-blue-700", label: "Ngân hàng" },
+  debt: { cls: "bg-amber-100 text-amber-700", label: "Công nợ" },
+  mixed: { cls: "bg-purple-100 text-purple-700", label: "Hỗn hợp" },
+};
+
+function PaymentBadge({ method }: { method?: string }) {
+  if (!method) return <span className="text-gray-300 text-xs">—</span>;
+  const s = PAYMENT_STYLES[method] ?? {
+    cls: "bg-gray-100 text-gray-600",
+    label: method,
+  };
+  return <Badge className={`${s.cls} text-xs`}>{s.label}</Badge>;
+}
+
+const COST_LABELS: Record<string, string> = {
   import: "Nhập hàng",
   salary: "Lương",
-  rent: "Thuê mặt bằng",
+  rent: "Thuê MB",
   utilities: "Điện/Nước",
   transport: "Vận chuyển",
   marketing: "Marketing",
@@ -873,10 +673,10 @@ const COST_TYPE_LABELS: Record<string, string> = {
   other: "Khác",
 };
 
-function CostTypeBadge({ type }: { type: string }) {
+function CostBadge({ type }: { type: string }) {
   return (
     <Badge variant="secondary" className="text-xs">
-      {COST_TYPE_LABELS[type] || type}
+      {COST_LABELS[type] ?? type}
     </Badge>
   );
 }

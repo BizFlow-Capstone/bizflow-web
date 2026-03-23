@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getBearerAuthorizationHeader } from "../../_utils/authHeader";
 
 const BACKEND_API_URL = process.env.BACKEND_API_URL || "http://localhost:5139";
 
@@ -12,7 +13,17 @@ export async function GET(
 ) {
   try {
     const { debtorId } = await params;
-    const authHeader = request.headers.get("authorization");
+    const authHeader = getBearerAuthorizationHeader(request);
+    if (!authHeader) {
+      return NextResponse.json(
+        {
+          success: false,
+          messageCode: "AUTH_UNAUTHORIZED",
+          message: "Missing Authorization Bearer token",
+        },
+        { status: 401 },
+      );
+    }
 
     const response = await fetch(
       `${BACKEND_API_URL}/api/my-business/debtors/${debtorId}`,
@@ -20,7 +31,7 @@ export async function GET(
         method: "GET",
         headers: {
           "Content-Type": "application/json",
-          ...(authHeader && { Authorization: authHeader }),
+          Authorization: authHeader,
         },
         cache: "no-store",
       },
@@ -50,7 +61,17 @@ export async function PUT(
 ) {
   try {
     const { debtorId } = await params;
-    const authHeader = request.headers.get("authorization");
+    const authHeader = getBearerAuthorizationHeader(request);
+    if (!authHeader) {
+      return NextResponse.json(
+        {
+          success: false,
+          messageCode: "AUTH_UNAUTHORIZED",
+          message: "Missing Authorization Bearer token",
+        },
+        { status: 401 },
+      );
+    }
     const body = await request.json();
 
     const response = await fetch(
@@ -59,7 +80,7 @@ export async function PUT(
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
-          ...(authHeader && { Authorization: authHeader }),
+          Authorization: authHeader,
         },
         body: JSON.stringify(body),
       },
@@ -89,7 +110,17 @@ export async function DELETE(
 ) {
   try {
     const { debtorId } = await params;
-    const authHeader = request.headers.get("authorization");
+    const authHeader = getBearerAuthorizationHeader(request);
+    if (!authHeader) {
+      return NextResponse.json(
+        {
+          success: false,
+          messageCode: "AUTH_UNAUTHORIZED",
+          message: "Missing Authorization Bearer token",
+        },
+        { status: 401 },
+      );
+    }
     const { searchParams } = new URL(request.url);
 
     const backendUrl = new URL(
@@ -106,7 +137,7 @@ export async function DELETE(
       method: "DELETE",
       headers: {
         "Content-Type": "application/json",
-        ...(authHeader && { Authorization: authHeader }),
+        Authorization: authHeader,
       },
     });
 

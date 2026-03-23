@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { logoutAuth } from "@/services/authService";
+import { unregisterWebPushToken } from "@/lib/notifications/pushClient";
 
 const ACCESS_TOKEN_KEY = "bizflow_access_token";
 const REFRESH_TOKEN_KEY = "bizflow_refresh_token";
@@ -42,6 +43,8 @@ export default function LogoutPage() {
           : "";
 
       try {
+        await unregisterWebPushToken();
+
         if (refreshToken && accessToken) {
           await logoutAuth(refreshToken, accessToken, getDeviceInfo());
         }

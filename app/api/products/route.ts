@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getBearerAuthorizationHeader } from "../_utils/authHeader";
 
 const BACKEND_API_URL = process.env.BACKEND_API_URL || "http://localhost:5139";
 
@@ -10,7 +11,17 @@ const BACKEND_API_URL = process.env.BACKEND_API_URL || "http://localhost:5139";
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const authHeader = request.headers.get("authorization");
+    const authHeader = getBearerAuthorizationHeader(request);
+    if (!authHeader) {
+      return NextResponse.json(
+        {
+          success: false,
+          messageCode: "AUTH_UNAUTHORIZED",
+          message: "Missing Authorization Bearer token",
+        },
+        { status: 401 },
+      );
+    }
 
     // Forward all query params to backend
     const backendUrl = new URL(`${BACKEND_API_URL}/api/my-business/products`);
@@ -22,7 +33,7 @@ export async function GET(request: NextRequest) {
       method: "GET",
       headers: {
         "Content-Type": "application/json",
-        ...(authHeader && { Authorization: authHeader }),
+        Authorization: authHeader,
       },
       cache: "no-store",
     });
@@ -58,7 +69,17 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
-    const authHeader = request.headers.get("authorization");
+    const authHeader = getBearerAuthorizationHeader(request);
+    if (!authHeader) {
+      return NextResponse.json(
+        {
+          success: false,
+          messageCode: "AUTH_UNAUTHORIZED",
+          message: "Missing Authorization Bearer token",
+        },
+        { status: 401 },
+      );
+    }
     const contentType = request.headers.get("content-type") || "";
 
     // If FE sends multipart/form-data (including image binary), forward as-is.
@@ -70,7 +91,7 @@ export async function POST(request: NextRequest) {
         {
           method: "POST",
           headers: {
-            ...(authHeader && { Authorization: authHeader }),
+            Authorization: authHeader,
           },
           body: incomingFormData,
         },
@@ -119,7 +140,7 @@ export async function POST(request: NextRequest) {
     const response = await fetch(`${BACKEND_API_URL}/api/my-business/product`, {
       method: "POST",
       headers: {
-        ...(authHeader && { Authorization: authHeader }),
+        Authorization: authHeader,
       },
       // Do NOT set Content-Type — let fetch set it with the correct boundary
       body: formData,

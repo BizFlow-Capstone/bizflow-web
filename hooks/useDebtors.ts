@@ -38,7 +38,7 @@ export const debtorKeys = {
   summary: () => [...debtorKeys.all, "summary"] as const,
 };
 
-export function useDebtors(filters: DebtorFilters) {
+export function useDebtors(filters: DebtorFilters, enabled = true) {
   return useQuery<DebtorPagination>({
     queryKey: debtorKeys.list(filters),
     queryFn: async () => {
@@ -46,6 +46,7 @@ export function useDebtors(filters: DebtorFilters) {
       return response.data;
     },
     placeholderData: keepPreviousData,
+    enabled,
   });
 }
 
@@ -60,13 +61,14 @@ export function useDebtorDetail(debtorId: number) {
   });
 }
 
-export function useDebtSummary() {
+export function useDebtSummary(enabled = true) {
   return useQuery<DebtSummary>({
     queryKey: debtorKeys.summary(),
     queryFn: async () => {
       const response = await getDebtSummary();
       return response.data;
     },
+    enabled,
   });
 }
 

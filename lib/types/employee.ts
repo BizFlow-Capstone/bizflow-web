@@ -1,18 +1,44 @@
-// Types for Employee API
-
-export interface Employee {
-  userId: string;
-  userName: string;
-}
-
-export interface EmployeeListResponse {
-  employees: Employee[];
-}
-
 export interface ApiResponse<T> {
   data: T;
   success: boolean;
   messageCode: string;
   message: string;
   timestamp: string;
+}
+
+export interface EmployeeDetail {
+  employeeId: string;
+  fullName: string;
+  email: string;
+  phone?: string;
+  isActive?: boolean;
+  status?: string;
+  startAt?: string | null;
+  endAt?: string;
+}
+
+export interface EmployeeSearchResult {
+  userId: string;
+  fullName: string;
+  avatarUrl?: string;
+  isAlreadyHired: boolean;
+}
+
+export interface InviteEmployeeRequest {
+  employeeId: string;
+}
+
+export interface HireRecord {
+  hireId: number;
+  ownerId: string;
+  employeeId: string;
+  createdAt: string;
+  isActive: boolean;
+}
+
+export interface EmployeeInvitation {
+  hireId: number;
+  ownerId: string;
+  ownerName: string;
+  invitedAt: string;
 }

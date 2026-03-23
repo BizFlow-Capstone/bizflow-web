@@ -41,7 +41,7 @@ export const orderKeys = {
  * Hook to fetch orders with filters and pagination
  * Uses keepPreviousData for smooth pagination transitions
  */
-export function useOrders(filters: OrderFilters) {
+export function useOrders(filters: OrderFilters, enabled = true) {
   return useQuery<OrderPagination>({
     queryKey: orderKeys.list(filters),
     queryFn: async () => {
@@ -49,6 +49,7 @@ export function useOrders(filters: OrderFilters) {
       return response.data;
     },
     placeholderData: keepPreviousData,
+    enabled,
   });
 }
 

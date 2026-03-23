@@ -65,6 +65,8 @@ import {
   useDeleteImport,
   useConfirmImport,
 } from "@/hooks/useImports";
+import { useLocations } from "@/hooks/useLocations";
+import NoLocationScreenSkeleton from "@/components/NoLocationScreenSkeleton";
 import type {
   ImportFilters,
   ImportStatus,
@@ -184,6 +186,9 @@ function getHasInvoiceBadge(hasInvoice: boolean) {
 
 export default function ImportsClient() {
   const router = useRouter();
+  const { data: locations = [], isLoading: isLoadingLocations } =
+    useLocations();
+  const hasLocations = locations.length > 0;
 
   // Filter state
   const [statusFilter, setStatusFilter] = useState<ImportStatus | "ALL">("ALL");
@@ -214,7 +219,7 @@ export default function ImportsClient() {
     isRefetching,
     error,
     refetch,
-  } = useImports(filters);
+  } = useImports(filters, hasLocations);
 
   const deleteMutation = useDeleteImport();
   const confirmMutation = useConfirmImport();
@@ -273,6 +278,23 @@ export default function ImportsClient() {
       console.error("Error confirming import:", err);
     }
   };
+
+  if (isLoadingLocations) {
+    return (
+      <div className="flex-1 flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-[#23C4C1]" />
+      </div>
+    );
+  }
+
+  if (!hasLocations) {
+    return (
+      <NoLocationScreenSkeleton
+        title="Nhập kho"
+        description="Đang chờ bạn tạo địa điểm hoặc nhận lời mời trước khi tải dữ liệu."
+      />
+    );
+  }
 
   return (
     <div className="flex-1 flex flex-col">

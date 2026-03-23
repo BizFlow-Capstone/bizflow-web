@@ -60,6 +60,7 @@ import {
   useUpdateDebtorStatus,
 } from "@/hooks/useDebtors";
 import { useLocations } from "@/hooks/useLocations";
+import NoLocationScreenSkeleton from "@/components/NoLocationScreenSkeleton";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
 import type {
@@ -157,7 +158,9 @@ export default function CustomersClient() {
   const [deleteTarget, setDeleteTarget] = useState<DebtorRecord | null>(null);
   const [deleteForce, setDeleteForce] = useState(false);
   const [statusUpdatingId, setStatusUpdatingId] = useState<number | null>(null);
-  const { data: locations } = useLocations();
+  const { data: locations = [], isLoading: isLoadingLocations } =
+    useLocations();
+  const hasLocations = locations.length > 0;
 
   // Build filters
   const filters: DebtorFilters = useMemo(
@@ -219,8 +222,8 @@ export default function CustomersClient() {
     isRefetching,
     error,
     refetch,
-  } = useDebtors(filters);
-  const { data: summary } = useDebtSummary();
+  } = useDebtors(filters, hasLocations);
+  const { data: summary } = useDebtSummary(hasLocations);
   const deleteMutation = useDeleteDebtor();
   const statusMutation = useUpdateDebtorStatus();
 
@@ -264,6 +267,23 @@ export default function CustomersClient() {
       setStatusUpdatingId(null);
     }
   };
+
+  if (isLoadingLocations) {
+    return (
+      <div className="flex-1 flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-[#23C4C1]" />
+      </div>
+    );
+  }
+
+  if (!hasLocations) {
+    return (
+      <NoLocationScreenSkeleton
+        title="Khách hàng thân thiết"
+        description="Đang chờ bạn tạo địa điểm hoặc nhận lời mời trước khi tải dữ liệu."
+      />
+    );
+  }
 
   return (
     <div className="flex-1 flex flex-col">

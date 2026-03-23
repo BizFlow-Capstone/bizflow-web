@@ -1,18 +1,29 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getBearerAuthorizationHeader } from "../../_utils/authHeader";
 
 const BACKEND_URL = process.env.BACKEND_API_URL;
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const authorization = request.headers.get("authorization") ?? "";
+    const authorization = getBearerAuthorizationHeader(request);
+    if (!authorization) {
+      return NextResponse.json(
+        {
+          success: false,
+          messageCode: "AUTH_UNAUTHORIZED",
+          message: "Missing Authorization Bearer token",
+        },
+        { status: 401 },
+      );
+    }
 
     const response = await fetch(`${BACKEND_URL}/api/auth/logout`, {
       method: "POST",
       headers: {
         accept: "*/*",
         "Content-Type": "application/json",
-        ...(authorization ? { Authorization: authorization } : {}),
+        Authorization: authorization,
       },
       body: JSON.stringify({
         refreshToken: body?.refreshToken ?? "",
