@@ -34,6 +34,7 @@ import {
 } from "@/hooks/useAccounting";
 import { useDashboardLocation } from "@/lib/providers/DashboardLocationProvider";
 import AccountingPeriodsTab from "./AccountingPeriodsTab";
+import GeneralLedgerTab from "./GeneralLedgerTab";
 import NoLocationScreenSkeleton from "@/components/NoLocationScreenSkeleton";
 
 const fmt = new Intl.NumberFormat("vi-VN", {
@@ -138,9 +139,9 @@ export default function ReportsClient() {
 // ─── Tab 1: Báo cáo ─────────────────────────────────────────────────────────
 
 function ReportsTab({ locationId }: { locationId: number }) {
-  const [subTab, setSubTab] = useState<"revenue" | "cost" | "cashflow">(
-    "revenue",
-  );
+  const [subTab, setSubTab] = useState<
+    "revenue" | "cost" | "cashflow" | "ledger"
+  >("ledger");
   const { data: revenues, isLoading: revLoading } = useRevenues(locationId);
   const { data: costs, isLoading: costLoading } = useCosts({ locationId });
   const { data: cashFlow, isLoading: cfLoading } = useCashFlowReport(
@@ -153,6 +154,11 @@ function ReportsTab({ locationId }: { locationId: number }) {
   const totalCost = costs?.items.reduce((s, c) => s + c.amount, 0) ?? 0;
 
   const subTabs = [
+    {
+      key: "ledger" as const,
+      label: "Sổ cái",
+      icon: <BookOpen className="w-3.5 h-3.5" />,
+    },
     {
       key: "revenue" as const,
       label: "Doanh thu",
@@ -217,6 +223,8 @@ function ReportsTab({ locationId }: { locationId: number }) {
           </button>
         ))}
       </div>
+
+      {subTab === "ledger" && <GeneralLedgerTab locationId={locationId} />}
 
       {/* Revenue */}
       {subTab === "revenue" && (

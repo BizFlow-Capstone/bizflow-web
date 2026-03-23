@@ -358,7 +358,9 @@ export default function DashboardHeader() {
   };
 
   const dismissFloatingToast = (toastId: string) => {
-    setFloatingToasts((prev) => prev.filter((toast) => toast.toastId !== toastId));
+    setFloatingToasts((prev) =>
+      prev.filter((toast) => toast.toastId !== toastId),
+    );
     clearFloatingTimer(toastId);
   };
 
@@ -561,7 +563,9 @@ export default function DashboardHeader() {
             <button
               key={toast.toastId}
               type="button"
-              onClick={() => navigateToNotificationRoute(toast.route, toast.toastId)}
+              onClick={() =>
+                navigateToNotificationRoute(toast.route, toast.toastId)
+              }
               className="group w-full overflow-hidden rounded-2xl border border-cyan-100 bg-white/95 p-4 text-left shadow-[0_20px_45px_-18px_rgba(17,24,39,0.35)] backdrop-blur transition hover:border-cyan-200 hover:shadow-[0_24px_55px_-18px_rgba(14,116,144,0.35)]"
             >
               <div className="flex items-start gap-3">

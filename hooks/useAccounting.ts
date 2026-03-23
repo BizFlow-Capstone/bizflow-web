@@ -12,12 +12,15 @@ import {
   getPeriodAuditLogs,
   getAccountingTemplates,
   getAccountingBooks,
+  getGLEntries,
+  getGLReferenceCatalog,
 } from "@/services/accountingService";
 import type {
   CostFilters,
   CreatePeriodRequest,
   CreateCustomPeriodRequest,
   OpeningBalanceSuggestionRequest,
+  GLEntryFilters,
 } from "@/lib/types/accounting";
 
 export const accountingKeys = {
@@ -35,6 +38,9 @@ export const accountingKeys = {
   templates: () => [...accountingKeys.all, "templates"] as const,
   books: (locationId: number, periodId?: number) =>
     [...accountingKeys.all, "books", locationId, periodId] as const,
+  glEntries: (filters: GLEntryFilters) =>
+    [...accountingKeys.all, "gl-entries", filters] as const,
+  glReferences: () => [...accountingKeys.all, "gl-reference-catalog"] as const,
 };
 
 export function useCosts(filters: CostFilters) {
@@ -159,6 +165,29 @@ export function useAccountingBooks(locationId: number, periodId?: number) {
       return result.data;
     },
     enabled: locationId > 0,
+  });
+}
+
+export function useGLEntries(filters: GLEntryFilters) {
+  return useQuery({
+    queryKey: accountingKeys.glEntries(filters),
+    queryFn: async () => {
+      const result = await getGLEntries(filters);
+      if (!result.success) throw new Error(result.message);
+      return result.data;
+    },
+    enabled: filters.locationId > 0,
+  });
+}
+
+export function useGLReferenceCatalog() {
+  return useQuery({
+    queryKey: accountingKeys.glReferences(),
+    queryFn: async () => {
+      const result = await getGLReferenceCatalog();
+      if (!result.success) throw new Error(result.message);
+      return result.data;
+    },
   });
 }
 

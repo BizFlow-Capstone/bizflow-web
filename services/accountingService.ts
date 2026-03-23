@@ -14,6 +14,10 @@ import type {
   AccountingTemplate,
   AccountingBook,
   CostRecord,
+  GLEntryPagination,
+  GLEntryFilters,
+  GLReferenceCatalog,
+  GLViewMode,
 } from "@/lib/types/accounting";
 import type { ImportPagination, ImportRecord } from "@/lib/types/import";
 
@@ -40,6 +44,53 @@ const DEFAULT_EMPTY_BOOK_RESPONSE: ApiResponse<AccountingBook[]> = {
   message: "Data retrieved successfully",
   timestamp: new Date().toISOString(),
 };
+
+const DEFAULT_GL_VIEW_MODE: GLViewMode = "effective";
+
+function toIsoDate(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
+
+function normalizeGLDateRange(filters: GLEntryFilters): {
+  fromDate: string;
+  toDate: string;
+} {
+  const today = toIsoDate(new Date());
+  const toDate = filters.toDate || today;
+  const year = Number.parseInt(toDate.slice(0, 4), 10);
+  const safeYear = Number.isNaN(year) ? new Date().getFullYear() : year;
+
+  return {
+    toDate,
+    // Keep GL browsing inside one year when FromDate is omitted.
+    fromDate: filters.fromDate || `${safeYear}-01-01`,
+  };
+}
+
+function appendJsonArrayParam(
+  params: URLSearchParams,
+  key: string,
+  values?: string[],
+) {
+  if (!values || values.length === 0) return;
+  params.append(key, JSON.stringify(values));
+}
+
+async function getStringReferenceValues(
+  endpoint: string,
+): Promise<ApiResponse<string[]>> {
+  const response = await authFetch(endpoint, {
+    method: "GET",
+    headers: { "Content-Type": "application/json" },
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch reference values: ${response.status}`);
+  }
+
+  return parseApiResponse<string[]>(response);
+}
 
 function toAccountingCost(item: ImportRecord): CostRecord {
   return {
@@ -326,4 +377,75 @@ export async function getAccountingBooks(
   _periodId?: number,
 ): Promise<ApiResponse<AccountingBook[]>> {
   return DEFAULT_EMPTY_BOOK_RESPONSE;
+}
+
+export async function getGLEntries(
+  filters: GLEntryFilters,
+): Promise<ApiResponse<GLEntryPagination>> {
+  const params = new URLSearchParams();
+  // params.append("BusinessLocationId", String(filters.locationId));
+  params.append("BusinessLocationId", "1");
+
+  appendJsonArrayParam(params, "TransactionTypes", filters.transactionTypes);
+  appendJsonArrayParam(params, "ReferenceTypes", filters.referenceTypes);
+  appendJsonArrayParam(params, "MoneyChannels", filters.moneyChannels);
+
+  const range = normalizeGLDateRange(filters);
+  params.append("FromDate", range.fromDate);
+  params.append("ToDate", range.toDate);
+  params.append("ViewMode", filters.viewMode ?? DEFAULT_GL_VIEW_MODE);
+
+  if (filters.pageNumber) {
+    params.append("PageNumber", String(filters.pageNumber));
+  }
+
+  if (filters.pageSize) {
+    params.append("PageSize", String(filters.pageSize));
+  }
+
+  const response = await authFetch(
+    `/api/my-business/accounting/gl-entries?${params.toString()}`,
+    {
+      method: "GET",
+      headers: { "Content-Type": "application/json" },
+      cache: "no-store",
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch GL entries: ${response.status}`);
+  }
+
+  return parseApiResponse<GLEntryPagination>(response);
+}
+
+export async function getGLReferenceCatalog(): Promise<
+  ApiResponse<GLReferenceCatalog>
+> {
+  const [
+    referenceTypesRes,
+    transactionTypesRes,
+    viewModesRes,
+    moneyChannelsRes,
+  ] = await Promise.all([
+    getStringReferenceValues("/api/reference/general-ledger-reference-types"),
+    getStringReferenceValues("/api/reference/general-ledger-transaction-types"),
+    getStringReferenceValues("/api/reference/general-ledger-view-modes"),
+    getStringReferenceValues("/api/reference/money-channel-types"),
+  ]);
+
+  return {
+    success: true,
+    messageCode: "COMMON_DATA_RETRIEVED",
+    message: "Data retrieved successfully",
+    timestamp: new Date().toISOString(),
+    data: {
+      referenceTypes: referenceTypesRes.data ?? [],
+      transactionTypes: transactionTypesRes.data ?? [],
+      viewModes: (viewModesRes.data ?? [DEFAULT_GL_VIEW_MODE]) as GLViewMode[],
+      moneyChannels: (moneyChannelsRes.data ?? []) as Array<
+        "cash" | "bank" | "debt"
+      >,
+    },
+  };
 }

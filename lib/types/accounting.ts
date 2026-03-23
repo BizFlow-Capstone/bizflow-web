@@ -217,6 +217,7 @@ export type GLReferenceType =
   | "import"
   | "cost"
   | "revenue"
+  | "debtor_payment"
   | "debt_payment"
   | "manual";
 
@@ -225,10 +226,63 @@ export interface GLEntry {
   businessLocationId: number;
   referenceType: GLReferenceType;
   referenceId?: number;
+  transactionType?: string;
   moneyChannel: "cash" | "bank" | "debt";
   debitAmount: number;
   creditAmount: number;
   description: string;
   entryDate: string;
   createdAt: string;
+}
+
+export type GLViewMode = "audit" | "effective";
+
+export type GLEffectiveStatus = "active" | "reversal" | "reversed";
+
+export interface GLEntrySource {
+  referenceType: string;
+  referenceId?: number | null;
+  entityType?: string | null;
+  entityId?: number | null;
+}
+
+export interface GLEntryListItem extends GLEntry {
+  transactionType: string;
+  isReversal: boolean;
+  reversedEntryId?: number | null;
+  source?: GLEntrySource | null;
+  isReversed: boolean;
+  reversalEntryId?: number | null;
+  reversalCount: number;
+  effectiveStatus: GLEffectiveStatus;
+  historyChainEntryIds: number[];
+}
+
+export interface GLEntryPagination {
+  items: GLEntryListItem[];
+  pageNumber: number;
+  pageSize: number;
+  totalPages: number;
+  totalCount: number;
+  hasPreviousPage: boolean;
+  hasNextPage: boolean;
+}
+
+export interface GLEntryFilters {
+  locationId: number;
+  transactionTypes?: string[];
+  referenceTypes?: string[];
+  moneyChannels?: Array<"cash" | "bank" | "debt">;
+  fromDate?: string;
+  toDate?: string;
+  viewMode?: GLViewMode;
+  pageNumber?: number;
+  pageSize?: number;
+}
+
+export interface GLReferenceCatalog {
+  transactionTypes: string[];
+  referenceTypes: string[];
+  viewModes: GLViewMode[];
+  moneyChannels: Array<"cash" | "bank" | "debt">;
 }
