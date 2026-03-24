@@ -4,6 +4,9 @@ import type {
   CashFlowReport,
   CostPagination,
   CostFilters,
+  CostReferenceCatalog,
+  CreateManualCostRequest,
+  UpdateManualCostRequest,
   RevenuePagination,
   AccountingPeriod,
   CreatePeriodRequest,
@@ -18,8 +21,10 @@ import type {
   GLEntryFilters,
   GLReferenceCatalog,
   GLViewMode,
+  RevenueFilters,
+  CreateManualRevenueRequest,
+  RevenueRecord,
 } from "@/lib/types/accounting";
-import type { ImportPagination, ImportRecord } from "@/lib/types/import";
 
 const DEFAULT_EMPTY_REVENUE: RevenuePagination = {
   items: [],
@@ -92,20 +97,6 @@ async function getStringReferenceValues(
   return parseApiResponse<string[]>(response);
 }
 
-function toAccountingCost(item: ImportRecord): CostRecord {
-  return {
-    costId: item.importId,
-    businessLocationId: item.businessLocationId,
-    costType: "import",
-    importId: item.importId,
-    description: item.note || `Import ${item.importCode}`,
-    amount: item.totalAmount,
-    costDate: item.receivedAt || item.createdAt,
-    createdByUserName: item.confirmedByUserId ? "System" : "Unknown",
-    createdAt: item.createdAt,
-  };
-}
-
 async function parseApiResponse<T>(
   response: Response,
 ): Promise<ApiResponse<T>> {
@@ -118,7 +109,10 @@ export async function getCosts(
 ): Promise<ApiResponse<CostPagination>> {
   const params = new URLSearchParams();
   params.append("BusinessLocationId", String(filters.locationId));
-  params.append("Status", "CONFIRMED");
+  if (filters.costType) params.append("CostType", filters.costType);
+  if (filters.paymentMethod) {
+    params.append("PaymentMethod", filters.paymentMethod);
+  }
 
   if (filters.fromDate) params.append("FromDate", filters.fromDate);
   if (filters.toDate) params.append("ToDate", filters.toDate);
@@ -126,7 +120,7 @@ export async function getCosts(
     params.append("PageNumber", String(filters.pageNumber));
   if (filters.pageSize) params.append("PageSize", String(filters.pageSize));
 
-  const response = await authFetch(`/api/imports?${params.toString()}`, {
+  const response = await authFetch(`/api/costs?${params.toString()}`, {
     method: "GET",
     headers: { "Content-Type": "application/json" },
     cache: "no-store",
@@ -136,31 +130,209 @@ export async function getCosts(
     throw new Error(`Failed to fetch accounting costs: ${response.status}`);
   }
 
-  const result = await parseApiResponse<ImportPagination>(response);
-  const mappedItems = (result.data?.items ?? []).map(toAccountingCost);
+  return parseApiResponse<CostPagination>(response);
+}
+
+function toCostFormData(
+  data: CreateManualCostRequest | UpdateManualCostRequest,
+): FormData {
+  const formData = new FormData();
+
+  if ("businessLocationId" in data) {
+    formData.append("BusinessLocationId", String(data.businessLocationId));
+  }
+
+  if ("costType" in data && data.costType) {
+    formData.append("CostType", data.costType);
+  }
+
+  if (typeof data.description === "string") {
+    formData.append("Description", data.description);
+  }
+
+  if (typeof data.amount === "number") {
+    formData.append("Amount", String(data.amount));
+  }
+
+  if (data.costDate) {
+    formData.append("CostDate", data.costDate);
+  }
+
+  if (data.paymentMethod) {
+    formData.append("PaymentMethod", data.paymentMethod);
+  }
+
+  if ("removeDocument" in data && typeof data.removeDocument === "boolean") {
+    formData.append("RemoveDocument", String(data.removeDocument));
+  }
+
+  if (data.image) {
+    formData.append("image", data.image);
+  }
+
+  return formData;
+}
+
+export async function createManualCost(
+  data: CreateManualCostRequest,
+): Promise<ApiResponse<CostRecord>> {
+  const response = await authFetch(`/api/costs/manual`, {
+    method: "POST",
+    body: toCostFormData(data),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to create manual cost: ${response.status}`);
+  }
+
+  return parseApiResponse<CostRecord>(response);
+}
+
+export async function updateManualCost(
+  costId: number,
+  data: UpdateManualCostRequest,
+): Promise<ApiResponse<CostRecord>> {
+  const response = await authFetch(`/api/costs/${costId}`, {
+    method: "PUT",
+    body: toCostFormData(data),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to update manual cost: ${response.status}`);
+  }
+
+  return parseApiResponse<CostRecord>(response);
+}
+
+export async function deleteManualCost(
+  costId: number,
+): Promise<ApiResponse<null>> {
+  const response = await authFetch(`/api/costs/${costId}`, {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to delete manual cost: ${response.status}`);
+  }
+
+  return parseApiResponse<null>(response);
+}
+
+export async function getCostReferenceCatalog(): Promise<
+  ApiResponse<CostReferenceCatalog>
+> {
+  const [costTypesResult, paymentMethodsResult] = await Promise.all([
+    getStringReferenceValues(`/api/reference/cost-types`),
+    getStringReferenceValues(`/api/reference/payment-methods`),
+  ]);
 
   return {
-    ...result,
+    success: costTypesResult.success && paymentMethodsResult.success,
+    messageCode:
+      costTypesResult.messageCode || paymentMethodsResult.messageCode,
+    message: costTypesResult.message || paymentMethodsResult.message,
+    timestamp: new Date().toISOString(),
     data: {
-      items: mappedItems,
-      totalCount: result.data?.totalCount ?? 0,
-      pageNumber: result.data?.pageNumber ?? 1,
-      pageSize: result.data?.pageSize ?? 10,
-      totalPages: result.data?.totalPages ?? 0,
+      costTypes: (costTypesResult.data ??
+        []) as CostReferenceCatalog["costTypes"],
+      paymentMethods: (paymentMethodsResult.data ??
+        []) as CostReferenceCatalog["paymentMethods"],
     },
   };
 }
 
 export async function getRevenues(
-  _locationId: number,
+  locationId: number,
 ): Promise<ApiResponse<RevenuePagination>> {
+  return getRevenuesWithFilters({ locationId });
+}
+
+export async function getRevenuesWithFilters(
+  filters: RevenueFilters,
+): Promise<ApiResponse<RevenuePagination>> {
+  const params = new URLSearchParams();
+  params.append("BusinessLocationId", String(filters.locationId));
+
+  if (filters.revenueType) {
+    params.append("RevenueType", filters.revenueType);
+  }
+
+  if (filters.moneyChannel) {
+    params.append("MoneyChannel", filters.moneyChannel);
+  }
+
+  if (filters.fromDate) params.append("FromDate", filters.fromDate);
+  if (filters.toDate) params.append("ToDate", filters.toDate);
+  if (filters.pageNumber)
+    params.append("PageNumber", String(filters.pageNumber));
+  if (filters.pageSize) params.append("PageSize", String(filters.pageSize));
+
+  const response = await authFetch(`/api/revenues?${params.toString()}`, {
+    method: "GET",
+    headers: { "Content-Type": "application/json" },
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch accounting revenues: ${response.status}`);
+  }
+
+  const result = await parseApiResponse<RevenuePagination>(response);
+
   return {
-    data: DEFAULT_EMPTY_REVENUE,
-    success: true,
-    messageCode: "COMMON_DATA_RETRIEVED",
-    message: "Revenue API is not available in current backend controllers yet.",
-    timestamp: new Date().toISOString(),
+    ...result,
+    data: {
+      ...DEFAULT_EMPTY_REVENUE,
+      ...result.data,
+      items: (result.data?.items ?? []).map((item) => ({
+        ...item,
+        paymentMethod: item.moneyChannel,
+        createdByUserName: item.createdBy || item.createdByUserName || "System",
+      })) as RevenueRecord[],
+    },
   };
+}
+
+export async function createManualRevenue(
+  data: CreateManualRevenueRequest,
+): Promise<ApiResponse<RevenueRecord>> {
+  const response = await authFetch(`/api/revenues/manual`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to create manual revenue: ${response.status}`);
+  }
+
+  const result = await parseApiResponse<RevenueRecord>(response);
+
+  return {
+    ...result,
+    data: {
+      ...result.data,
+      paymentMethod: result.data.moneyChannel,
+      createdByUserName:
+        result.data.createdBy || result.data.createdByUserName || "System",
+    },
+  };
+}
+
+export async function deleteManualRevenue(
+  revenueId: number,
+): Promise<ApiResponse<null>> {
+  const response = await authFetch(`/api/revenues/${revenueId}`, {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to delete manual revenue: ${response.status}`);
+  }
+
+  return parseApiResponse<null>(response);
 }
 
 export async function getCashFlowReport(
@@ -376,6 +548,8 @@ export async function getAccountingBooks(
   _locationId: number,
   _periodId?: number,
 ): Promise<ApiResponse<AccountingBook[]>> {
+  void _locationId;
+  void _periodId;
   return DEFAULT_EMPTY_BOOK_RESPONSE;
 }
 
@@ -383,8 +557,7 @@ export async function getGLEntries(
   filters: GLEntryFilters,
 ): Promise<ApiResponse<GLEntryPagination>> {
   const params = new URLSearchParams();
-  // params.append("BusinessLocationId", String(filters.locationId));
-  params.append("BusinessLocationId", "1");
+  params.append("BusinessLocationId", String(filters.locationId));
 
   appendJsonArrayParam(params, "TransactionTypes", filters.transactionTypes);
   appendJsonArrayParam(params, "ReferenceTypes", filters.referenceTypes);

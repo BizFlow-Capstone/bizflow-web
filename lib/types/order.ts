@@ -6,6 +6,7 @@ export interface ApiResponse<T> {
   messageCode: string;
   message: string;
   timestamp: string;
+  warnings?: string[] | null;
 }
 
 // --- Order Status ---
@@ -45,7 +46,7 @@ export interface OrderRecord {
   orderCode: string;
   status: OrderStatus;
   businessLocationId: number;
-  businessLocationName: string;
+  businessLocationName?: string;
   refOrderId?: number;
   debtorId?: number;
   debtorName?: string;
@@ -111,24 +112,31 @@ export interface OrderFilters {
 // --- Create Order Request ---
 
 export interface CreateOrderItemRequest {
-  productId: number;
   saleItemId: number;
   quantity: number;
+  discount: number;
 }
 
 export interface CreateOrderRequest {
   businessLocationId: number;
-  paymentType: PaymentType;
+  cashAmount: number;
+  bankAmount: number;
+  debtAmount: number;
   debtorId?: number;
   customerName?: string;
   customerPhone?: string;
-  discount?: number;
+  confirmLowStock?: boolean;
+  confirmCreditLimitExceeded?: boolean;
   note?: string;
+  billMetadata?: string;
   items: CreateOrderItemRequest[];
-  payments?: PaymentSplit[];
 }
 
-// --- Confirm Order Request ---
+// --- Update Order Request ---
+
+export interface UpdateOrderRequest extends CreateOrderRequest {
+  idempotencyKey?: string;
+}
 
 export interface ConfirmOrderRequest {
   paymentType: PaymentType;
@@ -136,14 +144,24 @@ export interface ConfirmOrderRequest {
   payments?: PaymentSplit[];
 }
 
+export interface CancelOrderRequest {
+  cancelReason?: string;
+}
+
+export interface CompleteOrderRequest {
+  confirmLowStock?: boolean;
+}
+
 // --- Draft Order (localStorage "treo đơn") ---
 
 export interface DraftOrderItem {
   productId: number;
+  saleItemId: number;
   name: string;
   unit: string;
   price: number;
   quantity: number;
+  discount: number;
   stock: number;
   trackInventory: boolean;
 }

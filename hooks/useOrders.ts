@@ -14,6 +14,7 @@ import {
   getOrders,
   getOrderDetail,
   createOrder,
+  updateOrder,
   confirmOrder,
   cancelOrder,
   completeOrder,
@@ -24,6 +25,8 @@ import type {
   OrderFull,
   CreateOrderRequest,
   ConfirmOrderRequest,
+  UpdateOrderRequest,
+  CompleteOrderRequest,
 } from "@/lib/types/order";
 
 /**
@@ -106,6 +109,26 @@ export function useConfirmOrder() {
   });
 }
 
+export function useUpdateOrder() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      orderId,
+      data,
+    }: {
+      orderId: number;
+      data: UpdateOrderRequest;
+    }) => updateOrder(orderId, data),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: orderKeys.lists() });
+      queryClient.invalidateQueries({
+        queryKey: orderKeys.detail(variables.orderId),
+      });
+    },
+  });
+}
+
 /**
  * Hook to cancel an order
  * Invalidates both list and detail queries on success
@@ -132,11 +155,25 @@ export function useCompleteOrder() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (orderId: number) => completeOrder(orderId),
-    onSuccess: (_data, orderId) => {
+    mutationFn: (
+      input:
+        | number
+        | {
+            orderId: number;
+            data?: CompleteOrderRequest;
+          },
+    ) => {
+      if (typeof input === "number") {
+        return completeOrder(input);
+      }
+
+      return completeOrder(input.orderId, input.data);
+    },
+    onSuccess: (_data, input) => {
+      const targetOrderId = typeof input === "number" ? input : input.orderId;
       queryClient.invalidateQueries({ queryKey: orderKeys.lists() });
       queryClient.invalidateQueries({
-        queryKey: orderKeys.detail(orderId),
+        queryKey: orderKeys.detail(targetOrderId),
       });
     },
   });

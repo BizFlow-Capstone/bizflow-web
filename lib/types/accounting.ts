@@ -18,7 +18,8 @@ export type CostType =
   | "transport"
   | "marketing"
   | "maintenance"
-  | "other";
+  | "other"
+  | "manual";
 
 export interface CostRecord {
   costId: number;
@@ -47,10 +48,35 @@ export interface CostPagination {
 export interface CostFilters {
   locationId: number;
   costType?: CostType;
+  paymentMethod?: "cash" | "bank";
   fromDate?: string;
   toDate?: string;
   pageNumber?: number;
   pageSize?: number;
+}
+
+export interface CreateManualCostRequest {
+  businessLocationId: number;
+  costType: CostType;
+  description: string;
+  amount: number;
+  costDate: string;
+  paymentMethod: "cash" | "bank";
+  image?: File;
+}
+
+export interface UpdateManualCostRequest {
+  description: string;
+  amount?: number;
+  costDate?: string;
+  paymentMethod?: "cash" | "bank";
+  removeDocument?: boolean;
+  image?: File;
+}
+
+export interface CostReferenceCatalog {
+  costTypes: CostType[];
+  paymentMethods: Array<"cash" | "bank">;
 }
 
 // ═══ Revenue Types ═══
@@ -65,12 +91,32 @@ export interface RevenueRecord {
   description: string;
   amount: number;
   revenueDate: string;
+  moneyChannel?: "cash" | "bank" | "debt";
   paymentMethod?: "cash" | "bank" | "debt" | "mixed";
   documentUrl?: string;
+  createdBy?: string;
   createdByUserName: string;
   createdAt: string;
   updatedAt?: string;
   deletedAt?: string;
+}
+
+export interface RevenueFilters {
+  locationId: number;
+  revenueType?: RevenueType;
+  moneyChannel?: "cash" | "bank" | "debt";
+  fromDate?: string;
+  toDate?: string;
+  pageNumber?: number;
+  pageSize?: number;
+}
+
+export interface CreateManualRevenueRequest {
+  businessLocationId: number;
+  amount: number;
+  revenueDate: string;
+  description: string;
+  moneyChannel: "cash" | "bank";
 }
 
 export interface RevenuePagination {

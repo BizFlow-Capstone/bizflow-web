@@ -1,7 +1,14 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   getCosts,
+  createManualCost,
+  updateManualCost,
+  deleteManualCost,
+  getCostReferenceCatalog,
   getRevenues,
+  getRevenuesWithFilters,
+  createManualRevenue,
+  deleteManualRevenue,
   getCashFlowReport,
   getAccountingPeriods,
   createAccountingPeriod,
@@ -17,6 +24,10 @@ import {
 } from "@/services/accountingService";
 import type {
   CostFilters,
+  CreateManualCostRequest,
+  UpdateManualCostRequest,
+  RevenueFilters,
+  CreateManualRevenueRequest,
   CreatePeriodRequest,
   CreateCustomPeriodRequest,
   OpeningBalanceSuggestionRequest,
@@ -29,6 +40,8 @@ export const accountingKeys = {
     [...accountingKeys.all, "costs", filters] as const,
   revenues: (locationId: number) =>
     [...accountingKeys.all, "revenues", locationId] as const,
+  revenuesByFilters: (filters: RevenueFilters) =>
+    [...accountingKeys.all, "revenues", filters] as const,
   cashFlow: (locationId: number, start: string, end: string) =>
     [...accountingKeys.all, "cashflow", locationId, start, end] as const,
   periods: (locationId: number) =>
@@ -41,6 +54,8 @@ export const accountingKeys = {
   glEntries: (filters: GLEntryFilters) =>
     [...accountingKeys.all, "gl-entries", filters] as const,
   glReferences: () => [...accountingKeys.all, "gl-reference-catalog"] as const,
+  costReferences: () =>
+    [...accountingKeys.all, "cost-reference-catalog"] as const,
 };
 
 export function useCosts(filters: CostFilters) {
@@ -64,6 +79,102 @@ export function useRevenues(locationId: number) {
       return result.data;
     },
     enabled: locationId > 0,
+  });
+}
+
+export function useCreateManualCost() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: CreateManualCostRequest) => createManualCost(data),
+    onSuccess: (_result, variables) => {
+      queryClient.invalidateQueries({ queryKey: accountingKeys.all });
+      queryClient.invalidateQueries({
+        queryKey: accountingKeys.costs({
+          locationId: variables.businessLocationId,
+        }),
+      });
+    },
+  });
+}
+
+export function useUpdateManualCost(locationId: number) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      costId,
+      data,
+    }: {
+      costId: number;
+      data: UpdateManualCostRequest;
+    }) => updateManualCost(costId, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: accountingKeys.all });
+      queryClient.invalidateQueries({
+        queryKey: accountingKeys.costs({ locationId }),
+      });
+    },
+  });
+}
+
+export function useDeleteManualCost(locationId: number) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (costId: number) => deleteManualCost(costId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: accountingKeys.all });
+      queryClient.invalidateQueries({
+        queryKey: accountingKeys.costs({ locationId }),
+      });
+    },
+  });
+}
+
+export function useCostReferenceCatalog() {
+  return useQuery({
+    queryKey: accountingKeys.costReferences(),
+    queryFn: async () => {
+      const result = await getCostReferenceCatalog();
+      if (!result.success) throw new Error(result.message);
+      return result.data;
+    },
+  });
+}
+
+export function useRevenuesByFilters(filters: RevenueFilters) {
+  return useQuery({
+    queryKey: accountingKeys.revenuesByFilters(filters),
+    queryFn: async () => {
+      const result = await getRevenuesWithFilters(filters);
+      if (!result.success) throw new Error(result.message);
+      return result.data;
+    },
+    enabled: filters.locationId > 0,
+  });
+}
+
+export function useCreateManualRevenue() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: CreateManualRevenueRequest) => createManualRevenue(data),
+    onSuccess: (_result, variables) => {
+      queryClient.invalidateQueries({ queryKey: accountingKeys.all });
+      queryClient.invalidateQueries({
+        queryKey: accountingKeys.revenues(variables.businessLocationId),
+      });
+    },
+  });
+}
+
+export function useDeleteManualRevenue(locationId: number) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (revenueId: number) => deleteManualRevenue(revenueId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: accountingKeys.all });
+      queryClient.invalidateQueries({
+        queryKey: accountingKeys.revenues(locationId),
+      });
+    },
   });
 }
 

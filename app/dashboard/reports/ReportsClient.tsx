@@ -13,9 +13,20 @@ import {
   BarChart3,
   ArrowUpRight,
   ArrowDownRight,
+  Plus,
+  Trash2,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -27,10 +38,16 @@ import {
 import { useLocations } from "@/hooks/useLocations";
 import {
   useCosts,
+  useCreateManualCost,
+  useUpdateManualCost,
+  useDeleteManualCost,
+  useCostReferenceCatalog,
   useRevenues,
   useCashFlowReport,
   useAccountingTemplates,
   useAccountingBooks,
+  useCreateManualRevenue,
+  useDeleteManualRevenue,
 } from "@/hooks/useAccounting";
 import { useDashboardLocation } from "@/lib/providers/DashboardLocationProvider";
 import AccountingPeriodsTab from "./AccountingPeriodsTab";
@@ -144,6 +161,31 @@ function ReportsTab({ locationId }: { locationId: number }) {
   >("ledger");
   const { data: revenues, isLoading: revLoading } = useRevenues(locationId);
   const { data: costs, isLoading: costLoading } = useCosts({ locationId });
+  const createCostMutation = useCreateManualCost();
+  const updateCostMutation = useUpdateManualCost(locationId);
+  const deleteCostMutation = useDeleteManualCost(locationId);
+  const { data: costReferences } = useCostReferenceCatalog();
+  const createRevenueMutation = useCreateManualRevenue();
+  const deleteRevenueMutation = useDeleteManualRevenue(locationId);
+  const [manualAmount, setManualAmount] = useState("");
+  const [manualDate, setManualDate] = useState(
+    new Date().toISOString().slice(0, 10),
+  );
+  const [manualDescription, setManualDescription] = useState("");
+  const [manualChannel, setManualChannel] = useState<"cash" | "bank">("cash");
+  const [manualError, setManualError] = useState("");
+  const [manualCostType, setManualCostType] = useState("other");
+  const [manualCostAmount, setManualCostAmount] = useState("");
+  const [manualCostDate, setManualCostDate] = useState(
+    new Date().toISOString().slice(0, 10),
+  );
+  const [manualCostDescription, setManualCostDescription] = useState("");
+  const [manualCostImage, setManualCostImage] = useState<File | null>(null);
+  const [manualCostPaymentMethod, setManualCostPaymentMethod] = useState<
+    "cash" | "bank"
+  >("cash");
+  const [editingCostId, setEditingCostId] = useState<number | null>(null);
+  const [manualCostError, setManualCostError] = useState("");
   const { data: cashFlow, isLoading: cfLoading } = useCashFlowReport(
     locationId,
     "2026-03-01",
@@ -175,6 +217,182 @@ function ReportsTab({ locationId }: { locationId: number }) {
       icon: <Banknote className="w-3.5 h-3.5" />,
     },
   ];
+  const costTypeOptions = costReferences?.costTypes?.filter(
+    (type) => type !== "import",
+  ) ?? [
+    "salary",
+    "rent",
+    "utilities",
+    "transport",
+    "marketing",
+    "maintenance",
+    "other",
+    "manual",
+  ];
+  const paymentMethodOptions = costReferences?.paymentMethods ?? [
+    "cash",
+    "bank",
+  ];
+
+  async function handleCreateManualRevenue() {
+    setManualError("");
+    const amount = Number(manualAmount);
+    if (!amount || amount <= 0) {
+      setManualError("Số tiền phải lớn hơn 0.");
+      return;
+    }
+
+    if (!manualDate) {
+      setManualError("Vui lòng chọn ngày ghi nhận doanh thu.");
+      return;
+    }
+
+    if (!manualDescription.trim()) {
+      setManualError("Vui lòng nhập mô tả doanh thu.");
+      return;
+    }
+
+    try {
+      await createRevenueMutation.mutateAsync({
+        businessLocationId: locationId,
+        amount,
+        revenueDate: manualDate,
+        description: manualDescription.trim(),
+        moneyChannel: manualChannel,
+      });
+      setManualAmount("");
+      setManualDescription("");
+    } catch (error) {
+      setManualError(
+        error instanceof Error
+          ? error.message
+          : "Không thể tạo doanh thu thủ công.",
+      );
+    }
+  }
+
+  async function handleDeleteManualRevenue(revenueId: number) {
+    try {
+      await deleteRevenueMutation.mutateAsync(revenueId);
+    } catch {
+      // Error feedback can be added later near delete action if needed.
+    }
+  }
+
+  function validateManualCostInput() {
+    const amount = Number(manualCostAmount);
+    if (!amount || amount <= 0) {
+      return "Số tiền chi phí phải lớn hơn 0.";
+    }
+
+    if (!manualCostDate) {
+      return "Vui lòng chọn ngày chi phí.";
+    }
+
+    if (!manualCostDescription.trim()) {
+      return "Vui lòng nhập mô tả chi phí.";
+    }
+
+    if (!manualCostType) {
+      return "Vui lòng chọn loại chi phí.";
+    }
+
+    return "";
+  }
+
+  async function handleSubmitManualCost() {
+    setManualCostError("");
+    const error = validateManualCostInput();
+    if (error) {
+      setManualCostError(error);
+      return;
+    }
+
+    const payload = {
+      description: manualCostDescription.trim(),
+      amount: Number(manualCostAmount),
+      costDate: manualCostDate,
+      paymentMethod: manualCostPaymentMethod,
+      image: manualCostImage ?? undefined,
+    };
+
+    try {
+      if (editingCostId) {
+        await updateCostMutation.mutateAsync({
+          costId: editingCostId,
+          data: payload,
+        });
+      } else {
+        await createCostMutation.mutateAsync({
+          businessLocationId: locationId,
+          costType: manualCostType as
+            | "import"
+            | "salary"
+            | "rent"
+            | "utilities"
+            | "transport"
+            | "marketing"
+            | "maintenance"
+            | "other"
+            | "manual",
+          ...payload,
+        });
+      }
+
+      setEditingCostId(null);
+      setManualCostType("other");
+      setManualCostAmount("");
+      setManualCostDescription("");
+      setManualCostDate(new Date().toISOString().slice(0, 10));
+      setManualCostPaymentMethod("cash");
+      setManualCostImage(null);
+    } catch (e) {
+      setManualCostError(
+        e instanceof Error ? e.message : "Không thể lưu chi phí thủ công.",
+      );
+    }
+  }
+
+  function handleStartEditCost(cost: {
+    costId: number;
+    costType: string;
+    amount: number;
+    costDate: string;
+    description: string;
+    paymentMethod?: "cash" | "bank";
+  }) {
+    setEditingCostId(cost.costId);
+    setManualCostType(cost.costType || "other");
+    setManualCostAmount(String(cost.amount));
+    setManualCostDate(
+      cost.costDate?.slice(0, 10) || new Date().toISOString().slice(0, 10),
+    );
+    setManualCostDescription(cost.description || "");
+    setManualCostPaymentMethod(cost.paymentMethod || "cash");
+    setManualCostError("");
+  }
+
+  function handleCancelEditCost() {
+    setEditingCostId(null);
+    setManualCostType("other");
+    setManualCostAmount("");
+    setManualCostDate(new Date().toISOString().slice(0, 10));
+    setManualCostDescription("");
+    setManualCostPaymentMethod("cash");
+    setManualCostImage(null);
+    setManualCostError("");
+  }
+
+  async function handleDeleteManualCost(costId: number) {
+    try {
+      await deleteCostMutation.mutateAsync(costId);
+      if (editingCostId === costId) {
+        handleCancelEditCost();
+      }
+    } catch {
+      // Keep table simple for now, validation/error feedback already exists on form.
+    }
+  }
 
   return (
     <div className="space-y-5">
@@ -237,6 +455,60 @@ function ReportsTab({ locationId }: { locationId: number }) {
           }
           loading={revLoading}
         >
+          <div className="mb-4 rounded-xl border bg-gray-50/70 p-4 space-y-3">
+            <h4 className="text-sm font-semibold text-gray-800">
+              Tạo doanh thu thủ công
+            </h4>
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+              <Input
+                type="number"
+                min="0"
+                placeholder="Số tiền"
+                value={manualAmount}
+                onChange={(e) => setManualAmount(e.target.value)}
+              />
+              <Input
+                type="date"
+                value={manualDate}
+                onChange={(e) => setManualDate(e.target.value)}
+              />
+              <Select
+                value={manualChannel}
+                onValueChange={(value) =>
+                  setManualChannel(value as "cash" | "bank")
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Kênh tiền" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="cash">Tiền mặt</SelectItem>
+                  <SelectItem value="bank">Ngân hàng</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button
+                onClick={handleCreateManualRevenue}
+                disabled={createRevenueMutation.isPending}
+                className="bg-[#23C4C1] hover:bg-[#1aa8a5] text-white"
+              >
+                {createRevenueMutation.isPending ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Plus className="w-4 h-4 mr-1" />
+                )}
+                Thêm doanh thu
+              </Button>
+            </div>
+            <Input
+              placeholder="Mô tả doanh thu"
+              value={manualDescription}
+              onChange={(e) => setManualDescription(e.target.value)}
+            />
+            {manualError && (
+              <p className="text-xs text-red-500">{manualError}</p>
+            )}
+          </div>
+
           <Table>
             <TableHeader>
               <TableRow className="bg-gray-50/70 hover:bg-gray-50/70">
@@ -245,6 +517,7 @@ function ReportsTab({ locationId }: { locationId: number }) {
                 <TableHead>Mô tả</TableHead>
                 <TableHead>PTTT</TableHead>
                 <TableHead className="text-right pr-5">Số tiền</TableHead>
+                <TableHead className="text-right pr-5">Thao tác</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -273,6 +546,22 @@ function ReportsTab({ locationId }: { locationId: number }) {
                   <TableCell className="text-right pr-5 font-semibold text-emerald-600">
                     {fmt.format(r.amount)}
                   </TableCell>
+                  <TableCell className="text-right pr-5">
+                    {r.revenueType === "manual" ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="text-red-600 border-red-200 hover:bg-red-50"
+                        onClick={() => handleDeleteManualRevenue(r.revenueId)}
+                        disabled={deleteRevenueMutation.isPending}
+                      >
+                        <Trash2 className="w-3.5 h-3.5 mr-1" />
+                        Xóa
+                      </Button>
+                    ) : (
+                      <span className="text-xs text-gray-400">-</span>
+                    )}
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -291,6 +580,98 @@ function ReportsTab({ locationId }: { locationId: number }) {
           }
           loading={costLoading}
         >
+          <div className="mb-4 rounded-xl border bg-gray-50/70 p-4 space-y-3">
+            <h4 className="text-sm font-semibold text-gray-800">
+              {editingCostId
+                ? "Cập nhật chi phí thủ công"
+                : "Tạo chi phí thủ công"}
+            </h4>
+            <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+              <Select
+                value={manualCostType}
+                onValueChange={(value) => setManualCostType(value)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Loại chi phí" />
+                </SelectTrigger>
+                <SelectContent>
+                  {costTypeOptions.map((type) => (
+                    <SelectItem key={type} value={type}>
+                      {COST_LABELS[type] ?? type}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Input
+                type="number"
+                min="0"
+                placeholder="Số tiền"
+                value={manualCostAmount}
+                onChange={(e) => setManualCostAmount(e.target.value)}
+              />
+              <Input
+                type="date"
+                value={manualCostDate}
+                onChange={(e) => setManualCostDate(e.target.value)}
+              />
+              <Select
+                value={manualCostPaymentMethod}
+                onValueChange={(value) =>
+                  setManualCostPaymentMethod(value as "cash" | "bank")
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="PTTT" />
+                </SelectTrigger>
+                <SelectContent>
+                  {paymentMethodOptions.map((method) => (
+                    <SelectItem key={method} value={method}>
+                      {method === "cash" ? "Tiền mặt" : "Ngân hàng"}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button
+                onClick={handleSubmitManualCost}
+                disabled={
+                  createCostMutation.isPending || updateCostMutation.isPending
+                }
+                className="bg-[#23C4C1] hover:bg-[#1aa8a5] text-white"
+              >
+                {createCostMutation.isPending ||
+                updateCostMutation.isPending ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Plus className="w-4 h-4 mr-1" />
+                )}
+                {editingCostId ? "Lưu cập nhật" : "Thêm chi phí"}
+              </Button>
+            </div>
+            <div className="flex gap-3">
+              <Input
+                placeholder="Mô tả chi phí"
+                value={manualCostDescription}
+                onChange={(e) => setManualCostDescription(e.target.value)}
+              />
+              <Input
+                type="file"
+                accept="image/*"
+                onChange={(e) =>
+                  setManualCostImage(e.target.files?.[0] ?? null)
+                }
+                className="max-w-55"
+              />
+              {editingCostId ? (
+                <Button variant="outline" onClick={handleCancelEditCost}>
+                  Hủy sửa
+                </Button>
+              ) : null}
+            </div>
+            {manualCostError && (
+              <p className="text-xs text-red-500">{manualCostError}</p>
+            )}
+          </div>
+
           <Table>
             <TableHeader>
               <TableRow className="bg-gray-50/70 hover:bg-gray-50/70">
@@ -299,6 +680,7 @@ function ReportsTab({ locationId }: { locationId: number }) {
                 <TableHead>Mô tả</TableHead>
                 <TableHead>PTTT</TableHead>
                 <TableHead className="text-right pr-5">Số tiền</TableHead>
+                <TableHead className="text-right pr-5">Thao tác</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -318,6 +700,40 @@ function ReportsTab({ locationId }: { locationId: number }) {
                   </TableCell>
                   <TableCell className="text-right pr-5 font-semibold text-red-500">
                     {fmt.format(c.amount)}
+                  </TableCell>
+                  <TableCell className="text-right pr-5">
+                    {c.costType === "manual" ? (
+                      <div className="flex items-center justify-end gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() =>
+                            handleStartEditCost({
+                              costId: c.costId,
+                              costType: c.costType,
+                              amount: c.amount,
+                              costDate: c.costDate,
+                              description: c.description,
+                              paymentMethod: c.paymentMethod,
+                            })
+                          }
+                        >
+                          Sửa
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="text-red-600 border-red-200 hover:bg-red-50"
+                          onClick={() => handleDeleteManualCost(c.costId)}
+                          disabled={deleteCostMutation.isPending}
+                        >
+                          <Trash2 className="w-3.5 h-3.5 mr-1" />
+                          Xóa
+                        </Button>
+                      </div>
+                    ) : (
+                      <span className="text-xs text-gray-400">-</span>
+                    )}
                   </TableCell>
                 </TableRow>
               ))}
@@ -671,6 +1087,7 @@ const COST_LABELS: Record<string, string> = {
   marketing: "Marketing",
   maintenance: "Bảo trì",
   other: "Khác",
+  manual: "Thủ công",
 };
 
 function CostBadge({ type }: { type: string }) {
