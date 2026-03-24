@@ -37,6 +37,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useDebtors } from "@/hooks/useDebtors";
+import { useCreateOrder } from "@/hooks/useOrders";
 import type { PaymentType } from "@/lib/types/order";
 import type { DebtorFilters, DebtorRecord } from "@/lib/types/debtor";
 import { saveDraftOrder } from "@/lib/draftOrderStorage";
@@ -161,9 +162,11 @@ const MOCK_PRODUCTS: MockProduct[] = [
 
 interface CartItem {
   productId: number;
+  saleItemId: number;
   name: string;
   unit: string;
   price: number;
+  discount: number;
   quantity: number;
   stock: number;
   trackInventory: boolean;
@@ -178,18 +181,22 @@ type CreateMethod = "upload" | "voice" | "manual";
 const MOCK_AI_RESULTS: CartItem[] = [
   {
     productId: 1,
+    saleItemId: 1,
     name: "Xi măng Hà Tiên PCB40",
     unit: "Bao (50kg)",
     price: 95000,
+    discount: 0,
     quantity: 30,
     stock: 450,
     trackInventory: true,
   },
   {
     productId: 3,
+    saleItemId: 3,
     name: "Sắt thép Pomina D10",
     unit: "Cây (11.7m)",
     price: 150000,
+    discount: 0,
     quantity: 10,
     stock: 120,
     trackInventory: true,
@@ -336,6 +343,8 @@ export default function CreateOrderClient() {
 
   // Submitting
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState("");
+  const createOrderMutation = useCreateOrder();
 
   const debtorFilters: DebtorFilters = useMemo(
     () => ({
@@ -452,10 +461,25 @@ export default function CreateOrderClient() {
     );
   }, [productSearch]);
 
-  // Cart totals
-  const cartTotal = useMemo(
-    () => cart.reduce((sum, item) => sum + item.price * item.quantity, 0),
+  const cartSubTotal = useMemo(
+    () =>
+      cart.reduce((sum, item) => {
+        return sum + item.price * item.quantity;
+      }, 0),
     [cart],
+  );
+
+  const cartDiscountTotal = useMemo(
+    () =>
+      cart.reduce((sum, item) => {
+        return sum + Math.max(0, item.discount);
+      }, 0),
+    [cart],
+  );
+
+  const cartTotal = useMemo(
+    () => Math.max(0, cartSubTotal - cartDiscountTotal),
+    [cartSubTotal, cartDiscountTotal],
   );
 
   const cartItemCount = useMemo(
@@ -479,6 +503,7 @@ export default function CreateOrderClient() {
 
   // Cart operations
   const addToCart = useCallback((product: MockProduct) => {
+    setSubmitError("");
     setCart((prev) => {
       const existing = prev.find(
         (item) => item.productId === product.productId,
@@ -494,9 +519,11 @@ export default function CreateOrderClient() {
         ...prev,
         {
           productId: product.productId,
+          saleItemId: product.productId,
           name: product.name,
           unit: product.baseUnit,
           price: product.price,
+          discount: 0,
           quantity: 1,
           stock: product.stock,
           trackInventory: product.trackInventory,
@@ -506,6 +533,7 @@ export default function CreateOrderClient() {
   }, []);
 
   const updateQuantity = useCallback((productId: number, delta: number) => {
+    setSubmitError("");
     setCart((prev) =>
       prev
         .map((item) =>
@@ -518,6 +546,7 @@ export default function CreateOrderClient() {
   }, []);
 
   const setQuantity = useCallback((productId: number, qty: number) => {
+    setSubmitError("");
     if (qty <= 0) {
       setCart((prev) => prev.filter((item) => item.productId !== productId));
       return;
@@ -530,7 +559,22 @@ export default function CreateOrderClient() {
   }, []);
 
   const removeFromCart = useCallback((productId: number) => {
+    setSubmitError("");
     setCart((prev) => prev.filter((item) => item.productId !== productId));
+  }, []);
+
+  const setItemDiscount = useCallback((productId: number, discount: number) => {
+    setSubmitError("");
+    setCart((prev) =>
+      prev.map((item) => {
+        if (item.productId !== productId) return item;
+        const lineSubTotal = item.price * item.quantity;
+        return {
+          ...item,
+          discount: Math.max(0, Math.min(discount, lineSubTotal)),
+        };
+      }),
+    );
   }, []);
 
   const formatCurrency = (amount: number) =>
@@ -542,10 +586,56 @@ export default function CreateOrderClient() {
   // Submit
   const handleSubmit = async () => {
     if (cart.length === 0) return;
+    setSubmitError("");
+
+    const cash = paymentType === "cash" ? cartTotal : Number(cashAmount) || 0;
+    const bank = paymentType === "bank" ? cartTotal : Number(bankAmount) || 0;
+    const debt =
+      paymentType === "debt"
+        ? cartTotal
+        : paymentType === "mixed"
+          ? Math.max(0, cartTotal - cash - bank)
+          : 0;
+
+    const paymentSum = cash + bank + debt;
+    if (paymentSum !== cartTotal) {
+      setSubmitError(
+        "Tổng tiền mặt + chuyển khoản + ghi nợ phải bằng tổng tiền sau discount.",
+      );
+      return;
+    }
+
+    if (debt > 0 && !selectedDebtorId) {
+      setSubmitError("Đơn có ghi nợ thì bắt buộc chọn khách nợ.");
+      return;
+    }
+
     setIsSubmitting(true);
-    await new Promise((resolve) => setTimeout(resolve, 800));
-    setIsSubmitting(false);
-    router.push("/dashboard/orders");
+    try {
+      await createOrderMutation.mutateAsync({
+        businessLocationId: 1,
+        cashAmount: cash,
+        bankAmount: bank,
+        debtAmount: debt,
+        debtorId: selectedDebtorId ? Number(selectedDebtorId) : undefined,
+        note,
+        items: cart.map((item) => ({
+          saleItemId: item.saleItemId,
+          quantity: item.quantity,
+          discount: item.discount,
+        })),
+      });
+
+      router.push("/dashboard/orders");
+    } catch (error) {
+      setSubmitError(
+        error instanceof Error
+          ? error.message
+          : "Không thể tạo đơn hàng. Vui lòng thử lại.",
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   // Save draft ("treo đơn")
@@ -555,9 +645,11 @@ export default function CreateOrderClient() {
     saveDraftOrder(
       cart.map((item) => ({
         productId: item.productId,
+        saleItemId: item.saleItemId,
         name: item.name,
         unit: item.unit,
         price: item.price,
+        discount: item.discount,
         quantity: item.quantity,
         stock: item.stock,
         trackInventory: item.trackInventory,
@@ -577,6 +669,8 @@ export default function CreateOrderClient() {
   );
 
   const isDebtPayment = paymentType === "debt" || paymentType === "mixed";
+  const requiresDebtor =
+    paymentType === "debt" || (paymentType === "mixed" && debtAmount > 0);
 
   return (
     <div className="flex-1 flex flex-col">
@@ -1113,6 +1207,21 @@ export default function CreateOrderClient() {
                           <p className="text-xs text-gray-500 mt-0.5">
                             {item.quantity} × {formatCurrency(item.price)}
                           </p>
+                          <div className="mt-1.5 flex items-center gap-2">
+                            <span className="text-xs text-gray-500">Giảm:</span>
+                            <Input
+                              type="number"
+                              min="0"
+                              value={item.discount}
+                              onChange={(e) =>
+                                setItemDiscount(
+                                  item.productId,
+                                  Number(e.target.value) || 0,
+                                )
+                              }
+                              className="h-7 w-28 text-xs [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                            />
+                          </div>
                           {item.trackInventory &&
                             item.quantity > item.stock && (
                               <p className="text-xs text-amber-600 mt-0.5 flex items-center gap-1">
@@ -1123,7 +1232,12 @@ export default function CreateOrderClient() {
                         </div>
                         <div className="flex items-center gap-2 ml-2">
                           <span className="font-semibold text-sm text-gray-800 whitespace-nowrap">
-                            {formatCurrency(item.price * item.quantity)}
+                            {formatCurrency(
+                              Math.max(
+                                0,
+                                item.price * item.quantity - item.discount,
+                              ),
+                            )}
                           </span>
                           <Button
                             variant="ghost"
@@ -1138,13 +1252,23 @@ export default function CreateOrderClient() {
                     ))}
 
                     <div className="border-t border-gray-200 pt-3 mt-3">
-                      <div className="flex justify-between items-center">
-                        <span className="text-base font-semibold text-gray-700">
-                          Tổng cộng
-                        </span>
-                        <span className="text-xl font-bold text-[#23C4C1]">
-                          {formatCurrency(cartTotal)}
-                        </span>
+                      <div className="space-y-1.5">
+                        <div className="flex justify-between items-center text-sm text-gray-600">
+                          <span>Tổng trước giảm</span>
+                          <span>{formatCurrency(cartSubTotal)}</span>
+                        </div>
+                        <div className="flex justify-between items-center text-sm text-red-600">
+                          <span>Giảm giá</span>
+                          <span>-{formatCurrency(cartDiscountTotal)}</span>
+                        </div>
+                        <div className="flex justify-between items-center border-t border-gray-200 pt-2">
+                          <span className="text-base font-semibold text-gray-700">
+                            Tổng cộng
+                          </span>
+                          <span className="text-xl font-bold text-[#23C4C1]">
+                            {formatCurrency(cartTotal)}
+                          </span>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -1340,7 +1464,7 @@ export default function CreateOrderClient() {
                     disabled={
                       cart.length === 0 ||
                       isSubmitting ||
-                      (isDebtPayment && !selectedDebtorId)
+                      (requiresDebtor && !selectedDebtorId)
                     }
                     className="w-full bg-[#23C4C1] hover:bg-[#1da8a5] text-white shadow-lg shadow-[#23C4C1]/20 h-12 text-base"
                   >
@@ -1368,9 +1492,15 @@ export default function CreateOrderClient() {
                   </Button>
                 </div>
 
-                {isDebtPayment && !selectedDebtorId && (
+                {requiresDebtor && !selectedDebtorId && (
                   <p className="text-xs text-red-500 text-center">
                     Vui lòng chọn khách hàng ghi nợ
+                  </p>
+                )}
+
+                {submitError && (
+                  <p className="text-xs text-red-500 text-center">
+                    {submitError}
                   </p>
                 )}
               </CardContent>

@@ -14,7 +14,15 @@ export function getDraftOrders(): DraftOrder[] {
   if (typeof window === "undefined") return [];
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : [];
+    const parsed = raw ? (JSON.parse(raw) as DraftOrder[]) : [];
+    return parsed.map((draft) => ({
+      ...draft,
+      items: (draft.items ?? []).map((item) => ({
+        ...item,
+        saleItemId: item.saleItemId ?? item.productId,
+        discount: item.discount ?? 0,
+      })),
+    }));
   } catch {
     return [];
   }

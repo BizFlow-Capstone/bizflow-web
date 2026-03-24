@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useCallback, useEffect } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
   ArrowLeft,
@@ -32,7 +32,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useDebtors } from "@/hooks/useDebtors";
-import type { PaymentType, DraftOrder } from "@/lib/types/order";
+import type { PaymentType } from "@/lib/types/order";
 import type { DebtorFilters, DebtorRecord } from "@/lib/types/debtor";
 import {
   getDraftOrder,
@@ -160,9 +160,11 @@ const MOCK_PRODUCTS: MockProduct[] = [
 
 interface CartItem {
   productId: number;
+  saleItemId: number;
   name: string;
   unit: string;
   price: number;
+  discount: number;
   quantity: number;
   stock: number;
   trackInventory: boolean;
@@ -186,7 +188,6 @@ export default function EditOrderClient() {
 
   // Loading state
   const [isLoading] = useState(false);
-  const [draftData] = useState<DraftOrder | null>(initialDraft);
   const [notFound] = useState(!isDraftOrder || !initialDraft);
 
   // Product search
@@ -226,16 +227,6 @@ export default function EditOrderClient() {
     [debtorPage?.items],
   );
 
-  useEffect(() => {
-    if (!selectedDebtorId || isLoadingDebtors) return;
-    const exists = debtorOptions.some(
-      (debtor) => debtor.debtorId === Number(selectedDebtorId),
-    );
-    if (!exists) {
-      setSelectedDebtorId("");
-    }
-  }, [selectedDebtorId, debtorOptions, isLoadingDebtors]);
-
   // Filtered products
   const searchResults = useMemo(() => {
     if (!productSearch) return MOCK_PRODUCTS;
@@ -249,9 +240,19 @@ export default function EditOrderClient() {
   }, [productSearch]);
 
   // Cart totals
-  const cartTotal = useMemo(
+  const cartSubTotal = useMemo(
     () => cart.reduce((sum, item) => sum + item.price * item.quantity, 0),
     [cart],
+  );
+
+  const cartDiscountTotal = useMemo(
+    () => cart.reduce((sum, item) => sum + Math.max(0, item.discount), 0),
+    [cart],
+  );
+
+  const cartTotal = useMemo(
+    () => Math.max(0, cartSubTotal - cartDiscountTotal),
+    [cartSubTotal, cartDiscountTotal],
   );
 
   const cartItemCount = useMemo(
@@ -290,9 +291,11 @@ export default function EditOrderClient() {
         ...prev,
         {
           productId: product.productId,
+          saleItemId: product.productId,
           name: product.name,
           unit: product.baseUnit,
           price: product.price,
+          discount: 0,
           quantity: 1,
           stock: product.stock,
           trackInventory: product.trackInventory,
@@ -329,6 +332,19 @@ export default function EditOrderClient() {
     setCart((prev) => prev.filter((item) => item.productId !== productId));
   }, []);
 
+  const setItemDiscount = useCallback((productId: number, discount: number) => {
+    setCart((prev) =>
+      prev.map((item) => {
+        if (item.productId !== productId) return item;
+        const lineSubTotal = item.price * item.quantity;
+        return {
+          ...item,
+          discount: Math.max(0, Math.min(discount, lineSubTotal)),
+        };
+      }),
+    );
+  }, []);
+
   const formatCurrency = (amount: number) =>
     new Intl.NumberFormat("vi-VN", {
       style: "currency",
@@ -342,9 +358,11 @@ export default function EditOrderClient() {
     saveDraftOrder(
       cart.map((item) => ({
         productId: item.productId,
+        saleItemId: item.saleItemId ?? item.productId,
         name: item.name,
         unit: item.unit,
         price: item.price,
+        discount: item.discount ?? 0,
         quantity: item.quantity,
         stock: item.stock,
         trackInventory: item.trackInventory,
@@ -653,6 +671,21 @@ export default function EditOrderClient() {
                           <p className="text-xs text-gray-500 mt-0.5">
                             {item.quantity} × {formatCurrency(item.price)}
                           </p>
+                          <div className="mt-1.5 flex items-center gap-2">
+                            <span className="text-xs text-gray-500">Giảm:</span>
+                            <Input
+                              type="number"
+                              min="0"
+                              value={item.discount}
+                              onChange={(e) =>
+                                setItemDiscount(
+                                  item.productId,
+                                  Number(e.target.value) || 0,
+                                )
+                              }
+                              className="h-7 w-28 text-xs [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                            />
+                          </div>
                           {item.trackInventory &&
                             item.quantity > item.stock && (
                               <p className="text-xs text-amber-600 mt-0.5 flex items-center gap-1">
@@ -663,7 +696,12 @@ export default function EditOrderClient() {
                         </div>
                         <div className="flex items-center gap-2 ml-2">
                           <span className="font-semibold text-sm text-gray-800 whitespace-nowrap">
-                            {formatCurrency(item.price * item.quantity)}
+                            {formatCurrency(
+                              Math.max(
+                                0,
+                                item.price * item.quantity - item.discount,
+                              ),
+                            )}
                           </span>
                           <Button
                             variant="ghost"
@@ -678,13 +716,23 @@ export default function EditOrderClient() {
                     ))}
 
                     <div className="border-t border-gray-200 pt-3 mt-3">
-                      <div className="flex justify-between items-center">
-                        <span className="text-base font-semibold text-gray-700">
-                          Tổng cộng
-                        </span>
-                        <span className="text-xl font-bold text-[#23C4C1]">
-                          {formatCurrency(cartTotal)}
-                        </span>
+                      <div className="space-y-1.5">
+                        <div className="flex justify-between items-center text-sm text-gray-600">
+                          <span>Tổng trước giảm</span>
+                          <span>{formatCurrency(cartSubTotal)}</span>
+                        </div>
+                        <div className="flex justify-between items-center text-sm text-red-600">
+                          <span>Giảm giá</span>
+                          <span>-{formatCurrency(cartDiscountTotal)}</span>
+                        </div>
+                        <div className="flex justify-between items-center border-t border-gray-200 pt-2">
+                          <span className="text-base font-semibold text-gray-700">
+                            Tổng cộng
+                          </span>
+                          <span className="text-xl font-bold text-[#23C4C1]">
+                            {formatCurrency(cartTotal)}
+                          </span>
+                        </div>
                       </div>
                     </div>
                   </div>
