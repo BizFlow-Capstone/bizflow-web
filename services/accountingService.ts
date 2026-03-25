@@ -72,13 +72,16 @@ function normalizeGLDateRange(filters: GLEntryFilters): {
   };
 }
 
-function appendJsonArrayParam(
+function appendArrayQueryParam(
   params: URLSearchParams,
   key: string,
   values?: string[],
 ) {
   if (!values || values.length === 0) return;
-  params.append(key, JSON.stringify(values));
+  values.forEach((value) => {
+    if (!value) return;
+    params.append(key, value);
+  });
 }
 
 async function getStringReferenceValues(
@@ -559,9 +562,9 @@ export async function getGLEntries(
   const params = new URLSearchParams();
   params.append("BusinessLocationId", String(filters.locationId));
 
-  appendJsonArrayParam(params, "TransactionTypes", filters.transactionTypes);
-  appendJsonArrayParam(params, "ReferenceTypes", filters.referenceTypes);
-  appendJsonArrayParam(params, "MoneyChannels", filters.moneyChannels);
+  appendArrayQueryParam(params, "TransactionTypes", filters.transactionTypes);
+  appendArrayQueryParam(params, "ReferenceTypes", filters.referenceTypes);
+  appendArrayQueryParam(params, "MoneyChannels", filters.moneyChannels);
 
   const range = normalizeGLDateRange(filters);
   params.append("FromDate", range.fromDate);

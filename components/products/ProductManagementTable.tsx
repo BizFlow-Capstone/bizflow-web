@@ -72,7 +72,7 @@ export default function ProductManagementTable({
               Sản phẩm
             </TableHead>
             <TableHead className="font-semibold text-gray-700">
-              Tồn kho
+              Số lượng
             </TableHead>
             <TableHead className="font-semibold text-gray-700">
               Giá bán
@@ -127,18 +127,16 @@ export default function ProductManagementTable({
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-2">
-                      <span
-                        className={`font-medium ${product.stock <= 10 ? "text-orange-600" : "text-gray-900"}`}
-                      >
-                        {product.stock}
-                      </span>
-                      {product.stock <= 10 && product.status === "active" && (
-                        <Badge
-                          variant="secondary"
-                          className="bg-orange-100 text-[#BB4D00] hover:bg-orange-100 text-xs"
-                        >
-                          Sắp hết
-                        </Badge>
+                      {product.trackInventory !== true ? (
+                        <span className="text-xs text-gray-500">
+                          Không theo dõi
+                        </span>
+                      ) : (
+                        <>
+                          <span className={`font-medium  text-gray-900`}>
+                            {product.stock}
+                          </span>
+                        </>
                       )}
                     </div>
                   </TableCell>
@@ -192,13 +190,13 @@ export default function ProductManagementTable({
                           <Pencil className="w-4 h-4 mr-2" />
                           <span>Sửa sản phẩm</span>
                         </DropdownMenuItem>
-                        {onAdjustStock && (
+                        {onAdjustStock && product.trackInventory === true && (
                           <DropdownMenuItem
                             onClick={() => onAdjustStock(product)}
                             className="cursor-pointer"
                           >
                             <Warehouse className="w-4 h-4 mr-2" />
-                            <span>Điều chỉnh tồn kho</span>
+                            <span>Điều chỉnh số lượng</span>
                           </DropdownMenuItem>
                         )}
                         <DropdownMenuItem

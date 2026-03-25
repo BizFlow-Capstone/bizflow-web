@@ -852,7 +852,7 @@ function PeriodDetailSheet({
         if (!v) onClose();
       }}
     >
-      <SheetContent className="w-full sm:w-130 sm:max-w-130 flex flex-col">
+      <SheetContent className="w-full sm:w-130 sm:max-w-130 flex flex-col p-2">
         <SheetHeader>
           <SheetTitle className="flex items-center gap-2">
             <Calendar className="w-5 h-5 text-[#23C4C1]" />
@@ -1021,7 +1021,8 @@ export default function AccountingPeriodsTab({
         <div>
           <h2 className="text-lg font-bold text-gray-900">Kỳ kế toán</h2>
           <p className="text-sm text-gray-500 mt-0.5">
-            Quản lý vòng đời các kỳ kế toán của doanh nghiệp
+            Quản lý vòng đời các kỳ kế toán của cửa hàng, bao gồm tạo mới, chốt
+            sổ, và mở lại kỳ.
           </p>
         </div>
         <Button
