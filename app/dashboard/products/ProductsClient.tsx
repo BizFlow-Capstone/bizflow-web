@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import {
   Search,
   ScanLine,
@@ -10,6 +11,7 @@ import {
   ChevronLeft,
   ChevronRight,
   MapPin,
+  Plus,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -41,6 +43,8 @@ import NoLocationScreenSkeleton from "@/components/NoLocationScreenSkeleton";
 // --- Main Component ---
 
 export default function ProductsClient() {
+  const router = useRouter();
+
   // Location selector
   const { data: locations = [], isLoading: isLoadingLocations } =
     useLocations();
@@ -141,17 +145,31 @@ export default function ProductsClient() {
   return (
     <div className="flex-1 flex flex-col">
       <div className="px-8 pt-6 flex justify-end">
-        <Button
-          variant="outline"
-          onClick={() => refetch()}
-          disabled={isRefetching}
-          className="gap-2 bg-white"
-        >
-          <RefreshCw
-            className={`w-4 h-4 ${isRefetching ? "animate-spin" : ""}`}
-          />
-          Làm mới
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            onClick={() => refetch()}
+            disabled={isRefetching}
+            className="gap-2 bg-white"
+          >
+            <RefreshCw
+              className={`w-4 h-4 ${isRefetching ? "animate-spin" : ""}`}
+            />
+            Làm mới
+          </Button>
+
+          {locationId ? (
+            <Button
+              onClick={() =>
+                router.push(`/dashboard/locations/${locationId}/products/new`)
+              }
+              className="bg-[#23C4C1] hover:bg-[#1da8a5] text-white"
+            >
+              <Plus className="w-4 h-4 mr-2" />
+              Thêm sản phẩm
+            </Button>
+          ) : null}
+        </div>
       </div>
 
       <main className="flex-1 p-8 bg-gray-50">

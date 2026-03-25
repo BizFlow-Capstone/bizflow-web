@@ -11,13 +11,12 @@ import {
   Calendar,
   BookOpen,
   BarChart3,
-  ArrowUpRight,
-  ArrowDownRight,
   Plus,
   Trash2,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import {
@@ -145,9 +144,9 @@ export default function ReportsClient() {
     <div className="flex-1 flex flex-col min-h-0">
       {/* Top tab bar */}
       <div className="px-8 pt-6 pb-0 border-b bg-white">
-        <h1 className="text-xl font-bold text-gray-900 mb-4">
+        {/* <h1 className="text-xl font-bold text-gray-900 mb-4">
           Báo cáo &amp; Thống kê
-        </h1>
+        </h1> */}
         <div className="flex gap-0">
           {tabs.map((tab) => (
             <button
@@ -212,6 +211,8 @@ function ReportsTab({ locationId }: { locationId: number }) {
     "cash" | "bank"
   >("cash");
   const [editingCostId, setEditingCostId] = useState<number | null>(null);
+  const [manualCostRemoveDocument, setManualCostRemoveDocument] =
+    useState(false);
   const [manualCostError, setManualCostError] = useState("");
   const [isCostModalOpen, setIsCostModalOpen] = useState(false);
   const { data: cashFlow, isLoading: cfLoading } = useCashFlowReport(
@@ -585,6 +586,7 @@ function ReportsTab({ locationId }: { locationId: number }) {
       amount: Number(manualCostAmount),
       costDate: manualCostDate,
       paymentMethod: manualCostPaymentMethod,
+      removeDocument: manualCostRemoveDocument,
       image: manualCostImage ?? undefined,
     };
 
@@ -617,6 +619,7 @@ function ReportsTab({ locationId }: { locationId: number }) {
       setManualCostDescription("");
       setManualCostDate(new Date().toISOString().slice(0, 10));
       setManualCostPaymentMethod("cash");
+      setManualCostRemoveDocument(false);
       setManualCostImage(null);
       setManualCostError("");
       return true;
@@ -644,6 +647,7 @@ function ReportsTab({ locationId }: { locationId: number }) {
     );
     setManualCostDescription(cost.description || "");
     setManualCostPaymentMethod(cost.paymentMethod || "cash");
+    setManualCostRemoveDocument(false);
     setManualCostError("");
     setIsCostModalOpen(true);
   }
@@ -655,6 +659,7 @@ function ReportsTab({ locationId }: { locationId: number }) {
     setManualCostDate(new Date().toISOString().slice(0, 10));
     setManualCostDescription("");
     setManualCostPaymentMethod("cash");
+    setManualCostRemoveDocument(false);
     setManualCostImage(null);
     setManualCostError("");
     setIsCostModalOpen(false);
@@ -667,6 +672,7 @@ function ReportsTab({ locationId }: { locationId: number }) {
     setManualCostDate(new Date().toISOString().slice(0, 10));
     setManualCostDescription("");
     setManualCostPaymentMethod("cash");
+    setManualCostRemoveDocument(false);
     setManualCostImage(null);
     setManualCostError("");
     setIsCostModalOpen(true);
@@ -686,7 +692,7 @@ function ReportsTab({ locationId }: { locationId: number }) {
   return (
     <div className="space-y-5">
       {/* Summary KPIs */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      {/* <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <KpiCard
           label="Tổng doanh thu"
           value={fmt.format(totalRevenue)}
@@ -708,7 +714,7 @@ function ReportsTab({ locationId }: { locationId: number }) {
           icon={<ArrowUpRight className="w-4 h-4 text-emerald-500" />}
           color="emerald"
         />
-      </div>
+      </div> */}
 
       {/* Sub tabs */}
       <div className="flex gap-1 bg-gray-100 p-1 rounded-lg w-fit">
@@ -796,7 +802,7 @@ function ReportsTab({ locationId }: { locationId: number }) {
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
               <div className="rounded-2xl border p-4">
                 <h5 className="text-xl font-semibold leading-none text-gray-900 mb-4">
-                  Doanh Thu vs Mục Tiêu
+                  Doanh Thu vs Thực Tế
                 </h5>
                 <RevenueBarsChart data={revenueSeries} />
               </div>
@@ -1159,7 +1165,7 @@ function ReportsTab({ locationId }: { locationId: number }) {
                         {fmt.format(c.amount)}
                       </TableCell>
                       <TableCell className="text-right pr-5">
-                        {c.costType === "manual" ? (
+                        {c.importId == null ? (
                           <div className="flex items-center justify-end gap-2">
                             <Button
                               variant="outline"
@@ -1280,6 +1286,17 @@ function ReportsTab({ locationId }: { locationId: number }) {
                     setManualCostImage(e.target.files?.[0] ?? null)
                   }
                 />
+                {editingCostId ? (
+                  <label className="md:col-span-2 inline-flex items-center gap-2 text-sm text-gray-700">
+                    <Checkbox
+                      checked={manualCostRemoveDocument}
+                      onCheckedChange={(checked) =>
+                        setManualCostRemoveDocument(checked === true)
+                      }
+                    />
+                    Xóa chứng từ hiện tại (RemoveDocument)
+                  </label>
+                ) : null}
               </div>
 
               {manualCostError && (
@@ -1575,37 +1592,6 @@ function BooksTab({ locationId }: { locationId: number }) {
 
 // ─── Shared micro-components ─────────────────────────────────────────────────
 
-function KpiCard({
-  label,
-  value,
-  trend,
-  icon,
-  color,
-}: {
-  label: string;
-  value: string;
-  trend: string;
-  icon: React.ReactNode;
-  color: "emerald" | "red";
-}) {
-  const colorCls =
-    color === "emerald"
-      ? "text-emerald-600 bg-emerald-50"
-      : "text-red-500 bg-red-50";
-  return (
-    <div className="bg-white rounded-2xl border p-5 space-y-2">
-      <p className="text-sm text-gray-500">{label}</p>
-      <p className="text-2xl font-bold text-gray-900">{value}</p>
-      <div
-        className={`flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full w-fit ${colorCls}`}
-      >
-        {icon}
-        <span>{trend} so với kỳ trước</span>
-      </div>
-    </div>
-  );
-}
-
 function DataCard({
   title,
   subtitle,
@@ -1650,9 +1636,11 @@ function RevenueStatCard({
       <p className="text-xs font-bold tracking-wide uppercase text-slate-500">
         {title}
       </p>
-      <p className="mt-4 text-4xl font-extrabold text-slate-900">{value}</p>
+      <p className="mt-3 text-2xl md:text-3xl font-bold text-slate-900">
+        {value}
+      </p>
       <p
-        className={`mt-6 text-sm font-semibold ${positive ? "text-emerald-600" : "text-red-500"}`}
+        className={`mt-4 text-sm font-semibold ${positive ? "text-emerald-600" : "text-red-500"}`}
       >
         {trend}
       </p>
@@ -1695,13 +1683,13 @@ function RevenueBarsChart({
           <Bar
             dataKey="revenue"
             name="Doanh Thu"
-            fill="#111827"
+            fill="#14B8A6"
             radius={[6, 6, 0, 0]}
           />
           <Bar
             dataKey="target"
-            name="Mục Tiêu"
-            fill="#6b7280"
+            name="Thực Tế"
+            fill="#60A5FA"
             radius={[6, 6, 0, 0]}
           />
         </BarChart>
@@ -1748,9 +1736,9 @@ function RevenueGrowthDots({
             type="monotone"
             dataKey="growth"
             name="Tăng Trưởng (%)"
-            stroke="#111827"
+            stroke="#0EA5E9"
             strokeWidth={2}
-            dot={{ r: 4, fill: "#111827" }}
+            dot={{ r: 4, fill: "#0EA5E9" }}
             activeDot={{ r: 6 }}
           />
         </LineChart>
@@ -1775,9 +1763,11 @@ function CostStatCard({
       <p className="text-xs font-bold tracking-wide uppercase text-slate-500">
         {title}
       </p>
-      <p className="mt-4 text-4xl font-extrabold text-slate-900">{value}</p>
+      <p className="mt-3 text-2xl md:text-3xl font-bold text-slate-900">
+        {value}
+      </p>
       <p
-        className={`mt-6 text-sm font-semibold ${positive ? "text-emerald-600" : "text-rose-500"}`}
+        className={`mt-4 text-sm font-semibold ${positive ? "text-emerald-600" : "text-rose-500"}`}
       >
         {trend}
       </p>
@@ -1883,13 +1873,13 @@ function CostBudgetBarsChart({
           <Bar
             dataKey="cost"
             name="Chi Phí"
-            fill="#111827"
+            fill="#F97316"
             radius={[6, 6, 0, 0]}
           />
           <Bar
             dataKey="budget"
             name="Ngân Sách"
-            fill="#6b7280"
+            fill="#A78BFA"
             radius={[6, 6, 0, 0]}
           />
         </ComposedChart>
@@ -1957,13 +1947,13 @@ function CostTrendDots({
             data={scatterData}
             dataKey="cost"
             name="Chi Phí"
-            fill="#111827"
+            fill="#F97316"
           />
           <Scatter
             data={scatterData}
             dataKey="budget"
             name="Ngân Sách"
-            fill="#6b7280"
+            fill="#A78BFA"
           />
         </ScatterChart>
       </ResponsiveContainer>
@@ -2029,7 +2019,7 @@ function CostBudgetCategoryList({
           <p className="text-xs font-semibold text-gray-500 uppercase">
             Tổng chi phí
           </p>
-          <p className="text-4xl font-bold text-gray-900 mt-2">
+          <p className="text-2xl md:text-3xl font-bold text-gray-900 mt-2">
             {formatCompactVnd(total)}
           </p>
         </div>
@@ -2037,7 +2027,7 @@ function CostBudgetCategoryList({
           <p className="text-xs font-semibold text-gray-500 uppercase">
             Tổng ngân sách
           </p>
-          <p className="text-4xl font-bold text-gray-900 mt-2">
+          <p className="text-2xl md:text-3xl font-bold text-gray-900 mt-2">
             {formatCompactVnd(budget)}
           </p>
         </div>
@@ -2046,7 +2036,7 @@ function CostBudgetCategoryList({
             Chênh lệch
           </p>
           <p
-            className={`text-4xl font-bold mt-2 ${budget - total >= 0 ? "text-green-600" : "text-rose-500"}`}
+            className={`text-2xl md:text-3xl font-bold mt-2 ${budget - total >= 0 ? "text-green-600" : "text-rose-500"}`}
           >
             {budget - total >= 0
               ? `${formatCompactVnd(budget - total)} tiết kiệm`
@@ -2078,12 +2068,12 @@ function formatCompactVnd(amount: number) {
 }
 
 const PIE_COLORS = [
-  "#020617",
-  "#111827",
-  "#1f2937",
-  "#374151",
-  "#4b5563",
-  "#6b7280",
+  "#14B8A6",
+  "#60A5FA",
+  "#F59E0B",
+  "#A78BFA",
+  "#F97316",
+  "#22C55E",
 ];
 
 function formatYAxisShort(value: number) {

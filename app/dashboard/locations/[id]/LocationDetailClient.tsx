@@ -206,14 +206,6 @@ export default function LocationDetailClient({
     );
   }, [products, searchQuery]);
 
-  const lowStockCount = useMemo(
-    () =>
-      products.filter(
-        (product) => product.status === "active" && product.stock <= 10,
-      ).length,
-    [products],
-  );
-
   // Count active filters
   const activeFilterCount = useMemo(() => {
     let count = 0;
@@ -284,25 +276,6 @@ export default function LocationDetailClient({
               <p className="text-sm text-gray-600">
                 Quản lý sản phẩm tại địa điểm kinh doanh
               </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
-            <Button variant="ghost" size="icon">
-              <Sun className="w-5 h-5 text-gray-600" />
-            </Button>
-            <Button variant="ghost" size="icon">
-              <Bell className="w-5 h-5 text-gray-600" />
-            </Button>
-            <Button variant="ghost" size="icon">
-              <Settings className="w-5 h-5 text-gray-600" />
-            </Button>
-            <div className="flex items-center gap-3 ml-4">
-              <Avatar>
-                <AvatarImage src="https://github.com/shadcn.png" />
-                <AvatarFallback className="bg-blue-600 text-white">
-                  LV
-                </AvatarFallback>
-              </Avatar>
             </div>
           </div>
         </div>
@@ -727,20 +700,6 @@ export default function LocationDetailClient({
           </div>
         )}
 
-        {/* Low Stock Alert */}
-        {lowStockCount > 0 && (
-          <div className="mb-4 rounded-lg border border-orange-200 bg-orange-50 p-4">
-            <div className="flex items-center gap-3">
-              <AlertTriangle className="h-5 w-5 text-[#BB4D00] shrink-0" />
-              <div className="flex-1">
-                <span className="text-sm font-medium text-[#7B3306]">
-                  {lowStockCount} sản phẩm sắp hết hàng
-                </span>
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* Draft Import Note Alert */}
         {draftCount > 0 && (
           <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 p-4">
@@ -915,7 +874,7 @@ export default function LocationDetailClient({
               </Select>
             </div>
 
-            {/* Đơn vị & Tồn kho */}
+            {/* Đơn vị & Số lượng */}
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <Label
@@ -936,23 +895,34 @@ export default function LocationDetailClient({
               <div className="space-y-1.5">
                 <Label
                   htmlFor="np-stock"
-                  className="text-sm font-medium text-gray-700"
+                  className={`text-sm font-medium ${newProduct.trackInventory ? "text-gray-700" : "text-gray-400"}`}
                 >
-                  Tồn kho ban đầu
+                  Số lượng ban đầu
                 </Label>
                 <Input
                   id="np-stock"
                   type="number"
                   min={0}
-                  placeholder="0"
+                  placeholder={newProduct.trackInventory ? "0" : "—"}
                   value={newProduct.stock}
+                  disabled={!newProduct.trackInventory}
                   onChange={(e) =>
                     setNewProduct({
                       ...newProduct,
                       stock: Number(e.target.value),
                     })
                   }
+                  className={
+                    !newProduct.trackInventory
+                      ? "bg-gray-100 cursor-not-allowed"
+                      : ""
+                  }
                 />
+                {!newProduct.trackInventory && (
+                  <p className="text-xs text-gray-400">
+                    Sản phẩm này không theo dõi số lượng.
+                  </p>
+                )}
               </div>
             </div>
 
@@ -1120,20 +1090,24 @@ export default function LocationDetailClient({
               />
             </div>
 
-            {/* Theo dõi tồn kho */}
+            {/* Theo dõi số lượng */}
             <div className="flex items-center justify-between rounded-lg border border-gray-200 bg-gray-50/50 px-4 py-3">
               <div>
                 <p className="text-sm font-medium text-gray-800">
-                  Theo dõi tồn kho
+                  Theo dõi số lượng
                 </p>
                 <p className="text-xs text-gray-500 mt-0.5">
-                  Hệ thống sẽ cảnh báo khi hàng sắp hết
+                  Bật cho hàng hóa có thể đếm số lượng. Tắt cho F&B/dịch vụ.
                 </p>
               </div>
               <Switch
                 checked={newProduct.trackInventory}
                 onCheckedChange={(checked) =>
-                  setNewProduct({ ...newProduct, trackInventory: checked })
+                  setNewProduct({
+                    ...newProduct,
+                    trackInventory: checked,
+                    stock: checked ? newProduct.stock : 0,
+                  })
                 }
                 className="data-[state=checked]:bg-[#23C4C1]"
               />
@@ -1199,7 +1173,7 @@ export default function LocationDetailClient({
                       newProduct.priceTiers.find((t) => t.price > 0)?.price ||
                       0,
                     costPrice: newProduct.costPrice,
-                    stock: newProduct.stock,
+                    stock: newProduct.trackInventory ? newProduct.stock : 0,
                     manufacturer: newProduct.manufacturer.trim() || undefined,
                     priceTiers: normalizedPriceTiers,
                   });

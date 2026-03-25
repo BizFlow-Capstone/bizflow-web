@@ -120,21 +120,17 @@ export async function POST(request: NextRequest) {
     if (body.manufacturer)
       formData.append("Manufacturer", String(body.manufacturer));
 
-    // Price tiers — ASP.NET Core [FromForm] indexed notation
+    // Price tiers are sent as one JSON string field in multipart form-data.
     if (Array.isArray(body.priceTiers)) {
-      body.priceTiers.forEach(
-        (
-          tier: { unit: string; quantity: number; price: number },
-          index: number,
-        ) => {
-          formData.append(`PriceTiers[${index}].Unit`, String(tier.unit));
-          formData.append(
-            `PriceTiers[${index}].Quantity`,
-            String(tier.quantity),
-          );
-          formData.append(`PriceTiers[${index}].Price`, String(tier.price));
-        },
-      );
+      const normalizedTiers = body.priceTiers
+        .map((tier: { unit: string; quantity: number; price: number }) => ({
+          unit: String(tier.unit ?? "").trim(),
+          quantity: Number(tier.quantity) || 1,
+          price: Number(tier.price) || 0,
+        }))
+        .filter((tier: { unit: string }) => tier.unit.length > 0);
+
+      formData.append("PriceTiers", JSON.stringify(normalizedTiers));
     }
 
     const response = await fetch(`${BACKEND_API_URL}/api/my-business/product`, {

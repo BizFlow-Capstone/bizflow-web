@@ -41,11 +41,15 @@ function buildProductFormData(
   }
 
   if (Array.isArray(data.priceTiers)) {
-    data.priceTiers.forEach((tier, index) => {
-      formData.append(`PriceTiers[${index}].Unit`, String(tier.unit));
-      formData.append(`PriceTiers[${index}].Quantity`, String(tier.quantity));
-      formData.append(`PriceTiers[${index}].Price`, String(tier.price));
-    });
+    const normalizedTiers = data.priceTiers
+      .map((tier) => ({
+        unit: String(tier.unit ?? "").trim(),
+        quantity: Number(tier.quantity) || 1,
+        price: Number(tier.price) || 0,
+      }))
+      .filter((tier) => tier.unit.length > 0);
+
+    formData.append("PriceTiers", JSON.stringify(normalizedTiers));
   }
 
   return formData;
