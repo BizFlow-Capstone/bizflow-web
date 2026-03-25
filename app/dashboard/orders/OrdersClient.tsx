@@ -73,6 +73,7 @@ import {
   useCompleteOrder,
 } from "@/hooks/useOrders";
 import { useLocations } from "@/hooks/useLocations";
+import { useDashboardLocation } from "@/lib/providers/DashboardLocationProvider";
 import NoLocationScreenSkeleton from "@/components/NoLocationScreenSkeleton";
 import type {
   OrderFilters,
@@ -227,6 +228,7 @@ export default function OrdersClient() {
   const { data: locations = [], isLoading: isLoadingLocations } =
     useLocations();
   const hasLocations = locations.length > 0;
+  const { selectedLocationId } = useDashboardLocation();
 
   // Filter state
   const [statusFilter, setStatusFilter] = useState<OrderStatus | "ALL">("ALL");
@@ -271,10 +273,11 @@ export default function OrdersClient() {
       ...(paymentTypeFilter !== "ALL" && { PaymentType: paymentTypeFilter }),
       ...(fromDate && { FromDate: fromDate }),
       ...(toDate && { ToDate: toDate }),
+      ...(selectedLocationId && { BusinessLocationId: selectedLocationId }),
       PageNumber: pageNumber,
       PageSize: pageSize,
     }),
-    [statusFilter, paymentTypeFilter, fromDate, toDate, pageNumber],
+    [statusFilter, paymentTypeFilter, fromDate, toDate, pageNumber, selectedLocationId],
   );
 
   const hasActiveFilters = paymentTypeFilter !== "ALL" || fromDate || toDate;
@@ -293,7 +296,7 @@ export default function OrdersClient() {
     isRefetching,
     error,
     refetch,
-  } = useOrders(filters, hasLocations);
+  } = useOrders(filters, hasLocations && !!selectedLocationId);
 
   const cancelMutation = useCancelOrder();
   const confirmMutation = useConfirmOrder();

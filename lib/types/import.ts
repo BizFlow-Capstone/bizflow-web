@@ -95,6 +95,7 @@ export interface CreateImportRequest {
   receivedAt?: string;
   saveAsDraft?: boolean;
   items: ImportItemRequest[];
+  image?: File;
 }
 
 // --- Update Import Request ---
@@ -105,7 +106,9 @@ export interface UpdateImportRequest {
   supplier?: string;
   note?: string;
   receivedAt?: string;
+  saveAsDraft?: boolean;
   items?: ImportItemRequest[];
+  image?: File;
 }
 
 // --- Confirm Import Request ---

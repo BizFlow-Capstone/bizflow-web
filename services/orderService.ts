@@ -183,10 +183,9 @@ export async function getOrders(
   filters: OrderFilters,
 ): Promise<ApiResponse<OrderPagination>> {
   const params = new URLSearchParams();
-  params.append(
-    "BusinessLocationId",
-    String(filters.BusinessLocationId ?? DEFAULT_LOCATION_ID),
-  );
+  if (filters.BusinessLocationId) {
+    params.append("BusinessLocationId", String(filters.BusinessLocationId));
+  }
 
   if (filters.Status) params.append("Status", filters.Status);
   if (filters.FromDate) params.append("FromDate", filters.FromDate);

@@ -34,6 +34,7 @@ export async function GET(request: NextRequest) {
       method: "GET",
       headers: {
         "Content-Type": "application/json",
+        accept: "*/*",
         Authorization: authHeader,
       },
       cache: "no-store",
@@ -69,7 +70,6 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
     const authHeader = getBearerAuthorizationHeader(request);
     if (!authHeader) {
       return NextResponse.json(
@@ -82,15 +82,60 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const contentType = request.headers.get("content-type") || "";
+    const formData = new FormData();
+
+    if (contentType.includes("multipart/form-data")) {
+      const incomingFormData = await request.formData();
+      // Map incoming fields to PascalCase for backend
+      const mapping: Record<string, string> = {
+        importType: "ImportType",
+        hasInvoice: "HasInvoice",
+        businessLocationId: "BusinessLocationId",
+        supplier: "Supplier",
+        note: "Note",
+        receivedAt: "ReceivedAt",
+        saveAsDraft: "SaveAsDraft",
+        items: "Items",
+        // 'image' stays 'image' based on Swagger
+      };
+
+      for (const [key, value] of incomingFormData.entries()) {
+        const targetKey = mapping[key] || key;
+        if (key === "items" && typeof value === "string") {
+          formData.append("Items", value);
+        } else {
+          formData.append(targetKey, value);
+        }
+      }
+    } else {
+      const body = await request.json();
+      // Map JSON fields to PascalCase FormData
+      formData.append("ImportType", String(body.importType));
+      if (body.hasInvoice !== undefined)
+        formData.append("HasInvoice", String(body.hasInvoice));
+      formData.append("BusinessLocationId", String(body.businessLocationId));
+      if (body.supplier) formData.append("Supplier", String(body.supplier));
+      if (body.note) formData.append("Note", String(body.note));
+      if (body.receivedAt) formData.append("ReceivedAt", String(body.receivedAt));
+      if (body.saveAsDraft !== undefined)
+        formData.append("SaveAsDraft", String(body.saveAsDraft));
+
+      if (Array.isArray(body.items)) {
+        formData.append("Items", JSON.stringify(body.items));
+      }
+    }
+
     const response = await fetch(
       `${BACKEND_API_URL}/api/my-business/accounting/import`,
       {
         method: "POST",
         headers: {
-          "Content-Type": "application/json",
+          accept: "*/*",
           Authorization: authHeader,
+          // Let fetch set the correct boundary for multipart/form-data
         },
-        body: JSON.stringify(body),
+        body: formData,
       },
     );
 

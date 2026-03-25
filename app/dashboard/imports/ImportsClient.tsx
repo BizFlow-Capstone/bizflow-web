@@ -66,6 +66,7 @@ import {
   useConfirmImport,
 } from "@/hooks/useImports";
 import { useLocations } from "@/hooks/useLocations";
+import { useDashboardLocation } from "@/lib/providers/DashboardLocationProvider";
 import NoLocationScreenSkeleton from "@/components/NoLocationScreenSkeleton";
 import type {
   ImportFilters,
@@ -188,6 +189,7 @@ export default function ImportsClient() {
   const router = useRouter();
   const { data: locations = [], isLoading: isLoadingLocations } =
     useLocations();
+  const { selectedLocationId } = useDashboardLocation();
   const hasLocations = locations.length > 0;
 
   // Filter state
@@ -206,10 +208,11 @@ export default function ImportsClient() {
   const filters: ImportFilters = useMemo(
     () => ({
       ...(statusFilter !== "ALL" && { Status: statusFilter }),
+      ...(selectedLocationId && { BusinessLocationId: selectedLocationId }),
       PageNumber: pageNumber,
       PageSize: pageSize,
     }),
-    [statusFilter, pageNumber],
+    [statusFilter, pageNumber, selectedLocationId],
   );
 
   // Data fetching

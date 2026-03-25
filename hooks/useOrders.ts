@@ -137,11 +137,24 @@ export function useCancelOrder() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (orderId: number) => cancelOrder(orderId),
-    onSuccess: (_data, orderId) => {
+    mutationFn: (
+      input:
+        | number
+        | {
+            orderId: number;
+            data?: { cancelReason?: string };
+          },
+    ) => {
+      if (typeof input === "number") {
+        return cancelOrder(input);
+      }
+      return cancelOrder(input.orderId, input.data);
+    },
+    onSuccess: (_data, input) => {
+      const targetOrderId = typeof input === "number" ? input : input.orderId;
       queryClient.invalidateQueries({ queryKey: orderKeys.lists() });
       queryClient.invalidateQueries({
-        queryKey: orderKeys.detail(orderId),
+        queryKey: orderKeys.detail(targetOrderId),
       });
     },
   });

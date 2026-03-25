@@ -41,122 +41,20 @@ import { useCreateOrder } from "@/hooks/useOrders";
 import type { PaymentType } from "@/lib/types/order";
 import type { DebtorFilters, DebtorRecord } from "@/lib/types/debtor";
 import { saveDraftOrder } from "@/lib/draftOrderStorage";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
-// --- Mock Product Catalog ---
-
-interface MockProduct {
-  productId: number;
-  name: string;
-  sku: string;
-  baseUnit: string;
-  price: number;
-  stock: number;
-  trackInventory: boolean;
-  category: string;
-}
-
-const MOCK_PRODUCTS: MockProduct[] = [
-  {
-    productId: 1,
-    name: "Xi măng Hà Tiên PCB40",
-    sku: "XM-HT-PCB40",
-    baseUnit: "Bao (50kg)",
-    price: 95000,
-    stock: 450,
-    trackInventory: true,
-    category: "VLXD",
-  },
-  {
-    productId: 2,
-    name: "Xi măng INSEE",
-    sku: "XM-INSEE",
-    baseUnit: "Bao (50kg)",
-    price: 98000,
-    stock: 200,
-    trackInventory: true,
-    category: "VLXD",
-  },
-  {
-    productId: 3,
-    name: "Sắt thép Pomina D10",
-    sku: "ST-POM-D10",
-    baseUnit: "Cây (11.7m)",
-    price: 150000,
-    stock: 120,
-    trackInventory: true,
-    category: "VLXD",
-  },
-  {
-    productId: 4,
-    name: "Sắt thép Pomina D12",
-    sku: "ST-POM-D12",
-    baseUnit: "Cây (11.7m)",
-    price: 210000,
-    stock: 80,
-    trackInventory: true,
-    category: "VLXD",
-  },
-  {
-    productId: 5,
-    name: "Dịch vụ cắt sắt",
-    sku: "DV-CATSAT",
-    baseUnit: "Lần",
-    price: 300000,
-    stock: 0,
-    trackInventory: false,
-    category: "Dịch vụ",
-  },
-  {
-    productId: 6,
-    name: "Cát xây dựng",
-    sku: "CAT-XD",
-    baseUnit: "Khối (m³)",
-    price: 350000,
-    stock: 50,
-    trackInventory: true,
-    category: "VLXD",
-  },
-  {
-    productId: 7,
-    name: "Gạch ống 4 lỗ",
-    sku: "GACH-4L",
-    baseUnit: "Viên",
-    price: 1200,
-    stock: 10000,
-    trackInventory: true,
-    category: "VLXD",
-  },
-  {
-    productId: 8,
-    name: "Tôn lạnh 0.45mm",
-    sku: "TON-045",
-    baseUnit: "Tấm (1.2m)",
-    price: 125000,
-    stock: 300,
-    trackInventory: true,
-    category: "VLXD",
-  },
-  {
-    productId: 9,
-    name: "Sơn Dulux nội thất 5L",
-    sku: "SON-DLX-5L",
-    baseUnit: "Thùng (5L)",
-    price: 680000,
-    stock: 25,
-    trackInventory: true,
-    category: "Sơn",
-  },
-  {
-    productId: 10,
-    name: "Ống nước PVC D21",
-    sku: "ONG-PVC-21",
-    baseUnit: "Cây (4m)",
-    price: 28000,
-    stock: 500,
-    trackInventory: true,
-    category: "Ống nước",
-  },
-];
+import { useDashboardLocation } from "@/lib/providers/DashboardLocationProvider";
+import { useQuickSearchProducts } from "@/hooks/useProducts";
+import type { QuickSearchProduct, SaleItem } from "@/lib/types/product";
 
 // --- Cart Item ---
 
@@ -344,7 +242,10 @@ export default function CreateOrderClient() {
   // Submitting
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
+  const [showLeaveDialog, setShowLeaveDialog] = useState(false);
   const createOrderMutation = useCreateOrder();
+
+  const { selectedLocationId } = useDashboardLocation();
 
   const debtorFilters: DebtorFilters = useMemo(
     () => ({
@@ -442,6 +343,18 @@ export default function CreateOrderClient() {
     };
   }, []);
 
+  // Browser-level navigation guard
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (cart.length > 0) {
+        e.preventDefault();
+        e.returnValue = "";
+      }
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [cart.length]);
+
   // Format recording time
   const formatTime = (seconds: number) => {
     const m = Math.floor(seconds / 60);
@@ -449,17 +362,13 @@ export default function CreateOrderClient() {
     return `${m}:${s.toString().padStart(2, "0")}`;
   };
 
-  // Filtered products (manual mode)
-  const searchResults = useMemo(() => {
-    if (!productSearch) return MOCK_PRODUCTS;
-    const q = productSearch.toLowerCase();
-    return MOCK_PRODUCTS.filter(
-      (p) =>
-        p.name.toLowerCase().includes(q) ||
-        p.sku.toLowerCase().includes(q) ||
-        p.category.toLowerCase().includes(q),
-    );
-  }, [productSearch]);
+  // Filtered products (quick search)
+  const { data: searchResults = [] } = useQuickSearchProducts(
+    selectedLocationId ?? 0,
+    productSearch,
+    activeMethod === "manual"
+  );
+
 
   const cartSubTotal = useMemo(
     () =>
@@ -502,42 +411,45 @@ export default function CreateOrderClient() {
   );
 
   // Cart operations
-  const addToCart = useCallback((product: MockProduct) => {
-    setSubmitError("");
-    setCart((prev) => {
-      const existing = prev.find(
-        (item) => item.productId === product.productId,
-      );
-      if (existing) {
-        return prev.map((item) =>
-          item.productId === product.productId
-            ? { ...item, quantity: item.quantity + 1 }
-            : item,
+  const addToCart = useCallback(
+    (product: QuickSearchProduct, saleItem: SaleItem) => {
+      setSubmitError("");
+      setCart((prev) => {
+        const existing = prev.find(
+          (item) => item.saleItemId === saleItem.saleItemId,
         );
-      }
-      return [
-        ...prev,
-        {
-          productId: product.productId,
-          saleItemId: product.productId,
-          name: product.name,
-          unit: product.baseUnit,
-          price: product.price,
-          discount: 0,
-          quantity: 1,
-          stock: product.stock,
-          trackInventory: product.trackInventory,
-        },
-      ];
-    });
-  }, []);
+        if (existing) {
+          return prev.map((item) =>
+            item.saleItemId === saleItem.saleItemId
+              ? { ...item, quantity: item.quantity + 1 }
+              : item,
+          );
+        }
+        return [
+          ...prev,
+          {
+            productId: product.productId,
+            saleItemId: saleItem.saleItemId,
+            name: product.name,
+            unit: saleItem.unit,
+            price: saleItem.price,
+            discount: 0,
+            quantity: 1,
+            stock: 9999, // quick search doesn't return stock
+            trackInventory: false,
+          },
+        ];
+      });
+    },
+    [],
+  );
 
-  const updateQuantity = useCallback((productId: number, delta: number) => {
+  const updateQuantity = useCallback((saleItemId: number, delta: number) => {
     setSubmitError("");
     setCart((prev) =>
       prev
         .map((item) =>
-          item.productId === productId
+          item.saleItemId === saleItemId
             ? { ...item, quantity: Math.max(0, item.quantity + delta) }
             : item,
         )
@@ -545,29 +457,29 @@ export default function CreateOrderClient() {
     );
   }, []);
 
-  const setQuantity = useCallback((productId: number, qty: number) => {
+  const setQuantity = useCallback((saleItemId: number, qty: number) => {
     setSubmitError("");
     if (qty <= 0) {
-      setCart((prev) => prev.filter((item) => item.productId !== productId));
+      setCart((prev) => prev.filter((item) => item.saleItemId !== saleItemId));
       return;
     }
     setCart((prev) =>
       prev.map((item) =>
-        item.productId === productId ? { ...item, quantity: qty } : item,
+        item.saleItemId === saleItemId ? { ...item, quantity: qty } : item,
       ),
     );
   }, []);
 
-  const removeFromCart = useCallback((productId: number) => {
+  const removeFromCart = useCallback((saleItemId: number) => {
     setSubmitError("");
-    setCart((prev) => prev.filter((item) => item.productId !== productId));
+    setCart((prev) => prev.filter((item) => item.saleItemId !== saleItemId));
   }, []);
 
-  const setItemDiscount = useCallback((productId: number, discount: number) => {
+  const setItemDiscount = useCallback((saleItemId: number, discount: number) => {
     setSubmitError("");
     setCart((prev) =>
       prev.map((item) => {
-        if (item.productId !== productId) return item;
+        if (item.saleItemId !== saleItemId) return item;
         const lineSubTotal = item.price * item.quantity;
         return {
           ...item,
@@ -612,8 +524,8 @@ export default function CreateOrderClient() {
 
     setIsSubmitting(true);
     try {
-      await createOrderMutation.mutateAsync({
-        businessLocationId: 1,
+      const result = await createOrderMutation.mutateAsync({
+        businessLocationId: selectedLocationId ?? 0,
         cashAmount: cash,
         bankAmount: bank,
         debtAmount: debt,
@@ -626,7 +538,7 @@ export default function CreateOrderClient() {
         })),
       });
 
-      router.push("/dashboard/orders");
+      router.push(`/dashboard/orders/${result.data.orderId}/payment`);
     } catch (error) {
       setSubmitError(
         error instanceof Error
@@ -664,6 +576,14 @@ export default function CreateOrderClient() {
     router.push("/dashboard/orders");
   };
 
+  const handleBack = () => {
+    if (cart.length > 0) {
+      setShowLeaveDialog(true);
+    } else {
+      router.push("/dashboard/orders");
+    }
+  };
+
   const hasStockWarning = cart.some(
     (item) => item.trackInventory && item.quantity > item.stock,
   );
@@ -680,7 +600,7 @@ export default function CreateOrderClient() {
           <Button
             variant="ghost"
             size="icon"
-            onClick={() => router.push("/dashboard/orders")}
+            onClick={handleBack}
           >
             <ArrowLeft className="w-5 h-5" />
           </Button>
@@ -1027,108 +947,101 @@ export default function CreateOrderClient() {
                   </div>
 
                   <div className="max-h-96 overflow-y-auto space-y-2">
-                    {searchResults.map((product) => {
-                      const cartItem = cart.find(
-                        (c) => c.productId === product.productId,
-                      );
-                      const isLowStock =
-                        product.trackInventory && product.stock < 10;
+                    {searchResults.flatMap((product) =>
+                      product.saleItems.map((saleItem) => {
+                        const cartItem = cart.find(
+                          (c) => c.saleItemId === saleItem.saleItemId,
+                        );
 
-                      return (
-                        <div
-                          key={product.productId}
-                          className={`flex items-center justify-between p-3 rounded-lg border transition-all ${
-                            cartItem
-                              ? "border-[#23C4C1] bg-[#23C4C1]/5"
-                              : "border-gray-200 hover:border-gray-300 hover:bg-gray-50"
-                          }`}
-                        >
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2">
-                              <span className="font-medium text-gray-900 truncate">
-                                {product.name}
-                              </span>
-                              <Badge
-                                variant="outline"
-                                className="text-xs shrink-0"
-                              >
-                                {product.category}
-                              </Badge>
+                        return (
+                          <div
+                            key={saleItem.saleItemId}
+                            className={`flex items-center justify-between p-3 rounded-lg border transition-all ${
+                              cartItem
+                                ? "border-[#23C4C1] bg-[#23C4C1]/5"
+                                : "border-gray-200 hover:border-gray-300 hover:bg-gray-50"
+                            }`}
+                          >
+                            <div className="flex-1 min-w-0 flex items-center gap-3">
+                              {product.imageUrl && (
+                                <img
+                                  src={product.imageUrl}
+                                  alt={product.name}
+                                  className="w-10 h-10 object-cover rounded-md border"
+                                />
+                              )}
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-medium text-gray-900 truncate">
+                                    {product.name}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-3 mt-1 text-sm text-gray-500">
+                                  {product.sku && (
+                                    <>
+                                      <span className="font-mono">{product.sku}</span>
+                                      <span>·</span>
+                                    </>
+                                  )}
+                                  <span>{saleItem.unit}</span>
+                                </div>
+                              </div>
                             </div>
-                            <div className="flex items-center gap-3 mt-1 text-sm text-gray-500">
-                              <span className="font-mono">{product.sku}</span>
-                              <span>·</span>
-                              <span>{product.baseUnit}</span>
-                              {product.trackInventory && (
-                                <>
-                                  <span>·</span>
-                                  <span
-                                    className={
-                                      isLowStock
-                                        ? "text-red-500 font-medium"
-                                        : ""
+                            <div className="flex items-center gap-3 ml-4">
+                              <span className="font-semibold text-gray-800 whitespace-nowrap">
+                                {formatCurrency(saleItem.price)}
+                              </span>
+                              {cartItem ? (
+                                <div className="flex items-center gap-1">
+                                  <Button
+                                    variant="outline"
+                                    size="icon"
+                                    className="h-8 w-8"
+                                    onClick={() =>
+                                      updateQuantity(saleItem.saleItemId, -1)
                                     }
                                   >
-                                    Tồn: {product.stock}
-                                  </span>
-                                </>
+                                    <Minus className="w-3 h-3" />
+                                  </Button>
+                                  <Input
+                                    type="number"
+                                    min="1"
+                                    value={cartItem.quantity}
+                                    onChange={(e) =>
+                                      setQuantity(
+                                        saleItem.saleItemId,
+                                        parseInt(e.target.value) || 0,
+                                      )
+                                    }
+                                    className="w-16 h-8 text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                  />
+                                  <Button
+                                    variant="outline"
+                                    size="icon"
+                                    className="h-8 w-8"
+                                    onClick={() =>
+                                      updateQuantity(saleItem.saleItemId, 1)
+                                    }
+                                  >
+                                    <Plus className="w-3 h-3" />
+                                  </Button>
+                                </div>
+                              ) : (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => addToCart(product, saleItem)}
+                                  className="text-[#23C4C1] border-[#23C4C1] hover:bg-[#23C4C1]/10"
+                                >
+                                  <Plus className="w-4 h-4 mr-1" />
+                                  Thêm
+                                </Button>
                               )}
                             </div>
                           </div>
-                          <div className="flex items-center gap-3 ml-4">
-                            <span className="font-semibold text-gray-800 whitespace-nowrap">
-                              {formatCurrency(product.price)}
-                            </span>
-                            {cartItem ? (
-                              <div className="flex items-center gap-1">
-                                <Button
-                                  variant="outline"
-                                  size="icon"
-                                  className="h-8 w-8"
-                                  onClick={() =>
-                                    updateQuantity(product.productId, -1)
-                                  }
-                                >
-                                  <Minus className="w-3 h-3" />
-                                </Button>
-                                <Input
-                                  type="number"
-                                  min="1"
-                                  value={cartItem.quantity}
-                                  onChange={(e) =>
-                                    setQuantity(
-                                      product.productId,
-                                      parseInt(e.target.value) || 0,
-                                    )
-                                  }
-                                  className="w-16 h-8 text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                                />
-                                <Button
-                                  variant="outline"
-                                  size="icon"
-                                  className="h-8 w-8"
-                                  onClick={() =>
-                                    updateQuantity(product.productId, 1)
-                                  }
-                                >
-                                  <Plus className="w-3 h-3" />
-                                </Button>
-                              </div>
-                            ) : (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => addToCart(product)}
-                                className="text-[#23C4C1] border-[#23C4C1] hover:bg-[#23C4C1]/10"
-                              >
-                                <Plus className="w-4 h-4 mr-1" />
-                                Thêm
-                              </Button>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
+                        );
+                      }),
+                    )}
                     {searchResults.length === 0 && (
                       <div className="text-center py-8 text-gray-500">
                         <Package className="w-8 h-8 mx-auto mb-2 text-gray-300" />
@@ -1508,6 +1421,40 @@ export default function CreateOrderClient() {
           </div>
         </div>
       </main>
+
+      {/* Leave Confirmation Dialog */}
+      <AlertDialog open={showLeaveDialog} onOpenChange={setShowLeaveDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Hủy bỏ tạo đơn hàng?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Bạn đang có {cart.length} sản phẩm trong giỏ hàng. Nếu bạn thoát, đơn hàng sẽ không được tạo. Bạn muốn lưu nháp (treo đơn) hay thoát luôn?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="flex-col sm:flex-row gap-2">
+            <AlertDialogCancel className="mt-0">Tiếp tục tạo</AlertDialogCancel>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowLeaveDialog(false);
+                router.push("/dashboard/orders");
+              }}
+              className="text-red-600 border-red-200 hover:bg-red-50"
+            >
+              Thoát không lưu
+            </Button>
+            <Button
+              onClick={() => {
+                setShowLeaveDialog(false);
+                handleSaveDraft();
+              }}
+              className="bg-[#23C4C1] hover:bg-[#1da8a5] text-white"
+            >
+              Treo đơn & Thoát
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
