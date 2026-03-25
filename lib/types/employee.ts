@@ -42,3 +42,11 @@ export interface EmployeeInvitation {
   ownerName: string;
   invitedAt: string;
 }
+
+export interface AssignableEmployee {
+  userId: string;
+  userName: string;
+  phone?: string | null;
+  email?: string | null;
+  avatarUrl?: string | null;
+}

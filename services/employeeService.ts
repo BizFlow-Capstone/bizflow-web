@@ -5,6 +5,7 @@ import type {
   EmployeeInvitation,
   InviteEmployeeRequest,
   HireRecord,
+  AssignableEmployee,
 } from "@/lib/types/employee";
 import { authFetch } from "@/lib/auth/tokenManager";
 
@@ -42,6 +43,63 @@ export async function getEmployees(): Promise<ApiResponse<EmployeeDetail[]>> {
   return {
     ...result,
     data: acceptedEmployees,
+  };
+}
+
+type RawMyEmployee = {
+  profileId?: string;
+  userName?: string;
+  phone?: string | null;
+  email?: string | null;
+  avatarUrl?: string | null;
+  isAlreadyHired?: boolean;
+  isActive?: boolean;
+};
+
+export async function getAssignableEmployees(): Promise<
+  ApiResponse<AssignableEmployee[]>
+> {
+  const response = await authFetch("/api/my-employee/employees", {
+    method: "GET",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch assignable employees: ${response.status}`);
+  }
+
+  const result = (await response.json()) as ApiResponse<
+    RawMyEmployee[] | { employees?: RawMyEmployee[] }
+  >;
+
+  const normalized = Array.isArray(result.data)
+    ? result.data
+    : (result.data?.employees ?? []);
+
+  const assignableMap = new Map<string, AssignableEmployee>();
+
+  for (const employee of normalized) {
+    if (!employee.profileId) continue;
+    if (employee.isAlreadyHired !== true || employee.isActive !== true)
+      continue;
+
+    if (!assignableMap.has(employee.profileId)) {
+      assignableMap.set(employee.profileId, {
+        userId: employee.profileId,
+        userName: employee.userName?.trim() || employee.profileId,
+        phone: employee.phone,
+        email: employee.email,
+        avatarUrl: employee.avatarUrl,
+      });
+    }
+  }
+
+  return {
+    ...result,
+    data: Array.from(assignableMap.values()),
   };
 }
 

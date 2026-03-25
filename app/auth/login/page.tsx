@@ -23,6 +23,7 @@ import {
   setAccountPassword,
 } from "@/services/authService";
 import type { AuthAccount } from "@/lib/types/auth";
+import { persistAccountWithLocalAvatar } from "@/lib/auth/avatarLocalCache";
 
 const ACCESS_TOKEN_KEY = "bizflow_access_token";
 const REFRESH_TOKEN_KEY = "bizflow_refresh_token";
@@ -78,27 +79,38 @@ export default function LoginPage() {
   const [isSettingPassword, setIsSettingPassword] = useState(false);
   const googleInitializedRef = useRef(false);
 
-  const saveTokens = (
+  const saveTokens = async (
     token: string,
     refresh: string,
     account: AuthAccount | null,
-  ) => {
-    if (typeof window === "undefined") return;
+  ): Promise<AuthAccount | null> => {
+    if (typeof window === "undefined") return null;
+
+    const accountWithLocalAvatar = await persistAccountWithLocalAvatar(account);
+
     window.localStorage.setItem(ACCESS_TOKEN_KEY, token);
     if (refresh) window.localStorage.setItem(REFRESH_TOKEN_KEY, refresh);
-    if (account)
-      window.localStorage.setItem(AUTH_ACCOUNT_KEY, JSON.stringify(account));
+    if (accountWithLocalAvatar)
+      window.localStorage.setItem(
+        AUTH_ACCOUNT_KEY,
+        JSON.stringify(accountWithLocalAvatar),
+      );
     window.dispatchEvent(new Event(AUTH_UPDATED_EVENT));
+
+    return accountWithLocalAvatar ?? null;
   };
 
   const handleAfterAuth = useCallback(
     async (token: string, account?: AuthAccount | null) => {
       const credentialsResult = await getAuthCredentials(token);
       if (typeof window !== "undefined") {
+        const accountWithLocalAvatar = await persistAccountWithLocalAvatar(
+          account ?? null,
+        );
         if (account)
           window.localStorage.setItem(
             AUTH_ACCOUNT_KEY,
-            JSON.stringify(account),
+            JSON.stringify(accountWithLocalAvatar),
           );
         window.localStorage.setItem(
           AUTH_CREDENTIALS_KEY,
@@ -139,15 +151,12 @@ export default function LoginPage() {
         );
       }
       const authData = result.data ?? {};
-      saveTokens(
+      const storedAccount = await saveTokens(
         authData.accessToken ?? "",
         authData.refreshToken ?? "",
         authData.account ?? null,
       );
-      await handleAfterAuth(
-        authData.accessToken ?? "",
-        authData.account ?? null,
-      );
+      await handleAfterAuth(authData.accessToken ?? "", storedAccount);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "";
       setError(
@@ -180,13 +189,17 @@ export default function LoginPage() {
           authData.hasPassword === true || account?.hasPassword === true;
         if (!token) throw new Error("API không trả về accessToken");
         setAccessToken(token);
-        setPendingAccount(account);
-        saveTokens(token, authData.refreshToken ?? "", account);
+        const storedAccount = await saveTokens(
+          token,
+          authData.refreshToken ?? "",
+          account,
+        );
+        setPendingAccount(storedAccount);
         if (!hasPassword) {
           setShowSetPasswordModal(true);
           return;
         }
-        await handleAfterAuth(token, account);
+        await handleAfterAuth(token, storedAccount);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Google login thất bại");
       } finally {

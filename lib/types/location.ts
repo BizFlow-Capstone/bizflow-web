@@ -42,9 +42,17 @@ export interface UpdateLocationPayload {
 export interface LocationEmployee {
   userId: string;
   userName: string;
-  phone: string;
+  phone?: string | null;
+  email?: string | null;
+  avatarUrl?: string | null;
+  status?: string | null;
+  isActive?: boolean;
 }
 
 export interface LocationEmployeesResponse {
+  employees: LocationEmployee[];
+}
+
+export interface LocationDetail extends Location {
   employees: LocationEmployee[];
 }

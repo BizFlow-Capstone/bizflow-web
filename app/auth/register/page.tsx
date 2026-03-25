@@ -13,6 +13,7 @@ import {
 } from "firebase/auth";
 import { firebaseAuth } from "@/lib/firebase/client";
 import { registerWithPhone } from "@/services/authService";
+import { persistAccountWithLocalAvatar } from "@/lib/auth/avatarLocalCache";
 
 const ACCESS_TOKEN_KEY = "bizflow_access_token";
 const REFRESH_TOKEN_KEY = "bizflow_refresh_token";
@@ -142,19 +143,24 @@ export default function RegisterPage() {
         getDeviceInfo(),
       );
       const authData = result.data ?? {};
+      const accountWithLocalAvatar = await persistAccountWithLocalAvatar(
+        authData.account ?? null,
+      );
       if (typeof window !== "undefined") {
         if (authData.accessToken)
           window.localStorage.setItem(ACCESS_TOKEN_KEY, authData.accessToken);
         if (authData.refreshToken)
           window.localStorage.setItem(REFRESH_TOKEN_KEY, authData.refreshToken);
-        if (authData.account)
+        if (accountWithLocalAvatar)
           window.localStorage.setItem(
             AUTH_ACCOUNT_KEY,
-            JSON.stringify(authData.account),
+            JSON.stringify(accountWithLocalAvatar),
           );
         window.localStorage.setItem(
           AUTH_CREDENTIALS_KEY,
-          JSON.stringify({ credentials: authData.account?.credentials ?? [] }),
+          JSON.stringify({
+            credentials: accountWithLocalAvatar?.credentials ?? [],
+          }),
         );
         window.dispatchEvent(new Event(AUTH_UPDATED_EVENT));
       }
