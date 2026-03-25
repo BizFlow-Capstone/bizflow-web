@@ -19,6 +19,35 @@ import type {
 } from "@/lib/types/import";
 import { authFetch } from "@/lib/auth/tokenManager";
 
+function buildImportFormData(
+  data: CreateImportRequest | UpdateImportRequest,
+): FormData {
+  const formData = new FormData();
+
+  if (data.importType) formData.append("ImportType", data.importType);
+  if (data.hasInvoice !== undefined)
+    formData.append("HasInvoice", String(data.hasInvoice));
+  if ("businessLocationId" in data && data.businessLocationId) {
+    formData.append("BusinessLocationId", String(data.businessLocationId));
+  }
+  if (data.supplier) formData.append("Supplier", data.supplier);
+  if (data.note) formData.append("Note", data.note);
+  if (data.receivedAt) formData.append("ReceivedAt", data.receivedAt);
+  if (data.saveAsDraft !== undefined)
+    formData.append("SaveAsDraft", String(data.saveAsDraft));
+
+  if (Array.isArray(data.items)) {
+    // Backend expects Items as JSON string for multipart requests
+    formData.append("Items", JSON.stringify(data.items));
+  }
+
+  if (data.image) {
+    formData.append("image", data.image);
+  }
+
+  return formData;
+}
+
 /**
  * Fetch imports with filters and pagination
  */
@@ -81,13 +110,19 @@ export async function getImportDetail(
 export async function createImport(
   data: CreateImportRequest,
 ): Promise<ApiResponse<CreateImportResponse>> {
-  const response = await authFetch("/api/imports", {
+  const options: RequestInit = {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(data),
-  });
+  };
+
+  if (data.image) {
+    options.body = buildImportFormData(data);
+    // Let browser set the correct multipart boundary
+  } else {
+    options.headers = { "Content-Type": "application/json" };
+    options.body = JSON.stringify(data);
+  }
+
+  const response = await authFetch("/api/imports", options);
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => null);
@@ -106,13 +141,18 @@ export async function updateImport(
   importId: number,
   data: UpdateImportRequest,
 ): Promise<ApiResponse<ImportDetail>> {
-  const response = await authFetch(`/api/imports/${importId}`, {
+  const options: RequestInit = {
     method: "PUT",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(data),
-  });
+  };
+
+  if (data.image) {
+    options.body = buildImportFormData(data);
+  } else {
+    options.headers = { "Content-Type": "application/json" };
+    options.body = JSON.stringify(data);
+  }
+
+  const response = await authFetch(`/api/imports/${importId}`, options);
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => null);

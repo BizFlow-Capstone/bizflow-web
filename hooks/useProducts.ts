@@ -15,6 +15,7 @@ import {
   deleteProduct,
   adjustProductStock,
   adjustSaleItemPrices,
+  getQuickSearchProducts,
 } from "@/services/productService";
 import type {
   ProductFilters,
@@ -27,6 +28,7 @@ import type {
   UpdateProductStatusRequest,
   AdjustStockRequest,
   AdjustSaleItemPriceRequest,
+  QuickSearchProduct,
 } from "@/lib/types/product";
 
 /**
@@ -36,6 +38,7 @@ export const productKeys = {
   all: ["products"] as const,
   lists: () => [...productKeys.all, "list"] as const,
   list: (filters: ProductFilters) => [...productKeys.lists(), filters] as const,
+  quickSearch: (locationId: number, query: string) => [...productKeys.all, "quick-search", locationId, query] as const,
   details: () => [...productKeys.all, "detail"] as const,
   detail: (productId: number) => [...productKeys.details(), productId] as const,
   saleItems: (productId: number) =>
@@ -43,6 +46,25 @@ export const productKeys = {
   costHistory: (productId: number) =>
     [...productKeys.all, "cost-history", productId] as const,
 };
+
+/**
+ * Hook to quick search products
+ */
+export function useQuickSearchProducts(
+  locationId: number,
+  query: string,
+  enabled: boolean = true,
+) {
+  return useQuery<QuickSearchProduct[]>({
+    queryKey: productKeys.quickSearch(locationId, query),
+    queryFn: async () => {
+      const response = await getQuickSearchProducts(locationId, query);
+      return response.data;
+    },
+    enabled: !!locationId && enabled && (query.length >= 2 || query.length === 0),
+  });
+}
+
 
 /**
  * Hook to fetch products with filters and pagination

@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
@@ -166,8 +167,12 @@ export default function OrderDetailClient() {
 
   // Dialog states
   const [showCancel, setShowCancel] = useState(false);
+  const [cancelReason, setCancelReason] = useState("");
+
   const [showConfirm, setShowConfirm] = useState(false);
+
   const [showComplete, setShowComplete] = useState(false);
+  const [confirmLowStock, setConfirmLowStock] = useState(false);
 
   // Mutations
   const cancelMutation = useCancelOrder();
@@ -175,8 +180,12 @@ export default function OrderDetailClient() {
   const completeMutation = useCompleteOrder();
 
   const handleCancel = async () => {
-    await cancelMutation.mutateAsync(orderId);
+    await cancelMutation.mutateAsync({
+      orderId,
+      data: { cancelReason: cancelReason.trim() || undefined },
+    });
     setShowCancel(false);
+    setCancelReason("");
   };
 
   const handleConfirm = async () => {
@@ -192,8 +201,12 @@ export default function OrderDetailClient() {
   };
 
   const handleComplete = async () => {
-    await completeMutation.mutateAsync(orderId);
+    await completeMutation.mutateAsync({
+      orderId,
+      data: { confirmLowStock },
+    });
     setShowComplete(false);
+    setConfirmLowStock(false);
   };
 
   // Loading
@@ -638,23 +651,34 @@ export default function OrderDetailClient() {
       </main>
 
       {/* Cancel Dialog */}
-      <AlertDialog open={showCancel} onOpenChange={setShowCancel}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Hủy đơn hàng?</AlertDialogTitle>
-            <AlertDialogDescription>
+      <Dialog open={showCancel} onOpenChange={setShowCancel}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Hủy đơn hàng?</DialogTitle>
+            <DialogDescription>
               Đơn hàng <strong>{order.orderCode}</strong> sẽ bị hủy.
               {order.status === "pending" && (
                 <> Tồn kho sẽ được hoàn lại nếu đã trừ.</>
               )}{" "}
               Hành động này không thể hoàn tác.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Đóng</AlertDialogCancel>
-            <AlertDialogAction
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 py-4">
+            <label className="text-sm font-medium text-gray-700">Lý do hủy (không bắt buộc)</label>
+            <Input
+              type="text"
+              placeholder="Nhập lý do hủy..."
+              value={cancelReason}
+              onChange={(e) => setCancelReason(e.target.value)}
+            />
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowCancel(false)}>Đóng</Button>
+            <Button
               onClick={handleCancel}
-              className="bg-red-600 hover:bg-red-700"
+              className="bg-red-600 hover:bg-red-700 text-white"
               disabled={cancelMutation.isPending}
             >
               {cancelMutation.isPending ? (
@@ -665,10 +689,10 @@ export default function OrderDetailClient() {
               ) : (
                 "Hủy đơn"
               )}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Confirm Dialog */}
       <Dialog open={showConfirm} onOpenChange={setShowConfirm}>
@@ -715,6 +739,23 @@ export default function OrderDetailClient() {
               thanh toán: <strong>{formatCurrency(order.totalAmount)}</strong>
             </DialogDescription>
           </DialogHeader>
+          
+          <div className="flex items-center space-x-2 py-4">
+            <input
+              type="checkbox"
+              id="confirmLowStock"
+              checked={confirmLowStock}
+              onChange={(e) => setConfirmLowStock(e.target.checked)}
+              className="h-4 w-4 rounded border-gray-300 text-[#23C4C1] focus:ring-[#23C4C1]"
+            />
+            <label
+              htmlFor="confirmLowStock"
+              className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+            >
+              Xác nhận hoàn thành kể cả khi tồn kho âm
+            </label>
+          </div>
+
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowComplete(false)}>
               Đóng

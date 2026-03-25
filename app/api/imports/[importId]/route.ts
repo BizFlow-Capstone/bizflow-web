@@ -32,6 +32,7 @@ export async function GET(
         method: "GET",
         headers: {
           "Content-Type": "application/json",
+          accept: "*/*",
           Authorization: authHeader,
         },
         cache: "no-store",
@@ -63,7 +64,6 @@ export async function PUT(
 ) {
   try {
     const { importId } = await params;
-    const body = await request.json();
     const authHeader = getBearerAuthorizationHeader(request);
     if (!authHeader) {
       return NextResponse.json(
@@ -76,15 +76,54 @@ export async function PUT(
       );
     }
 
+    const contentType = request.headers.get("content-type") || "";
+    const formData = new FormData();
+
+    if (contentType.includes("multipart/form-data")) {
+      const incomingFormData = await request.formData();
+      const mapping: Record<string, string> = {
+        importType: "ImportType",
+        hasInvoice: "HasInvoice",
+        supplier: "Supplier",
+        note: "Note",
+        receivedAt: "ReceivedAt",
+        saveAsDraft: "SaveAsDraft",
+        items: "Items",
+      };
+
+      for (const [key, value] of incomingFormData.entries()) {
+        const targetKey = mapping[key] || key;
+        if (key === "items" && typeof value === "string") {
+          formData.append("Items", value);
+        } else {
+          formData.append(targetKey, value);
+        }
+      }
+    } else {
+      const body = await request.json();
+      if (body.importType) formData.append("ImportType", String(body.importType));
+      if (body.hasInvoice !== undefined)
+        formData.append("HasInvoice", String(body.hasInvoice));
+      if (body.supplier) formData.append("Supplier", String(body.supplier));
+      if (body.note) formData.append("Note", String(body.note));
+      if (body.receivedAt) formData.append("ReceivedAt", String(body.receivedAt));
+      if (body.saveAsDraft !== undefined)
+        formData.append("SaveAsDraft", String(body.saveAsDraft));
+
+      if (Array.isArray(body.items)) {
+        formData.append("Items", JSON.stringify(body.items));
+      }
+    }
+
     const response = await fetch(
       `${BACKEND_API_URL}/api/my-business/accounting/import/${importId}`,
       {
         method: "PUT",
         headers: {
-          "Content-Type": "application/json",
+          accept: "*/*",
           Authorization: authHeader,
         },
-        body: JSON.stringify(body),
+        body: formData,
       },
     );
 
@@ -132,6 +171,7 @@ export async function PATCH(
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
+          accept: "*/*",
           Authorization: authHeader,
         },
         body: JSON.stringify(body),
@@ -181,6 +221,7 @@ export async function DELETE(
         method: "DELETE",
         headers: {
           "Content-Type": "application/json",
+          accept: "*/*",
           Authorization: authHeader,
         },
       },

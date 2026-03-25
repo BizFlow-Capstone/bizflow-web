@@ -195,7 +195,6 @@ export default function EditImportClient() {
   const [supplierAddress, setSupplierAddress] = useState("");
   const [supplierIdNumber, setSupplierIdNumber] = useState("");
   const [note, setNote] = useState("");
-  const [personInCharge, setPersonInCharge] = useState("");
   const [items, setItems] = useState<ImportItemRow[]>([
     { productId: 0, productName: "", quantity: 1, costPrice: 0 },
   ]);
@@ -464,6 +463,7 @@ export default function EditImportClient() {
           supplier: supplier || undefined,
           note: note || undefined,
           items: buildRequestItems(),
+          image: invoiceFile || undefined,
         },
       });
       if (result.success) {
@@ -1064,12 +1064,12 @@ export default function EditImportClient() {
                     </div>
                     <div className="flex items-center gap-3">
                       <Label className="text-sm text-gray-600 whitespace-nowrap w-44">
-                        Người phụ trách thu mua:
+                        Nhà cung cấp:
                       </Label>
                       <Input
-                        placeholder="Nhập tên..."
-                        value={personInCharge}
-                        onChange={(e) => setPersonInCharge(e.target.value)}
+                        placeholder="Nhập tên nhà cung cấp..."
+                        value={supplier}
+                        onChange={(e) => setSupplier(e.target.value)}
                         className="h-8 text-sm max-w-[240px]"
                       />
                     </div>
@@ -1093,7 +1093,7 @@ export default function EditImportClient() {
               <Separator />
 
               {/* Seller Info */}
-              <div className="px-8 py-4">
+              {/* <div className="px-8 py-4">
                 <p className="text-sm font-semibold text-gray-700 mb-3">
                   Thông tin Người bán (Nhà cung cấp)
                 </p>
@@ -1131,7 +1131,7 @@ export default function EditImportClient() {
                     />
                   </div>
                 </div>
-              </div>
+              </div> */}
 
               <Separator />
 

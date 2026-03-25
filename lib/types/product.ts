@@ -44,6 +44,15 @@ export interface SaleItem {
   deletedAt?: string;
 }
 
+export interface QuickSearchProduct {
+  productId: number;
+  name: string;
+  sku: string | null;
+  imageUrl: string | null;
+  sellingPrice: number;
+  saleItems: SaleItem[];
+}
+
 export interface ProductPricePolicy {
   productPricePolicyId: number;
   saleItemId: number;

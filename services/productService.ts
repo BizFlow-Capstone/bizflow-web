@@ -11,6 +11,7 @@ import type {
   UpdateProductRequest,
   AdjustStockRequest,
   AdjustSaleItemPriceRequest,
+  QuickSearchProduct,
 } from "@/lib/types/product";
 import { authFetch } from "@/lib/auth/tokenManager";
 
@@ -108,6 +109,36 @@ export async function getProducts(
 
   if (!response.ok) {
     throw new Error(`Failed to fetch products: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+/**
+ * Quick search products by location and keyword
+ */
+export async function getQuickSearchProducts(
+  locationId: number,
+  searchQuery: string,
+): Promise<ApiResponse<QuickSearchProduct[]>> {
+  const params = new URLSearchParams();
+  if (searchQuery) {
+    params.append("search", searchQuery);
+  }
+
+  const response = await authFetch(
+    `/api/locations/${locationId}/products/quick-search?${params.toString()}`,
+    {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      cache: "no-store",
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(`Failed to quick search products: ${response.status}`);
   }
 
   return response.json();

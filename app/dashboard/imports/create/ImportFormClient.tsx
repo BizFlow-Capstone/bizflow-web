@@ -42,6 +42,7 @@ import { Separator } from "@/components/ui/separator";
 import { useCreateImport } from "@/hooks/useImports";
 import { useProducts } from "@/hooks/useProducts";
 import { useLocations } from "@/hooks/useLocations";
+import { useDashboardLocation } from "@/lib/providers/DashboardLocationProvider";
 import type { ImportItemRequest, ImportType } from "@/lib/types/import";
 import type { Product } from "@/lib/types/product";
 
@@ -196,10 +197,11 @@ function extractNoteFromText(text: string): string | null {
 export default function ImportFormClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { selectedLocationId } = useDashboardLocation();
   const locationIdFromUrl = searchParams.get("locationId");
   const businessLocationId = locationIdFromUrl
     ? Number(locationIdFromUrl)
-    : null;
+    : selectedLocationId;
 
   const createMutation = useCreateImport();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -228,7 +230,6 @@ export default function ImportFormClient() {
   const [supplierAddress, setSupplierAddress] = useState("");
   const [supplierIdNumber, setSupplierIdNumber] = useState("");
   const [note, setNote] = useState("");
-  const [personInCharge, setPersonInCharge] = useState("");
   const [items, setItems] = useState<ImportItemRow[]>([
     { productId: 0, productName: "", quantity: 1, costPrice: 0 },
   ]);
@@ -446,6 +447,7 @@ export default function ImportFormClient() {
         note: note || undefined,
         saveAsDraft: true,
         items: buildRequestItems(),
+        image: invoiceFile || undefined,
       });
       if (result.success) {
         router.push(`/dashboard/imports/${result.data.importId}`);
@@ -467,6 +469,7 @@ export default function ImportFormClient() {
         receivedAt: new Date().toISOString(),
         saveAsDraft: false,
         items: buildRequestItems(),
+        image: invoiceFile || undefined,
       });
       if (result.success) {
         router.push(`/dashboard/imports/${result.data.importId}`);
@@ -580,12 +583,12 @@ export default function ImportFormClient() {
                         desc: "Nhập hàng từ nhà cung cấp",
                         icon: <Package className="w-5 h-5" />,
                       },
-                      {
-                        key: "INVENTORY_ADJUSTMENT",
-                        label: "Điều chỉnh tồn kho",
-                        desc: "Kiểm kê, hàng hư, thừa/thiếu",
-                        icon: <ClipboardList className="w-5 h-5" />,
-                      },
+                      // {
+                      //   key: "INVENTORY_ADJUSTMENT",
+                      //   label: "Điều chỉnh tồn kho",
+                      //   desc: "Kiểm kê, hàng hư, thừa/thiếu",
+                      //   icon: <ClipboardList className="w-5 h-5" />,
+                      // },
                       {
                         key: "RETURN",
                         label: "Trả hàng nhập lại",
@@ -838,7 +841,7 @@ export default function ImportFormClient() {
                         className="h-9 text-sm"
                       />
                     </div>
-                    <div className="space-y-1.5">
+                    {/* <div className="space-y-1.5">
                       <Label className="text-xs text-gray-500">
                         Số hóa đơn (nếu có)
                       </Label>
@@ -848,7 +851,7 @@ export default function ImportFormClient() {
                         onChange={(e) => setSupplierIdNumber(e.target.value)}
                         className="h-9 text-sm"
                       />
-                    </div>
+                    </div> */}
                   </div>
                 </div>
               </div>
@@ -1067,12 +1070,12 @@ export default function ImportFormClient() {
                     </div>
                     <div className="flex items-center gap-3">
                       <Label className="text-sm text-gray-600 whitespace-nowrap w-44">
-                        Người phụ trách thu mua:
+                        Nhà cung cấp:
                       </Label>
                       <Input
-                        placeholder="Nhập tên..."
-                        value={personInCharge}
-                        onChange={(e) => setPersonInCharge(e.target.value)}
+                        placeholder="Nhập tên nhà cung cấp..."
+                        value={supplier}
+                        onChange={(e) => setSupplier(e.target.value)}
                         className="h-8 text-sm max-w-[240px]"
                       />
                     </div>
@@ -1097,7 +1100,7 @@ export default function ImportFormClient() {
               <Separator />
 
               {/* Seller Info Section (Người bán) */}
-              <div className="px-8 py-4">
+              {/* <div className="px-8 py-4">
                 <p className="text-sm font-semibold text-gray-700 mb-3">
                   Thông tin Người bán (Nhà cung cấp)
                 </p>
@@ -1135,7 +1138,7 @@ export default function ImportFormClient() {
                     />
                   </div>
                 </div>
-              </div>
+              </div> */}
 
               <Separator />
 
