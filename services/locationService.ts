@@ -6,6 +6,7 @@
 
 import type {
   Location,
+  LocationDetail,
   ApiResponse,
   NewLocationForm,
   UpdateLocationPayload,
@@ -29,6 +30,74 @@ export async function getLocations(): Promise<ApiResponse<Location[]>> {
   }
 
   return response.json();
+}
+
+type RawLocationDetailEmployee = {
+  profileId?: string;
+  userId?: string;
+  userName?: string;
+  fullName?: string;
+  phone?: string | null;
+  email?: string | null;
+  avatarUrl?: string | null;
+  status?: string | null;
+  isActive?: boolean;
+};
+
+type RawLocationDetail = {
+  id: number;
+  name: string;
+  address: string;
+  district: string | null;
+  city: string | null;
+  phone: string | null;
+  taxCode?: string | null;
+  isActive: boolean;
+  ownerName: string | null;
+  employees?: RawLocationDetailEmployee[];
+};
+
+export async function getLocationDetail(
+  id: number,
+): Promise<ApiResponse<LocationDetail>> {
+  const response = await authFetch(`/api/locations/${id}`, {
+    method: "GET",
+    headers: { accept: "*/*" },
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch location detail: ${response.status}`);
+  }
+
+  const result = (await response.json()) as ApiResponse<RawLocationDetail>;
+  const raw = result.data;
+
+  const normalized: LocationDetail = {
+    id: raw.id,
+    name: raw.name,
+    address: raw.address,
+    district: raw.district ?? "",
+    city: raw.city ?? "",
+    phone: raw.phone ?? "",
+    taxCode: raw.taxCode ?? null,
+    isActive: raw.isActive,
+    ownerName: raw.ownerName ?? "",
+    employees: (raw.employees ?? []).map((employee) => ({
+      userId: employee.profileId ?? employee.userId ?? "",
+      userName: employee.userName ?? employee.fullName ?? "",
+      phone: employee.phone,
+      email: employee.email,
+      avatarUrl: employee.avatarUrl,
+      status: employee.status,
+      isActive: employee.isActive,
+    })),
+  };
+
+  return {
+    ...result,
+    data: normalized,
+  };
 }
 
 /**

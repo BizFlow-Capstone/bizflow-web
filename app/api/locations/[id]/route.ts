@@ -3,6 +3,48 @@ import { getBearerAuthorizationHeader } from "../../_utils/authHeader";
 
 const BACKEND_URL = process.env.BACKEND_API_URL;
 
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  try {
+    const { id } = await params;
+    const authHeader = getBearerAuthorizationHeader(request);
+    if (!authHeader) {
+      return NextResponse.json(
+        {
+          success: false,
+          messageCode: "AUTH_UNAUTHORIZED",
+          message: "Missing Authorization Bearer token",
+        },
+        { status: 401 },
+      );
+    }
+
+    const response = await fetch(`${BACKEND_URL}/api/location/${id}`, {
+      method: "GET",
+      headers: {
+        accept: "*/*",
+        Authorization: authHeader,
+      },
+      cache: "no-store",
+    });
+
+    const data = await response.json();
+    return NextResponse.json(data, { status: response.status });
+  } catch (error) {
+    console.error("Error fetching location detail:", error);
+    return NextResponse.json(
+      {
+        success: false,
+        message: "Failed to fetch location detail",
+        error: error instanceof Error ? error.message : "Unknown error",
+      },
+      { status: 500 },
+    );
+  }
+}
+
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },

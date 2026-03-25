@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { logoutAuth } from "@/services/authService";
 import { unregisterWebPushToken } from "@/lib/notifications/pushClient";
+import { clearLocalAvatarCache } from "@/lib/auth/avatarLocalCache";
 
 const ACCESS_TOKEN_KEY = "bizflow_access_token";
 const REFRESH_TOKEN_KEY = "bizflow_refresh_token";
@@ -23,6 +24,7 @@ function clearAuthStorage() {
   window.localStorage.removeItem(REFRESH_TOKEN_KEY);
   window.localStorage.removeItem(AUTH_CREDENTIALS_KEY);
   window.localStorage.removeItem(AUTH_ACCOUNT_KEY);
+  clearLocalAvatarCache();
   window.dispatchEvent(new Event(AUTH_UPDATED_EVENT));
 }
 

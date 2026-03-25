@@ -47,7 +47,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import type { Location, NewLocationForm } from "@/lib/types/location";
-import { useEmployees } from "@/hooks/useEmployees";
+import { useAssignableEmployees } from "@/hooks/useEmployees";
 import {
   useLocations,
   useCreateLocation,
@@ -56,7 +56,9 @@ import {
   useDeleteLocation,
   useAssignLocationEmployees,
   useLocationEmployees,
+  useLocationDetail,
 } from "@/hooks/useLocations";
+import { toast } from "sonner";
 
 // Status Badge Component
 const StatusBadge = ({ isActive }: { isActive: boolean }) => (
@@ -136,14 +138,17 @@ export default function LocationsClient() {
 
   // Fetch employees for dropdown
   const { data: employees = [], isLoading: isLoadingEmployees } =
-    useEmployees();
+    useAssignableEmployees();
 
-  // Fetch employees for detail dialog
-  const { data: detailEmployees = [], isLoading: isLoadingDetailEmployees } =
-    useLocationEmployees(
-      detailLocation?.id ?? 0,
-      isDetailDialogOpen && !!detailLocation,
-    );
+  // Fetch location detail dialog data from /api/location/{id}
+  const {
+    data: detailLocationData,
+    isLoading: isLoadingDetailData,
+    error: detailError,
+  } = useLocationDetail(
+    detailLocation?.id ?? 0,
+    isDetailDialogOpen && !!detailLocation,
+  );
 
   // Fetch employees for edit dialog
   const { data: editEmployeesData, isLoading: isLoadingEditEmployees } =
@@ -226,7 +231,7 @@ export default function LocationsClient() {
       return;
     }
     if (!canManage) {
-      alert("Bạn không có quyền đổi trạng thái địa điểm này");
+      toast.error("Bạn không có quyền đổi trạng thái địa điểm này");
       return;
     }
     updateStatusMutation.mutate({ id, isActive: nextIsActive });
@@ -235,7 +240,7 @@ export default function LocationsClient() {
   // Handle create new location
   const handleCreateLocation = async () => {
     if (!hasOwnerPermission) {
-      alert("Bạn không có quyền tạo địa điểm kinh doanh");
+      toast.error("Bạn không có quyền tạo địa điểm kinh doanh");
       return;
     }
 
@@ -252,19 +257,20 @@ export default function LocationsClient() {
           taxCode: "",
           employeeIds: [],
         });
+        toast.success("Đã tạo địa điểm kinh doanh mới");
       } else {
-        alert(result.message || "Không thể tạo địa điểm mới");
+        toast.error(result.message || "Không thể tạo địa điểm mới");
       }
     } catch (err) {
       console.error("Error creating location:", err);
-      alert("Đã xảy ra lỗi khi tạo địa điểm mới");
+      toast.error("Đã xảy ra lỗi khi tạo địa điểm mới");
     }
   };
 
   // Handle edit location
   const handleEditClick = (location: Location) => {
     if (!location.isOwner) {
-      alert("Bạn không có quyền sửa địa điểm này");
+      toast.error("Bạn không có quyền sửa địa điểm này");
       return;
     }
     setEditingLocation(location);
@@ -289,7 +295,7 @@ export default function LocationsClient() {
       });
 
       if (!updateResult.success) {
-        alert(updateResult.message || "Không thể cập nhật địa điểm");
+        toast.error(updateResult.message || "Không thể cập nhật địa điểm");
         return;
       }
 
@@ -303,19 +309,22 @@ export default function LocationsClient() {
         setEditingLocation(null);
         setIsEditEmployeeDropdownOpen(false);
         setEditingEmployeeIds([]);
+        toast.success("Đã cập nhật địa điểm kinh doanh");
       } else {
-        alert(assignResult.message || "Không thể cập nhật nhân viên phụ trách");
+        toast.error(
+          assignResult.message || "Không thể cập nhật nhân viên phụ trách",
+        );
       }
     } catch (err) {
       console.error("Error updating location:", err);
-      alert("Đã xảy ra lỗi khi cập nhật địa điểm");
+      toast.error("Đã xảy ra lỗi khi cập nhật địa điểm");
     }
   };
 
   // Handle delete location
   const handleDeleteClick = (location: Location) => {
     if (!location.isOwner) {
-      alert("Bạn không có quyền xóa địa điểm này");
+      toast.error("Bạn không có quyền xóa địa điểm này");
       return;
     }
     setDeletingLocation(location);
@@ -329,9 +338,10 @@ export default function LocationsClient() {
       await deleteMutation.mutateAsync(deletingLocation.id);
       setIsDeleteDialogOpen(false);
       setDeletingLocation(null);
+      toast.success("Đã xóa địa điểm kinh doanh");
     } catch (err) {
       console.error("Error deleting location:", err);
-      alert("Đã xảy ra lỗi khi xóa địa điểm");
+      toast.error("Đã xảy ra lỗi khi xóa địa điểm");
     }
   };
 
@@ -649,7 +659,7 @@ export default function LocationsClient() {
 
       {/* Create Location Dialog */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="sm:max-w-[500px] p-0">
+        <DialogContent className="sm:max-w-125 p-0">
           <DialogHeader className="px-6 pt-6 pb-4 border-b border-gray-100">
             <DialogTitle className="text-xl font-bold text-gray-900">
               Tạo Địa điểm kinh doanh Mới
@@ -941,7 +951,7 @@ export default function LocationsClient() {
 
       {/* Edit Location Dialog */}
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-        <DialogContent className="sm:max-w-[500px] p-0">
+        <DialogContent className="sm:max-w-125 p-0">
           <DialogHeader className="px-6 pt-6 pb-4 border-b border-gray-100">
             <DialogTitle className="text-xl font-bold text-gray-900">
               Chỉnh sửa Địa điểm kinh doanh
@@ -1250,7 +1260,7 @@ export default function LocationsClient() {
 
       {/* Delete Confirmation Dialog */}
       <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
-        <DialogContent className="sm:max-w-[420px]">
+        <DialogContent className="sm:max-w-105">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-red-600">
               <AlertTriangle className="w-5 h-5" />
@@ -1305,7 +1315,7 @@ export default function LocationsClient() {
           if (!open) setDetailLocation(null);
         }}
       >
-        <DialogContent className="sm:max-w-[560px] p-0">
+        <DialogContent className="sm:max-w-140 p-0">
           <DialogHeader className="px-6 pt-6 pb-4 border-b border-gray-100">
             <DialogTitle className="text-xl font-bold text-gray-900 flex items-center gap-2">
               <Building2 className="w-5 h-5 text-[#23C4C1]" />
@@ -1320,7 +1330,11 @@ export default function LocationsClient() {
             <div className="px-6 py-5 space-y-5 max-h-[65vh] overflow-y-auto">
               {/* Status */}
               <div className="flex items-center gap-2">
-                <StatusBadge isActive={detailLocation.isActive} />
+                <StatusBadge
+                  isActive={
+                    detailLocationData?.isActive ?? detailLocation.isActive
+                  }
+                />
               </div>
 
               {/* Location Info */}
@@ -1335,9 +1349,12 @@ export default function LocationsClient() {
                     <div>
                       <span className="text-gray-500 text-xs">Địa chỉ</span>
                       <p className="text-gray-700">
-                        {detailLocation.address},{" "}
-                        {detailLocation.district ?? "-"},{" "}
-                        {detailLocation.city ?? "-"}
+                        {detailLocationData?.address ?? detailLocation.address},{" "}
+                        {detailLocationData?.district ??
+                          detailLocation.district ??
+                          "-"}
+                        ,{" "}
+                        {detailLocationData?.city ?? detailLocation.city ?? "-"}
                       </p>
                     </div>
                   </div>
@@ -1348,7 +1365,18 @@ export default function LocationsClient() {
                         Số điện thoại
                       </span>
                       <p className="text-gray-700">
-                        {detailLocation.phone ?? "-"}
+                        {detailLocationData?.phone ??
+                          detailLocation.phone ??
+                          "-"}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 text-sm">
+                    <Building2 className="w-4 h-4 text-gray-400 shrink-0" />
+                    <div>
+                      <span className="text-gray-500 text-xs">Mã số thuế</span>
+                      <p className="text-gray-700">
+                        {detailLocationData?.taxCode?.trim() || "-"}
                       </p>
                     </div>
                   </div>
@@ -1357,7 +1385,8 @@ export default function LocationsClient() {
                     <div>
                       <span className="text-gray-500 text-xs">Chủ sở hữu</span>
                       <p className="text-gray-700 font-medium">
-                        {detailLocation.ownerName}
+                        {detailLocationData?.ownerName ??
+                          detailLocation.ownerName}
                       </p>
                     </div>
                   </div>
@@ -1369,17 +1398,24 @@ export default function LocationsClient() {
                 <h4 className="text-sm font-semibold text-gray-800 flex items-center gap-2">
                   <Users className="w-4 h-4 text-[#23C4C1]" />
                   Nhân viên (
-                  {isLoadingDetailEmployees ? "..." : detailEmployees.length})
+                  {isLoadingDetailData
+                    ? "..."
+                    : (detailLocationData?.employees?.length ?? 0)}
+                  )
                 </h4>
 
-                {isLoadingDetailEmployees ? (
+                {isLoadingDetailData ? (
                   <div className="flex items-center justify-center py-8">
                     <Loader2 className="w-5 h-5 animate-spin text-[#23C4C1]" />
                     <span className="ml-2 text-sm text-gray-500">
                       Đang tải danh sách nhân viên...
                     </span>
                   </div>
-                ) : detailEmployees.length === 0 ? (
+                ) : detailError ? (
+                  <div className="bg-red-50 rounded-lg p-4 text-sm text-red-600">
+                    Không thể tải chi tiết nhân viên của địa điểm.
+                  </div>
+                ) : (detailLocationData?.employees?.length ?? 0) === 0 ? (
                   <div className="bg-gray-50 rounded-lg p-6 text-center">
                     <Users className="w-8 h-8 text-gray-300 mx-auto mb-2" />
                     <p className="text-sm text-gray-500">
@@ -1388,9 +1424,9 @@ export default function LocationsClient() {
                   </div>
                 ) : (
                   <div className="bg-gray-50 rounded-lg divide-y divide-gray-200">
-                    {detailEmployees.map((emp, index) => (
+                    {detailLocationData?.employees?.map((emp, index) => (
                       <div
-                        key={emp.userId}
+                        key={emp.userId || `${emp.userName}-${index}`}
                         className="flex items-center gap-3 px-4 py-3"
                       >
                         <div className="w-8 h-8 rounded-full bg-[#23C4C1]/10 flex items-center justify-center text-[#23C4C1] text-xs font-bold shrink-0">

@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   acceptInvitation,
+  getAssignableEmployees,
   getEmployees,
   getPendingInvitations,
   inviteEmployee,
@@ -15,6 +16,7 @@ import {
 export const employeeKeys = {
   all: ["employees"] as const,
   lists: () => [...employeeKeys.all, "list"] as const,
+  assignable: () => [...employeeKeys.all, "assignable"] as const,
   search: (query: string) => [...employeeKeys.all, "search", query] as const,
   invitations: () => [...employeeKeys.all, "invitations"] as const,
 };
@@ -30,6 +32,21 @@ export function useEmployees() {
       return response.data;
     },
     staleTime: 5 * 60 * 1000, // 5 minutes - employees don't change often
+  });
+}
+
+/**
+ * Hook to fetch employees that can be assigned to locations
+ * Source: /api/my-employee/employees with isAlreadyHired=true && isActive=true
+ */
+export function useAssignableEmployees() {
+  return useQuery({
+    queryKey: employeeKeys.assignable(),
+    queryFn: async () => {
+      const response = await getAssignableEmployees();
+      return response.data;
+    },
+    staleTime: 5 * 60 * 1000,
   });
 }
 

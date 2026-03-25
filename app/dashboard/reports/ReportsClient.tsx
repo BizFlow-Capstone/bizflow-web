@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   Loader2,
   DollarSign,
@@ -35,6 +35,32 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  ComposedChart,
+  Legend,
+  Line,
+  LineChart,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Scatter,
+  ScatterChart,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import { useLocations } from "@/hooks/useLocations";
 import {
   useCosts,
@@ -174,6 +200,7 @@ function ReportsTab({ locationId }: { locationId: number }) {
   const [manualDescription, setManualDescription] = useState("");
   const [manualChannel, setManualChannel] = useState<"cash" | "bank">("cash");
   const [manualError, setManualError] = useState("");
+  const [isRevenueModalOpen, setIsRevenueModalOpen] = useState(false);
   const [manualCostType, setManualCostType] = useState("other");
   const [manualCostAmount, setManualCostAmount] = useState("");
   const [manualCostDate, setManualCostDate] = useState(
@@ -186,6 +213,7 @@ function ReportsTab({ locationId }: { locationId: number }) {
   >("cash");
   const [editingCostId, setEditingCostId] = useState<number | null>(null);
   const [manualCostError, setManualCostError] = useState("");
+  const [isCostModalOpen, setIsCostModalOpen] = useState(false);
   const { data: cashFlow, isLoading: cfLoading } = useCashFlowReport(
     locationId,
     "2026-03-01",
@@ -194,6 +222,248 @@ function ReportsTab({ locationId }: { locationId: number }) {
 
   const totalRevenue = revenues?.items.reduce((s, r) => s + r.amount, 0) ?? 0;
   const totalCost = costs?.items.reduce((s, c) => s + c.amount, 0) ?? 0;
+  const revenueItems = useMemo(() => revenues?.items ?? [], [revenues?.items]);
+  const costItems = useMemo(() => costs?.items ?? [], [costs?.items]);
+
+  const revenueSeries = useMemo(() => {
+    const now = new Date();
+    const months = Array.from({ length: 7 }, (_, idx) => {
+      const date = new Date(now.getFullYear(), now.getMonth() - (6 - idx), 1);
+      return {
+        key: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`,
+        label: `Tháng ${date.getMonth() + 1}`,
+        revenue: 0,
+        target: 0,
+        growth: 0,
+      };
+    });
+
+    const monthIndexMap = new Map(months.map((m, index) => [m.key, index]));
+    for (const item of revenueItems) {
+      const date = new Date(item.revenueDate);
+      if (Number.isNaN(date.getTime())) continue;
+      const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+      const monthIndex = monthIndexMap.get(key);
+      if (monthIndex !== undefined) {
+        months[monthIndex].revenue += item.amount;
+      }
+    }
+
+    for (let i = 0; i < months.length; i += 1) {
+      const current = months[i];
+      const previousRevenue = i > 0 ? months[i - 1].revenue : 0;
+      current.target = Math.round(current.revenue * 1.1);
+      if (i === 0) {
+        current.growth = current.revenue > 0 ? 100 : 0;
+      } else if (previousRevenue > 0) {
+        current.growth =
+          ((current.revenue - previousRevenue) / previousRevenue) * 100;
+      } else {
+        current.growth = current.revenue > 0 ? 100 : 0;
+      }
+    }
+
+    return months;
+  }, [revenueItems]);
+
+  const revenueSourceRows = useMemo(() => {
+    const sourceMap = new Map<
+      string,
+      {
+        label: string;
+        total: number;
+        currentMonth: number;
+        previousMonth: number;
+      }
+    >();
+
+    const latestMonthKey = revenueSeries.at(-1)?.key;
+    const previousMonthKey = revenueSeries.at(-2)?.key;
+
+    for (const item of revenueItems) {
+      const sourceKey = item.paymentMethod ?? item.moneyChannel ?? "other";
+      const sourceLabel =
+        sourceKey === "cash"
+          ? "Tiền mặt"
+          : sourceKey === "bank"
+            ? "Ngân hàng"
+            : sourceKey === "debt"
+              ? "Công nợ"
+              : sourceKey === "mixed"
+                ? "Hỗn hợp"
+                : "Khác";
+
+      const current = sourceMap.get(sourceKey) ?? {
+        label: sourceLabel,
+        total: 0,
+        currentMonth: 0,
+        previousMonth: 0,
+      };
+
+      current.total += item.amount;
+
+      const date = new Date(item.revenueDate);
+      if (!Number.isNaN(date.getTime())) {
+        const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+        if (monthKey === latestMonthKey) {
+          current.currentMonth += item.amount;
+        }
+        if (monthKey === previousMonthKey) {
+          current.previousMonth += item.amount;
+        }
+      }
+
+      sourceMap.set(sourceKey, current);
+    }
+
+    const rows = Array.from(sourceMap.values()).map((source) => {
+      const share = totalRevenue > 0 ? (source.total / totalRevenue) * 100 : 0;
+      const growth =
+        source.previousMonth > 0
+          ? ((source.currentMonth - source.previousMonth) /
+              source.previousMonth) *
+            100
+          : source.currentMonth > 0
+            ? 100
+            : 0;
+
+      return {
+        ...source,
+        share,
+        growth,
+      };
+    });
+
+    return rows.sort((a, b) => b.total - a.total);
+  }, [revenueItems, revenueSeries, totalRevenue]);
+
+  const averageMonthlyRevenue =
+    revenueSeries.length > 0
+      ? revenueSeries.reduce((sum, month) => sum + month.revenue, 0) /
+        revenueSeries.length
+      : 0;
+  const averageOrderValue =
+    revenueItems.length > 0 ? totalRevenue / revenueItems.length : 0;
+  const revenueTrendAverage =
+    revenueSeries.length > 0
+      ? revenueSeries.reduce((sum, month) => sum + month.growth, 0) /
+        revenueSeries.length
+      : 0;
+
+  const costSeries = useMemo(() => {
+    const now = new Date();
+    const months = Array.from({ length: 7 }, (_, idx) => {
+      const date = new Date(now.getFullYear(), now.getMonth() - (6 - idx), 1);
+      return {
+        key: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`,
+        label: `Tháng ${date.getMonth() + 1}`,
+        cost: 0,
+        budget: 0,
+      };
+    });
+
+    const monthIndexMap = new Map(months.map((m, index) => [m.key, index]));
+    for (const item of costItems) {
+      const date = new Date(item.costDate);
+      if (Number.isNaN(date.getTime())) continue;
+      const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+      const monthIndex = monthIndexMap.get(key);
+      if (monthIndex !== undefined) {
+        months[monthIndex].cost += item.amount;
+      }
+    }
+
+    for (const month of months) {
+      month.budget = Math.round(month.cost * 1.12);
+    }
+
+    return months;
+  }, [costItems]);
+
+  const costCategoryRows = useMemo(() => {
+    const categoryMap = new Map<
+      string,
+      {
+        key: string;
+        label: string;
+        total: number;
+        currentMonth: number;
+        previousMonth: number;
+      }
+    >();
+    const latestMonthKey = costSeries.at(-1)?.key;
+    const previousMonthKey = costSeries.at(-2)?.key;
+
+    for (const item of costItems) {
+      const key = item.costType || "other";
+      const current = categoryMap.get(key) ?? {
+        key,
+        label: COST_LABELS[key] ?? key,
+        total: 0,
+        currentMonth: 0,
+        previousMonth: 0,
+      };
+
+      current.total += item.amount;
+
+      const date = new Date(item.costDate);
+      if (!Number.isNaN(date.getTime())) {
+        const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+        if (monthKey === latestMonthKey) current.currentMonth += item.amount;
+        if (monthKey === previousMonthKey) current.previousMonth += item.amount;
+      }
+
+      categoryMap.set(key, current);
+    }
+
+    return Array.from(categoryMap.values())
+      .map((category) => {
+        const budget = Math.round(category.total * 1.05);
+        const usage = budget > 0 ? (category.total / budget) * 100 : 0;
+        const growth =
+          category.previousMonth > 0
+            ? ((category.currentMonth - category.previousMonth) /
+                category.previousMonth) *
+              100
+            : category.currentMonth > 0
+              ? 100
+              : 0;
+
+        return {
+          ...category,
+          budget,
+          usage,
+          growth,
+          share: totalCost > 0 ? (category.total / totalCost) * 100 : 0,
+        };
+      })
+      .sort((a, b) => b.total - a.total);
+  }, [costItems, costSeries, totalCost]);
+
+  const averageMonthlyCost =
+    costSeries.length > 0
+      ? costSeries.reduce((sum, month) => sum + month.cost, 0) /
+        costSeries.length
+      : 0;
+  const totalCostBudget = costSeries.reduce(
+    (sum, month) => sum + month.budget,
+    0,
+  );
+  const budgetUsage =
+    totalCostBudget > 0
+      ? Math.min((totalCost / totalCostBudget) * 100, 999)
+      : 0;
+  const costEfficiency =
+    totalRevenue > 0 ? ((totalRevenue - totalCost) / totalRevenue) * 100 : 0;
+  const averageCostGrowth =
+    costSeries.length > 1
+      ? costSeries.slice(1).reduce((sum, month, index) => {
+          const previous = costSeries[index].cost;
+          if (previous <= 0) return sum + (month.cost > 0 ? 100 : 0);
+          return sum + ((month.cost - previous) / previous) * 100;
+        }, 0) /
+        (costSeries.length - 1)
+      : 0;
 
   const subTabs = [
     {
@@ -239,17 +509,17 @@ function ReportsTab({ locationId }: { locationId: number }) {
     const amount = Number(manualAmount);
     if (!amount || amount <= 0) {
       setManualError("Số tiền phải lớn hơn 0.");
-      return;
+      return false;
     }
 
     if (!manualDate) {
       setManualError("Vui lòng chọn ngày ghi nhận doanh thu.");
-      return;
+      return false;
     }
 
     if (!manualDescription.trim()) {
       setManualError("Vui lòng nhập mô tả doanh thu.");
-      return;
+      return false;
     }
 
     try {
@@ -262,12 +532,14 @@ function ReportsTab({ locationId }: { locationId: number }) {
       });
       setManualAmount("");
       setManualDescription("");
+      return true;
     } catch (error) {
       setManualError(
         error instanceof Error
           ? error.message
           : "Không thể tạo doanh thu thủ công.",
       );
+      return false;
     }
   }
 
@@ -305,7 +577,7 @@ function ReportsTab({ locationId }: { locationId: number }) {
     const error = validateManualCostInput();
     if (error) {
       setManualCostError(error);
-      return;
+      return false;
     }
 
     const payload = {
@@ -346,10 +618,13 @@ function ReportsTab({ locationId }: { locationId: number }) {
       setManualCostDate(new Date().toISOString().slice(0, 10));
       setManualCostPaymentMethod("cash");
       setManualCostImage(null);
+      setManualCostError("");
+      return true;
     } catch (e) {
       setManualCostError(
         e instanceof Error ? e.message : "Không thể lưu chi phí thủ công.",
       );
+      return false;
     }
   }
 
@@ -370,6 +645,7 @@ function ReportsTab({ locationId }: { locationId: number }) {
     setManualCostDescription(cost.description || "");
     setManualCostPaymentMethod(cost.paymentMethod || "cash");
     setManualCostError("");
+    setIsCostModalOpen(true);
   }
 
   function handleCancelEditCost() {
@@ -381,6 +657,19 @@ function ReportsTab({ locationId }: { locationId: number }) {
     setManualCostPaymentMethod("cash");
     setManualCostImage(null);
     setManualCostError("");
+    setIsCostModalOpen(false);
+  }
+
+  function handleOpenCreateCostModal() {
+    setEditingCostId(null);
+    setManualCostType("other");
+    setManualCostAmount("");
+    setManualCostDate(new Date().toISOString().slice(0, 10));
+    setManualCostDescription("");
+    setManualCostPaymentMethod("cash");
+    setManualCostImage(null);
+    setManualCostError("");
+    setIsCostModalOpen(true);
   }
 
   async function handleDeleteManualCost(costId: number) {
@@ -402,7 +691,6 @@ function ReportsTab({ locationId }: { locationId: number }) {
           label="Tổng doanh thu"
           value={fmt.format(totalRevenue)}
           trend="+12.4%"
-          up
           icon={<ArrowUpRight className="w-4 h-4 text-emerald-500" />}
           color="emerald"
         />
@@ -410,7 +698,6 @@ function ReportsTab({ locationId }: { locationId: number }) {
           label="Tổng chi phí"
           value={fmt.format(totalCost)}
           trend="+3.1%"
-          up={false}
           icon={<ArrowDownRight className="w-4 h-4 text-red-500" />}
           color="red"
         />
@@ -418,7 +705,6 @@ function ReportsTab({ locationId }: { locationId: number }) {
           label="Lợi nhuận ròng"
           value={fmt.format(totalRevenue - totalCost)}
           trend="+18.2%"
-          up
           icon={<ArrowUpRight className="w-4 h-4 text-emerald-500" />}
           color="emerald"
         />
@@ -455,117 +741,307 @@ function ReportsTab({ locationId }: { locationId: number }) {
           }
           loading={revLoading}
         >
-          <div className="mb-4 rounded-xl border bg-gray-50/70 p-4 space-y-3">
-            <h4 className="text-sm font-semibold text-gray-800">
-              Tạo doanh thu thủ công
-            </h4>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-              <Input
-                type="number"
-                min="0"
-                placeholder="Số tiền"
-                value={manualAmount}
-                onChange={(e) => setManualAmount(e.target.value)}
-              />
-              <Input
-                type="date"
-                value={manualDate}
-                onChange={(e) => setManualDate(e.target.value)}
-              />
-              <Select
-                value={manualChannel}
-                onValueChange={(value) =>
-                  setManualChannel(value as "cash" | "bank")
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Kênh tiền" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="cash">Tiền mặt</SelectItem>
-                  <SelectItem value="bank">Ngân hàng</SelectItem>
-                </SelectContent>
-              </Select>
+          <div className="p-5 space-y-5">
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div>
+                <h4 className="text-base font-semibold text-gray-900">
+                  Tổng quan doanh thu
+                </h4>
+                <p className="text-sm text-gray-500">
+                  Theo dõi xu hướng doanh thu và thêm ghi nhận thủ công bằng
+                  modal.
+                </p>
+              </div>
               <Button
-                onClick={handleCreateManualRevenue}
-                disabled={createRevenueMutation.isPending}
+                onClick={() => {
+                  setManualError("");
+                  setIsRevenueModalOpen(true);
+                }}
                 className="bg-[#23C4C1] hover:bg-[#1aa8a5] text-white"
               >
-                {createRevenueMutation.isPending ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Plus className="w-4 h-4 mr-1" />
-                )}
+                <Plus className="w-4 h-4 mr-1" />
                 Thêm doanh thu
               </Button>
             </div>
-            <Input
-              placeholder="Mô tả doanh thu"
-              value={manualDescription}
-              onChange={(e) => setManualDescription(e.target.value)}
-            />
-            {manualError && (
-              <p className="text-xs text-red-500">{manualError}</p>
-            )}
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+              <RevenueStatCard
+                title="Tổng doanh thu (YTD)"
+                value={formatCompactVnd(totalRevenue)}
+                trend="+15.2% so với kỳ trước"
+                positive
+              />
+              <RevenueStatCard
+                title="Trung bình hàng tháng"
+                value={formatCompactVnd(averageMonthlyRevenue)}
+                trend="+12.8% so với kỳ trước"
+                positive
+              />
+              <RevenueStatCard
+                title="Giá trị đơn trung bình"
+                value={formatCompactVnd(averageOrderValue)}
+                trend="+3.5% so với kỳ trước"
+                positive
+              />
+              <RevenueStatCard
+                title="Số lượng giao dịch"
+                value={new Intl.NumberFormat("vi-VN").format(
+                  revenueItems.length,
+                )}
+                trend={`${revenueTrendAverage >= 0 ? "+" : ""}${revenueTrendAverage.toFixed(1)}% tăng trưởng TB`}
+                positive={revenueTrendAverage >= 0}
+              />
+            </div>
+
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+              <div className="rounded-2xl border p-4">
+                <h5 className="text-xl font-semibold leading-none text-gray-900 mb-4">
+                  Doanh Thu vs Mục Tiêu
+                </h5>
+                <RevenueBarsChart data={revenueSeries} />
+              </div>
+              <div className="rounded-2xl border p-4">
+                <h5 className="text-xl font-semibold leading-none text-gray-900 mb-4">
+                  Xu Hướng Tăng Trưởng Doanh Thu
+                </h5>
+                <RevenueGrowthDots data={revenueSeries} />
+              </div>
+            </div>
+
+            <div className="rounded-2xl border overflow-hidden">
+              <div className="px-4 py-3 border-b bg-white">
+                <h5 className="text-xl font-semibold leading-none text-gray-900">
+                  Chi Tiết Doanh Thu Theo Nguồn
+                </h5>
+              </div>
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-gray-50 hover:bg-gray-50">
+                    <TableHead>Nguồn Doanh Thu</TableHead>
+                    <TableHead className="text-right">Tổng Doanh Thu</TableHead>
+                    <TableHead className="text-right">% Tổng</TableHead>
+                    <TableHead className="text-right">
+                      Tỷ Lệ Tăng Trưởng
+                    </TableHead>
+                    <TableHead className="text-right">Xu Hướng</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {revenueSourceRows.map((row) => (
+                    <TableRow key={row.label}>
+                      <TableCell className="font-medium">{row.label}</TableCell>
+                      <TableCell className="text-right font-semibold text-gray-800">
+                        {formatCompactVnd(row.total)}
+                      </TableCell>
+                      <TableCell className="text-right text-gray-600">
+                        {row.share.toFixed(1)}%
+                      </TableCell>
+                      <TableCell
+                        className={`text-right font-semibold ${row.growth >= 0 ? "text-emerald-600" : "text-red-500"}`}
+                      >
+                        {row.growth >= 0 ? "+" : ""}
+                        {row.growth.toFixed(1)}%
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Badge
+                          className={
+                            row.growth >= 0
+                              ? "bg-blue-600 text-white"
+                              : "bg-pink-500 text-white"
+                          }
+                        >
+                          {row.growth >= 0 ? "↑ Tăng" : "↓ Giảm"}
+                        </Badge>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                  {revenueSourceRows.length === 0 && (
+                    <TableRow>
+                      <TableCell
+                        colSpan={5}
+                        className="text-center py-8 text-gray-500"
+                      >
+                        Chưa có dữ liệu doanh thu.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+              <div className="px-4 py-3 border-t bg-gray-50 flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-gray-500">
+                    Tổng từ tất cả các nguồn
+                  </p>
+                  <p className="text-2xl font-bold text-gray-900">
+                    {formatCompactVnd(totalRevenue)}
+                  </p>
+                </div>
+                <div className="text-right">
+                  <p className="text-sm text-gray-500">
+                    Tỷ lệ tăng trưởng trung bình
+                  </p>
+                  <p
+                    className={`text-3xl font-bold ${revenueTrendAverage >= 0 ? "text-emerald-600" : "text-red-500"}`}
+                  >
+                    {revenueTrendAverage >= 0 ? "+" : ""}
+                    {revenueTrendAverage.toFixed(1)}%
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border overflow-hidden">
+              <div className="px-4 py-3 border-b bg-white">
+                <h5 className="font-semibold text-gray-900">
+                  Danh sách giao dịch
+                </h5>
+              </div>
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-gray-50/70 hover:bg-gray-50/70">
+                    <TableHead className="pl-5">Ngày</TableHead>
+                    <TableHead>Loại</TableHead>
+                    <TableHead>Mô tả</TableHead>
+                    <TableHead>PTTT</TableHead>
+                    <TableHead className="text-right pr-5">Số tiền</TableHead>
+                    <TableHead className="text-right pr-5">Thao tác</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {revenues?.items.map((r) => (
+                    <TableRow key={r.revenueId} className="hover:bg-gray-50/50">
+                      <TableCell className="pl-5 text-sm text-gray-500">
+                        {new Date(r.revenueDate).toLocaleDateString("vi-VN")}
+                      </TableCell>
+                      <TableCell>
+                        <Badge
+                          className={
+                            r.revenueType === "sale"
+                              ? "bg-blue-100 text-blue-700"
+                              : "bg-gray-100 text-gray-600"
+                          }
+                        >
+                          {r.revenueType === "sale" ? "Bán hàng" : "Thủ công"}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-sm max-w-xs truncate text-gray-700">
+                        {r.description}
+                      </TableCell>
+                      <TableCell>
+                        <PaymentBadge method={r.paymentMethod} />
+                      </TableCell>
+                      <TableCell className="text-right pr-5 font-semibold text-emerald-600">
+                        {fmt.format(r.amount)}
+                      </TableCell>
+                      <TableCell className="text-right pr-5">
+                        {r.revenueType === "manual" ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="text-red-600 border-red-200 hover:bg-red-50"
+                            onClick={() =>
+                              handleDeleteManualRevenue(r.revenueId)
+                            }
+                            disabled={deleteRevenueMutation.isPending}
+                          >
+                            <Trash2 className="w-3.5 h-3.5 mr-1" />
+                            Xóa
+                          </Button>
+                        ) : (
+                          <span className="text-xs text-gray-400">-</span>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
           </div>
 
-          <Table>
-            <TableHeader>
-              <TableRow className="bg-gray-50/70 hover:bg-gray-50/70">
-                <TableHead className="pl-5">Ngày</TableHead>
-                <TableHead>Loại</TableHead>
-                <TableHead>Mô tả</TableHead>
-                <TableHead>PTTT</TableHead>
-                <TableHead className="text-right pr-5">Số tiền</TableHead>
-                <TableHead className="text-right pr-5">Thao tác</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {revenues?.items.map((r) => (
-                <TableRow key={r.revenueId} className="hover:bg-gray-50/50">
-                  <TableCell className="pl-5 text-sm text-gray-500">
-                    {new Date(r.revenueDate).toLocaleDateString("vi-VN")}
-                  </TableCell>
-                  <TableCell>
-                    <Badge
-                      className={
-                        r.revenueType === "sale"
-                          ? "bg-blue-100 text-blue-700"
-                          : "bg-gray-100 text-gray-600"
-                      }
-                    >
-                      {r.revenueType === "sale" ? "Bán hàng" : "Thủ công"}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-sm max-w-xs truncate text-gray-700">
-                    {r.description}
-                  </TableCell>
-                  <TableCell>
-                    <PaymentBadge method={r.paymentMethod} />
-                  </TableCell>
-                  <TableCell className="text-right pr-5 font-semibold text-emerald-600">
-                    {fmt.format(r.amount)}
-                  </TableCell>
-                  <TableCell className="text-right pr-5">
-                    {r.revenueType === "manual" ? (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="text-red-600 border-red-200 hover:bg-red-50"
-                        onClick={() => handleDeleteManualRevenue(r.revenueId)}
-                        disabled={deleteRevenueMutation.isPending}
-                      >
-                        <Trash2 className="w-3.5 h-3.5 mr-1" />
-                        Xóa
-                      </Button>
-                    ) : (
-                      <span className="text-xs text-gray-400">-</span>
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+          <Dialog
+            open={isRevenueModalOpen}
+            onOpenChange={(open) => {
+              setIsRevenueModalOpen(open);
+              if (!open) setManualError("");
+            }}
+          >
+            <DialogContent className="sm:max-w-xl">
+              <DialogHeader>
+                <DialogTitle>Tạo doanh thu thủ công</DialogTitle>
+                <DialogDescription>
+                  Nhập thông tin giao dịch để ghi nhận doanh thu ngoài đơn hàng.
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <Input
+                  type="number"
+                  min="0"
+                  placeholder="Số tiền"
+                  value={manualAmount}
+                  onChange={(e) => setManualAmount(e.target.value)}
+                />
+                <Input
+                  type="date"
+                  value={manualDate}
+                  onChange={(e) => setManualDate(e.target.value)}
+                />
+                <Select
+                  value={manualChannel}
+                  onValueChange={(value) =>
+                    setManualChannel(value as "cash" | "bank")
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Kênh tiền" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="cash">Tiền mặt</SelectItem>
+                    <SelectItem value="bank">Ngân hàng</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Input
+                  className="md:col-span-2"
+                  placeholder="Mô tả doanh thu"
+                  value={manualDescription}
+                  onChange={(e) => setManualDescription(e.target.value)}
+                />
+              </div>
+
+              {manualError && (
+                <p className="text-sm text-red-500">{manualError}</p>
+              )}
+
+              <DialogFooter>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setIsRevenueModalOpen(false);
+                    setManualError("");
+                  }}
+                >
+                  Hủy
+                </Button>
+                <Button
+                  onClick={async () => {
+                    const created = await handleCreateManualRevenue();
+                    if (created) {
+                      setIsRevenueModalOpen(false);
+                    }
+                  }}
+                  disabled={createRevenueMutation.isPending}
+                  className="bg-[#23C4C1] hover:bg-[#1aa8a5] text-white"
+                >
+                  {createRevenueMutation.isPending ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Plus className="w-4 h-4 mr-1" />
+                  )}
+                  Lưu doanh thu
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </DataCard>
       )}
 
@@ -580,165 +1056,263 @@ function ReportsTab({ locationId }: { locationId: number }) {
           }
           loading={costLoading}
         >
-          <div className="mb-4 rounded-xl border bg-gray-50/70 p-4 space-y-3">
-            <h4 className="text-sm font-semibold text-gray-800">
-              {editingCostId
-                ? "Cập nhật chi phí thủ công"
-                : "Tạo chi phí thủ công"}
-            </h4>
-            <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
-              <Select
-                value={manualCostType}
-                onValueChange={(value) => setManualCostType(value)}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Loại chi phí" />
-                </SelectTrigger>
-                <SelectContent>
-                  {costTypeOptions.map((type) => (
-                    <SelectItem key={type} value={type}>
-                      {COST_LABELS[type] ?? type}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Input
-                type="number"
-                min="0"
-                placeholder="Số tiền"
-                value={manualCostAmount}
-                onChange={(e) => setManualCostAmount(e.target.value)}
-              />
-              <Input
-                type="date"
-                value={manualCostDate}
-                onChange={(e) => setManualCostDate(e.target.value)}
-              />
-              <Select
-                value={manualCostPaymentMethod}
-                onValueChange={(value) =>
-                  setManualCostPaymentMethod(value as "cash" | "bank")
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="PTTT" />
-                </SelectTrigger>
-                <SelectContent>
-                  {paymentMethodOptions.map((method) => (
-                    <SelectItem key={method} value={method}>
-                      {method === "cash" ? "Tiền mặt" : "Ngân hàng"}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+          <div className="p-5 space-y-5">
+            <div className="flex items-center justify-end">
               <Button
-                onClick={handleSubmitManualCost}
-                disabled={
-                  createCostMutation.isPending || updateCostMutation.isPending
-                }
+                onClick={handleOpenCreateCostModal}
                 className="bg-[#23C4C1] hover:bg-[#1aa8a5] text-white"
               >
-                {createCostMutation.isPending ||
-                updateCostMutation.isPending ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Plus className="w-4 h-4 mr-1" />
-                )}
-                {editingCostId ? "Lưu cập nhật" : "Thêm chi phí"}
+                <Plus className="w-4 h-4 mr-1" />
+                Thêm chi phí
               </Button>
             </div>
-            <div className="flex gap-3">
-              <Input
-                placeholder="Mô tả chi phí"
-                value={manualCostDescription}
-                onChange={(e) => setManualCostDescription(e.target.value)}
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+              <CostStatCard
+                title="Tổng chi phí (YTD)"
+                value={formatCompactVnd(totalCost)}
+                trend="-8.5% so với kỳ trước"
+                positive={false}
               />
-              <Input
-                type="file"
-                accept="image/*"
-                onChange={(e) =>
-                  setManualCostImage(e.target.files?.[0] ?? null)
-                }
-                className="max-w-55"
+              <CostStatCard
+                title="Trung bình hàng tháng"
+                value={formatCompactVnd(averageMonthlyCost)}
+                trend="-5.2% so với kỳ trước"
+                positive={false}
               />
-              {editingCostId ? (
-                <Button variant="outline" onClick={handleCancelEditCost}>
-                  Hủy sửa
-                </Button>
-              ) : null}
+              <CostStatCard
+                title="Sử dụng ngân sách"
+                value={`${budgetUsage.toFixed(1)}%`}
+                trend="-2.1% so với kỳ trước"
+                positive={false}
+              />
+              <CostStatCard
+                title="Hiệu quả chi phí"
+                value={`${costEfficiency.toFixed(1)}%`}
+                trend={`${averageCostGrowth >= 0 ? "+" : ""}${averageCostGrowth.toFixed(1)}% so với kỳ trước`}
+                positive={averageCostGrowth < 0}
+              />
             </div>
-            {manualCostError && (
-              <p className="text-xs text-red-500">{manualCostError}</p>
-            )}
+
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+              <div className="rounded-2xl border p-4">
+                <h5 className="text-xl font-semibold leading-none text-gray-900 mb-4">
+                  Phân Bổ Chi Phí
+                </h5>
+                <CostPieChart data={costCategoryRows} />
+              </div>
+              <div className="rounded-2xl border p-4">
+                <h5 className="text-xl font-semibold leading-none text-gray-900 mb-4">
+                  Xu Hướng Chi Phí vs Ngân Sách
+                </h5>
+                <CostBudgetBarsChart data={costSeries} />
+              </div>
+            </div>
+
+            <div className="rounded-2xl border p-4">
+              <h5 className="text-xl font-semibold leading-none text-gray-900 mb-4">
+                Phân Tích Xu Hướng Chi Phí
+              </h5>
+              <CostTrendDots data={costSeries} />
+            </div>
+
+            <div className="rounded-2xl border p-4">
+              <h5 className="text-2xl font-semibold leading-none text-gray-900 mb-4">
+                Các Danh Mục Chi Phí &amp; Trạng Thái Ngân Sách
+              </h5>
+              <CostBudgetCategoryList data={costCategoryRows} />
+            </div>
+
+            <div className="rounded-2xl border overflow-hidden">
+              <div className="px-4 py-3 border-b bg-white">
+                <h5 className="font-semibold text-gray-900">
+                  Danh sách giao dịch
+                </h5>
+              </div>
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-gray-50/70 hover:bg-gray-50/70">
+                    <TableHead className="pl-5">Ngày</TableHead>
+                    <TableHead>Phân loại</TableHead>
+                    <TableHead>Mô tả</TableHead>
+                    <TableHead>PTTT</TableHead>
+                    <TableHead className="text-right pr-5">Số tiền</TableHead>
+                    <TableHead className="text-right pr-5">Thao tác</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {costs?.items.map((c) => (
+                    <TableRow key={c.costId} className="hover:bg-gray-50/50">
+                      <TableCell className="pl-5 text-sm text-gray-500">
+                        {new Date(c.costDate).toLocaleDateString("vi-VN")}
+                      </TableCell>
+                      <TableCell>
+                        <CostBadge type={c.costType} />
+                      </TableCell>
+                      <TableCell className="text-sm max-w-xs truncate text-gray-700">
+                        {c.description}
+                      </TableCell>
+                      <TableCell>
+                        <PaymentBadge method={c.paymentMethod} />
+                      </TableCell>
+                      <TableCell className="text-right pr-5 font-semibold text-red-500">
+                        {fmt.format(c.amount)}
+                      </TableCell>
+                      <TableCell className="text-right pr-5">
+                        {c.costType === "manual" ? (
+                          <div className="flex items-center justify-end gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() =>
+                                handleStartEditCost({
+                                  costId: c.costId,
+                                  costType: c.costType,
+                                  amount: c.amount,
+                                  costDate: c.costDate,
+                                  description: c.description,
+                                  paymentMethod: c.paymentMethod,
+                                })
+                              }
+                            >
+                              Sửa
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="text-red-600 border-red-200 hover:bg-red-50"
+                              onClick={() => handleDeleteManualCost(c.costId)}
+                              disabled={deleteCostMutation.isPending}
+                            >
+                              <Trash2 className="w-3.5 h-3.5 mr-1" />
+                              Xóa
+                            </Button>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-gray-400">-</span>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
           </div>
 
-          <Table>
-            <TableHeader>
-              <TableRow className="bg-gray-50/70 hover:bg-gray-50/70">
-                <TableHead className="pl-5">Ngày</TableHead>
-                <TableHead>Phân loại</TableHead>
-                <TableHead>Mô tả</TableHead>
-                <TableHead>PTTT</TableHead>
-                <TableHead className="text-right pr-5">Số tiền</TableHead>
-                <TableHead className="text-right pr-5">Thao tác</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {costs?.items.map((c) => (
-                <TableRow key={c.costId} className="hover:bg-gray-50/50">
-                  <TableCell className="pl-5 text-sm text-gray-500">
-                    {new Date(c.costDate).toLocaleDateString("vi-VN")}
-                  </TableCell>
-                  <TableCell>
-                    <CostBadge type={c.costType} />
-                  </TableCell>
-                  <TableCell className="text-sm max-w-xs truncate text-gray-700">
-                    {c.description}
-                  </TableCell>
-                  <TableCell>
-                    <PaymentBadge method={c.paymentMethod} />
-                  </TableCell>
-                  <TableCell className="text-right pr-5 font-semibold text-red-500">
-                    {fmt.format(c.amount)}
-                  </TableCell>
-                  <TableCell className="text-right pr-5">
-                    {c.costType === "manual" ? (
-                      <div className="flex items-center justify-end gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() =>
-                            handleStartEditCost({
-                              costId: c.costId,
-                              costType: c.costType,
-                              amount: c.amount,
-                              costDate: c.costDate,
-                              description: c.description,
-                              paymentMethod: c.paymentMethod,
-                            })
-                          }
-                        >
-                          Sửa
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="text-red-600 border-red-200 hover:bg-red-50"
-                          onClick={() => handleDeleteManualCost(c.costId)}
-                          disabled={deleteCostMutation.isPending}
-                        >
-                          <Trash2 className="w-3.5 h-3.5 mr-1" />
-                          Xóa
-                        </Button>
-                      </div>
-                    ) : (
-                      <span className="text-xs text-gray-400">-</span>
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+          <Dialog
+            open={isCostModalOpen}
+            onOpenChange={(open) => {
+              setIsCostModalOpen(open);
+              if (!open) {
+                setManualCostError("");
+              }
+            }}
+          >
+            <DialogContent className="sm:max-w-2xl">
+              <DialogHeader>
+                <DialogTitle>
+                  {editingCostId
+                    ? "Cập nhật chi phí thủ công"
+                    : "Tạo chi phí thủ công"}
+                </DialogTitle>
+                <DialogDescription>
+                  Điền thông tin để thêm chi phí, hoặc cập nhật bản ghi thủ
+                  công.
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <Select
+                  value={manualCostType}
+                  onValueChange={(value) => setManualCostType(value)}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Loại chi phí" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {costTypeOptions.map((type) => (
+                      <SelectItem key={type} value={type}>
+                        {COST_LABELS[type] ?? type}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Input
+                  type="number"
+                  min="0"
+                  placeholder="Số tiền"
+                  value={manualCostAmount}
+                  onChange={(e) => setManualCostAmount(e.target.value)}
+                />
+                <Input
+                  type="date"
+                  value={manualCostDate}
+                  onChange={(e) => setManualCostDate(e.target.value)}
+                />
+                <Select
+                  value={manualCostPaymentMethod}
+                  onValueChange={(value) =>
+                    setManualCostPaymentMethod(value as "cash" | "bank")
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="PTTT" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {paymentMethodOptions.map((method) => (
+                      <SelectItem key={method} value={method}>
+                        {method === "cash" ? "Tiền mặt" : "Ngân hàng"}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Input
+                  className="md:col-span-2"
+                  placeholder="Mô tả chi phí"
+                  value={manualCostDescription}
+                  onChange={(e) => setManualCostDescription(e.target.value)}
+                />
+                <Input
+                  className="md:col-span-2"
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) =>
+                    setManualCostImage(e.target.files?.[0] ?? null)
+                  }
+                />
+              </div>
+
+              {manualCostError && (
+                <p className="text-sm text-red-500">{manualCostError}</p>
+              )}
+
+              <DialogFooter>
+                <Button variant="outline" onClick={handleCancelEditCost}>
+                  Hủy
+                </Button>
+                <Button
+                  onClick={async () => {
+                    const saved = await handleSubmitManualCost();
+                    if (saved) {
+                      setIsCostModalOpen(false);
+                    }
+                  }}
+                  disabled={
+                    createCostMutation.isPending || updateCostMutation.isPending
+                  }
+                  className="bg-[#23C4C1] hover:bg-[#1aa8a5] text-white"
+                >
+                  {createCostMutation.isPending ||
+                  updateCostMutation.isPending ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Plus className="w-4 h-4 mr-1" />
+                  )}
+                  {editingCostId ? "Lưu cập nhật" : "Thêm chi phí"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </DataCard>
       )}
 
@@ -1005,14 +1579,12 @@ function KpiCard({
   label,
   value,
   trend,
-  up,
   icon,
   color,
 }: {
   label: string;
   value: string;
   trend: string;
-  up: boolean;
   icon: React.ReactNode;
   color: "emerald" | "red";
 }) {
@@ -1060,6 +1632,473 @@ function DataCard({
       )}
     </div>
   );
+}
+
+function RevenueStatCard({
+  title,
+  value,
+  trend,
+  positive,
+}: {
+  title: string;
+  value: string;
+  trend: string;
+  positive: boolean;
+}) {
+  return (
+    <div className="rounded-2xl border bg-white p-5">
+      <p className="text-xs font-bold tracking-wide uppercase text-slate-500">
+        {title}
+      </p>
+      <p className="mt-4 text-4xl font-extrabold text-slate-900">{value}</p>
+      <p
+        className={`mt-6 text-sm font-semibold ${positive ? "text-emerald-600" : "text-red-500"}`}
+      >
+        {trend}
+      </p>
+    </div>
+  );
+}
+
+function RevenueBarsChart({
+  data,
+}: {
+  data: Array<{ label: string; revenue: number; target: number }>;
+}) {
+  return (
+    <div className="h-72">
+      <ResponsiveContainer width="100%" height="100%">
+        <BarChart data={data} barGap={8}>
+          <CartesianGrid
+            strokeDasharray="3 3"
+            vertical={false}
+            stroke="#e5e7eb"
+          />
+          <XAxis
+            dataKey="label"
+            tickLine={false}
+            axisLine={false}
+            fontSize={12}
+          />
+          <YAxis
+            tickFormatter={(value) => formatYAxisShort(value as number)}
+            tickLine={false}
+            axisLine={false}
+            width={56}
+            fontSize={12}
+          />
+          <Tooltip
+            formatter={(value) => formatTooltipCurrency(value)}
+            contentStyle={{ borderRadius: 12, borderColor: "#d1d5db" }}
+          />
+          <Legend verticalAlign="bottom" wrapperStyle={{ fontSize: 12 }} />
+          <Bar
+            dataKey="revenue"
+            name="Doanh Thu"
+            fill="#111827"
+            radius={[6, 6, 0, 0]}
+          />
+          <Bar
+            dataKey="target"
+            name="Mục Tiêu"
+            fill="#6b7280"
+            radius={[6, 6, 0, 0]}
+          />
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+function RevenueGrowthDots({
+  data,
+}: {
+  data: Array<{ label: string; growth: number }>;
+}) {
+  return (
+    <div className="h-72">
+      <ResponsiveContainer width="100%" height="100%">
+        <LineChart
+          data={data}
+          margin={{ top: 8, right: 8, left: 4, bottom: 8 }}
+        >
+          <CartesianGrid
+            strokeDasharray="3 3"
+            vertical={false}
+            stroke="#e5e7eb"
+          />
+          <XAxis
+            dataKey="label"
+            tickLine={false}
+            axisLine={false}
+            fontSize={12}
+          />
+          <YAxis
+            tickFormatter={(value) => `${Number(value).toFixed(0)}%`}
+            tickLine={false}
+            axisLine={false}
+            width={56}
+            fontSize={12}
+          />
+          <Tooltip
+            formatter={(value) => `${Number(value ?? 0).toFixed(1)}%`}
+            contentStyle={{ borderRadius: 12, borderColor: "#d1d5db" }}
+          />
+          <Line
+            type="monotone"
+            dataKey="growth"
+            name="Tăng Trưởng (%)"
+            stroke="#111827"
+            strokeWidth={2}
+            dot={{ r: 4, fill: "#111827" }}
+            activeDot={{ r: 6 }}
+          />
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+function CostStatCard({
+  title,
+  value,
+  trend,
+  positive,
+}: {
+  title: string;
+  value: string;
+  trend: string;
+  positive: boolean;
+}) {
+  return (
+    <div className="rounded-2xl border bg-white p-5">
+      <p className="text-xs font-bold tracking-wide uppercase text-slate-500">
+        {title}
+      </p>
+      <p className="mt-4 text-4xl font-extrabold text-slate-900">{value}</p>
+      <p
+        className={`mt-6 text-sm font-semibold ${positive ? "text-emerald-600" : "text-rose-500"}`}
+      >
+        {trend}
+      </p>
+    </div>
+  );
+}
+
+function CostPieChart({
+  data,
+}: {
+  data: Array<{ key: string; label: string; total: number; share: number }>;
+}) {
+  const topItems = data.slice(0, 6).filter((item) => item.total > 0);
+
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-[260px_1fr] gap-6 items-center">
+      <div className="h-60 w-full">
+        <ResponsiveContainer width="100%" height="100%">
+          <PieChart>
+            <Pie
+              data={topItems}
+              dataKey="total"
+              nameKey="label"
+              innerRadius={52}
+              outerRadius={88}
+              paddingAngle={2}
+              stroke="#ffffff"
+              strokeWidth={1}
+            >
+              {topItems.map((item, index) => (
+                <Cell
+                  key={item.key}
+                  fill={PIE_COLORS[index % PIE_COLORS.length]}
+                />
+              ))}
+            </Pie>
+            <Tooltip
+              formatter={(value) => formatTooltipCurrency(value)}
+              contentStyle={{ borderRadius: 12, borderColor: "#d1d5db" }}
+            />
+          </PieChart>
+        </ResponsiveContainer>
+      </div>
+      <div className="space-y-2">
+        {topItems.length > 0 ? (
+          topItems.map((item, index) => (
+            <div
+              key={item.key}
+              className="flex items-center justify-between gap-2 text-base"
+            >
+              <span className="inline-flex items-center gap-2 font-semibold text-gray-800">
+                <span
+                  className="w-2.5 h-2.5 rounded-full"
+                  style={{
+                    backgroundColor: PIE_COLORS[index % PIE_COLORS.length],
+                  }}
+                />
+                {item.label}
+              </span>
+              <span className="text-gray-600">{item.share.toFixed(1)}%</span>
+            </div>
+          ))
+        ) : (
+          <p className="text-gray-500">Chưa có dữ liệu chi phí.</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function CostBudgetBarsChart({
+  data,
+}: {
+  data: Array<{ label: string; cost: number; budget: number }>;
+}) {
+  return (
+    <div className="h-72">
+      <ResponsiveContainer width="100%" height="100%">
+        <ComposedChart data={data} barGap={8}>
+          <CartesianGrid
+            strokeDasharray="3 3"
+            vertical={false}
+            stroke="#e5e7eb"
+          />
+          <XAxis
+            dataKey="label"
+            tickLine={false}
+            axisLine={false}
+            fontSize={12}
+          />
+          <YAxis
+            tickFormatter={(value) => formatYAxisShort(value as number)}
+            tickLine={false}
+            axisLine={false}
+            width={56}
+            fontSize={12}
+          />
+          <Tooltip
+            formatter={(value) => formatTooltipCurrency(value)}
+            contentStyle={{ borderRadius: 12, borderColor: "#d1d5db" }}
+          />
+          <Legend verticalAlign="bottom" wrapperStyle={{ fontSize: 12 }} />
+          <Bar
+            dataKey="cost"
+            name="Chi Phí"
+            fill="#111827"
+            radius={[6, 6, 0, 0]}
+          />
+          <Bar
+            dataKey="budget"
+            name="Ngân Sách"
+            fill="#6b7280"
+            radius={[6, 6, 0, 0]}
+          />
+        </ComposedChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+function CostTrendDots({
+  data,
+}: {
+  data: Array<{ label: string; cost: number; budget: number }>;
+}) {
+  const scatterData = data.map((item, index) => ({
+    x: index + 1,
+    label: item.label,
+    cost: item.cost,
+    budget: item.budget,
+  }));
+
+  return (
+    <div className="h-72">
+      <ResponsiveContainer width="100%" height="100%">
+        <ScatterChart margin={{ top: 8, right: 12, left: 0, bottom: 8 }}>
+          <CartesianGrid
+            strokeDasharray="3 3"
+            vertical={false}
+            stroke="#e5e7eb"
+          />
+          <XAxis
+            type="number"
+            dataKey="x"
+            tickLine={false}
+            axisLine={false}
+            domain={[1, Math.max(scatterData.length, 1)]}
+            ticks={scatterData.map((item) => item.x)}
+            tickFormatter={(value) =>
+              scatterData.find((item) => item.x === value)?.label ?? ""
+            }
+            fontSize={12}
+          />
+          <YAxis
+            type="number"
+            tickFormatter={(value) => formatYAxisShort(value as number)}
+            tickLine={false}
+            axisLine={false}
+            width={56}
+            fontSize={12}
+          />
+          <Tooltip
+            formatter={(value, name) => [
+              formatTooltipCurrency(value),
+              String(name),
+            ]}
+            labelFormatter={(value) => {
+              const found = scatterData.find(
+                (item) => item.x === Number(value),
+              );
+              return found?.label ?? "";
+            }}
+            contentStyle={{ borderRadius: 12, borderColor: "#d1d5db" }}
+          />
+          <Legend verticalAlign="bottom" wrapperStyle={{ fontSize: 12 }} />
+          <Scatter
+            data={scatterData}
+            dataKey="cost"
+            name="Chi Phí"
+            fill="#111827"
+          />
+          <Scatter
+            data={scatterData}
+            dataKey="budget"
+            name="Ngân Sách"
+            fill="#6b7280"
+          />
+        </ScatterChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+function CostBudgetCategoryList({
+  data,
+}: {
+  data: Array<{
+    key: string;
+    label: string;
+    total: number;
+    budget: number;
+    usage: number;
+  }>;
+}) {
+  const topItems = data.slice(0, 6);
+  const total = topItems.reduce((sum, item) => sum + item.total, 0);
+  const budget = topItems.reduce((sum, item) => sum + item.budget, 0);
+
+  return (
+    <div className="space-y-4">
+      {topItems.length > 0 ? (
+        topItems.map((item) => {
+          const usage = Math.min(item.usage, 120);
+          return (
+            <div key={item.key} className="rounded-xl bg-gray-50 p-4">
+              <div className="flex items-start justify-between gap-3 mb-2">
+                <div>
+                  <p className="font-semibold text-gray-900">{item.label}</p>
+                  <p className="text-sm text-gray-500">
+                    {formatCompactVnd(item.total)} trên{" "}
+                    {formatCompactVnd(item.budget)} ngân sách
+                  </p>
+                </div>
+                <Badge
+                  className={`${usage > 100 ? "bg-rose-500" : "bg-blue-700"} text-white`}
+                >
+                  {usage.toFixed(0)}%
+                </Badge>
+              </div>
+              <div className="h-2 rounded-full bg-slate-300 overflow-hidden">
+                <div
+                  className={`${usage > 100 ? "bg-rose-500" : "bg-blue-700"} h-full rounded-full`}
+                  style={{ width: `${Math.min(usage, 100)}%` }}
+                />
+              </div>
+            </div>
+          );
+        })
+      ) : (
+        <p className="text-sm text-gray-500">
+          Chưa có dữ liệu danh mục chi phí.
+        </p>
+      )}
+
+      <Separator />
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div className="rounded-xl bg-gray-50 p-4">
+          <p className="text-xs font-semibold text-gray-500 uppercase">
+            Tổng chi phí
+          </p>
+          <p className="text-4xl font-bold text-gray-900 mt-2">
+            {formatCompactVnd(total)}
+          </p>
+        </div>
+        <div className="rounded-xl bg-gray-50 p-4">
+          <p className="text-xs font-semibold text-gray-500 uppercase">
+            Tổng ngân sách
+          </p>
+          <p className="text-4xl font-bold text-gray-900 mt-2">
+            {formatCompactVnd(budget)}
+          </p>
+        </div>
+        <div className="rounded-xl bg-gray-50 p-4">
+          <p className="text-xs font-semibold text-gray-500 uppercase">
+            Chênh lệch
+          </p>
+          <p
+            className={`text-4xl font-bold mt-2 ${budget - total >= 0 ? "text-green-600" : "text-rose-500"}`}
+          >
+            {budget - total >= 0
+              ? `${formatCompactVnd(budget - total)} tiết kiệm`
+              : `${formatCompactVnd(total - budget)} vượt`}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function formatCompactVnd(amount: number) {
+  const abs = Math.abs(amount);
+  const sign = amount < 0 ? "-" : "";
+
+  if (abs >= 1_000_000_000) {
+    return `${sign}₫${(abs / 1_000_000_000).toFixed(3).replace(/\.0+$/, "")}B`;
+  }
+
+  if (abs >= 1_000_000) {
+    return `${sign}₫${(abs / 1_000_000).toFixed(3).replace(/\.0+$/, "")}M`;
+  }
+
+  if (abs >= 1_000) {
+    return `${sign}₫${(abs / 1_000).toFixed(1).replace(/\.0$/, "")}K`;
+  }
+
+  return `${sign}${fmt.format(abs)}`;
+}
+
+const PIE_COLORS = [
+  "#020617",
+  "#111827",
+  "#1f2937",
+  "#374151",
+  "#4b5563",
+  "#6b7280",
+];
+
+function formatYAxisShort(value: number) {
+  if (Math.abs(value) >= 1_000_000) {
+    return `${(value / 1_000_000).toFixed(1).replace(/\.0$/, "")}M`;
+  }
+  if (Math.abs(value) >= 1_000) {
+    return `${(value / 1_000).toFixed(0)}K`;
+  }
+  return `${value}`;
+}
+
+function formatTooltipCurrency(value: unknown) {
+  const numeric = Number(value ?? 0);
+  return fmt.format(Number.isFinite(numeric) ? numeric : 0);
 }
 
 const PAYMENT_STYLES: Record<string, { cls: string; label: string }> = {

@@ -14,6 +14,7 @@ import {
   logoutAllAuth,
   setAccountPassword,
 } from "@/services/authService";
+import { clearLocalAvatarCache } from "@/lib/auth/avatarLocalCache";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import type {
   AuthAccount,
@@ -38,6 +39,10 @@ const DEFAULT_THEME: ThemeColors = {
   primary: "#0f766e",
   secondary: "#0369a1",
 };
+
+const THEME_IMAGE_RETRY_MS = 10 * 60 * 1000;
+const themeColorCache = new Map<string, ThemeColors>();
+const failedThemeImageUntil = new Map<string, number>();
 
 function normalizePhone(input: string): string {
   const trimmed = input.replace(/\s+/g, "");
@@ -99,6 +104,20 @@ function colorDistance(
 }
 
 function extractThemeFromImage(url: string): Promise<ThemeColors> {
+  const cached = themeColorCache.get(url);
+  if (cached) {
+    return Promise.resolve(cached);
+  }
+
+  const blockedUntil = failedThemeImageUntil.get(url);
+  if (blockedUntil && blockedUntil > Date.now()) {
+    return Promise.resolve(DEFAULT_THEME);
+  }
+
+  if (blockedUntil && blockedUntil <= Date.now()) {
+    failedThemeImageUntil.delete(url);
+  }
+
   return new Promise((resolve) => {
     const image = new Image();
     image.crossOrigin = "anonymous";
@@ -161,20 +180,27 @@ function extractThemeFromImage(url: string): Promise<ThemeColors> {
           ranked.find((item) => colorDistance(item.rgb, primaryRgb) >= 60)
             ?.rgb ?? ranked[Math.min(1, ranked.length - 1)].rgb;
 
-        resolve({
+        const colors = {
           primary: rgbToHex(primaryRgb[0], primaryRgb[1], primaryRgb[2]),
           secondary: rgbToHex(
             secondaryCandidate[0],
             secondaryCandidate[1],
             secondaryCandidate[2],
           ),
-        });
+        };
+
+        themeColorCache.set(url, colors);
+        resolve(colors);
       } catch {
+        failedThemeImageUntil.set(url, Date.now() + THEME_IMAGE_RETRY_MS);
         resolve(DEFAULT_THEME);
       }
     };
 
-    image.onerror = () => resolve(DEFAULT_THEME);
+    image.onerror = () => {
+      failedThemeImageUntil.set(url, Date.now() + THEME_IMAGE_RETRY_MS);
+      resolve(DEFAULT_THEME);
+    };
     image.src = url;
   });
 }
@@ -538,6 +564,7 @@ export default function ProfilePage() {
     window.localStorage.removeItem(REFRESH_TOKEN_KEY);
     window.localStorage.removeItem(AUTH_CREDENTIALS_KEY);
     window.localStorage.removeItem(AUTH_ACCOUNT_KEY);
+    clearLocalAvatarCache();
     window.dispatchEvent(new Event(AUTH_UPDATED_EVENT));
   };
 

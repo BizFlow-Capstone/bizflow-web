@@ -7,6 +7,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   getLocations,
+  getLocationDetail,
   createLocation,
   updateLocationStatus,
   updateLocation,
@@ -52,20 +53,17 @@ export function useLocations() {
  * Hook to fetch a single location by ID
  * Reuses the locations list cache to avoid extra API calls
  */
-export function useLocationDetail(id: number) {
+export function useLocationDetail(id: number, enabled = true) {
   return useQuery({
     queryKey: locationKeys.detail(id),
     queryFn: async () => {
-      const result = await getLocations();
+      const result = await getLocationDetail(id);
       if (!result.success) {
         throw new Error(result.message);
       }
-      const location = result.data.find((loc) => loc.id === id);
-      if (!location) {
-        throw new Error("Location not found");
-      }
-      return location;
+      return result.data;
     },
+    enabled,
   });
 }
 

@@ -1,3 +1,9 @@
+import type { AuthAccount } from "@/lib/types/auth";
+import {
+  clearLocalAvatarCache,
+  persistAccountWithLocalAvatar,
+} from "@/lib/auth/avatarLocalCache";
+
 const ACCESS_TOKEN_KEY = "bizflow_access_token";
 const REFRESH_TOKEN_KEY = "bizflow_refresh_token";
 const AUTH_CREDENTIALS_KEY = "bizflow_auth_credentials";
@@ -83,6 +89,7 @@ export function clearAuthSession() {
   window.localStorage.removeItem(REFRESH_TOKEN_KEY);
   window.localStorage.removeItem(AUTH_CREDENTIALS_KEY);
   window.localStorage.removeItem(AUTH_ACCOUNT_KEY);
+  clearLocalAvatarCache();
   window.dispatchEvent(new Event(AUTH_UPDATED_EVENT));
 }
 
@@ -122,9 +129,12 @@ export async function refreshAndPersistToken(): Promise<string> {
 
   persistRefreshedTokens(newAccessToken, newRefreshToken);
   if (raw.data?.account && isBrowser()) {
+    const accountWithLocalAvatar = await persistAccountWithLocalAvatar(
+      raw.data.account as AuthAccount,
+    );
     window.localStorage.setItem(
       AUTH_ACCOUNT_KEY,
-      JSON.stringify(raw.data.account),
+      JSON.stringify(accountWithLocalAvatar),
     );
   }
 
