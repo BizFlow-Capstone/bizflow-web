@@ -430,6 +430,23 @@ function CreatePeriodDialog({
                 />
               </div>
             </div>
+
+            {!startDate && (
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-start gap-3 text-amber-900 text-sm animate-in fade-in slide-in-from-top-2 duration-300">
+                <div className="bg-amber-100 p-2 rounded-full">
+                  <AlertTriangle className="w-4 h-4 text-amber-600" />
+                </div>
+                <div className="space-y-1">
+                  <p className="font-bold">Vui lòng nhập ngày trước</p>
+                  <p className="text-amber-700 text-xs leading-relaxed">
+                    Hãy chọn <strong>"Từ ngày"</strong> cho kỳ tùy chỉnh này trước khi 
+                    nhấn lấy gợi ý hoặc nhập số dư. Việc này giúp hệ thống xác định 
+                    đúng điểm carry-over từ các kỳ trước đó.
+                  </p>
+                </div>
+              </div>
+            )}
+
             <BalanceSection
               cash={cash}
               bank={bank}
@@ -439,6 +456,7 @@ function CreatePeriodDialog({
               setSuggestion={setSuggestion}
               onFetchSuggestion={() => fetchSuggestion("custom", "custom")}
               isLoadingSuggestion={getSuggestion.isPending}
+              disableSuggestion={!startDate}
             />
             <DialogFooter>
               <Button variant="outline" onClick={onClose}>
@@ -471,6 +489,7 @@ function BalanceSection({
   setSuggestion,
   onFetchSuggestion,
   isLoadingSuggestion,
+  disableSuggestion,
 }: {
   cash: string;
   bank: string;
@@ -491,6 +510,7 @@ function BalanceSection({
   setSuggestion: (v: null) => void;
   onFetchSuggestion: () => void;
   isLoadingSuggestion: boolean;
+  disableSuggestion?: boolean;
 }) {
   return (
     <div className="space-y-3">
@@ -502,7 +522,7 @@ function BalanceSection({
           variant="outline"
           className="h-7 text-xs gap-1 text-blue-600 border-blue-200 hover:bg-blue-50"
           onClick={onFetchSuggestion}
-          disabled={isLoadingSuggestion}
+          disabled={isLoadingSuggestion || disableSuggestion}
         >
           {isLoadingSuggestion ? (
             <Loader2 className="w-3 h-3 animate-spin" />
@@ -534,6 +554,7 @@ function BalanceSection({
             placeholder="VD: 50,000,000"
             value={cash}
             onChange={(e) => setCash(e.target.value)}
+            disabled={disableSuggestion}
           />
         </div>
         <div>
@@ -546,6 +567,7 @@ function BalanceSection({
             placeholder="VD: 120,000,000"
             value={bank}
             onChange={(e) => setBank(e.target.value)}
+            disabled={disableSuggestion}
           />
         </div>
       </div>

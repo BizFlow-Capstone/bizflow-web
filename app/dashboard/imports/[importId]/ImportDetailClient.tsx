@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import {
   ArrowLeft,
@@ -121,6 +121,8 @@ function getImportTypeLabel(importType: string) {
 export default function ImportDetailClient() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const backUrl = searchParams.get("backUrl");
   const importId = Number(params.importId);
   const printRef = useRef<HTMLDivElement>(null);
 
@@ -224,7 +226,7 @@ export default function ImportDetailClient() {
           <div className="flex gap-2 justify-center mt-4">
             <Button
               variant="outline"
-              onClick={() => router.push("/dashboard/imports")}
+              onClick={() => router.push(backUrl || "/dashboard/imports")}
             >
               <ArrowLeft className="w-4 h-4 mr-2" />
               Quay lại
@@ -252,7 +254,7 @@ export default function ImportDetailClient() {
             <Button
               variant="ghost"
               size="icon"
-              onClick={() => router.push("/dashboard/imports")}
+              onClick={() => router.push(backUrl || "/dashboard/imports")}
             >
               <ArrowLeft className="w-5 h-5" />
             </Button>

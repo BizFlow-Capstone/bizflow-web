@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
 import {
   Loader2,
   DollarSign,
@@ -90,7 +91,24 @@ type Tab = "reports" | "periods" | "books";
 export default function ReportsClient() {
   const { data: locations, isLoading: locLoading } = useLocations();
   const { selectedLocationId } = useDashboardLocation();
-  const [activeTab, setActiveTab] = useState<Tab>("periods");
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  
+  const tabFromUrl = searchParams.get("tab") as Tab;
+  const [activeTab, setActiveTab] = useState<Tab>(tabFromUrl || "periods");
+
+  useEffect(() => {
+    if (tabFromUrl && tabFromUrl !== activeTab) {
+      setActiveTab(tabFromUrl);
+    }
+  }, [tabFromUrl, activeTab]);
+
+  const handleTabChange = (tab: Tab) => {
+    setActiveTab(tab);
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("tab", tab);
+    router.replace(`/dashboard/reports?${params.toString()}`, { scroll: false });
+  };
   const locationList = locations ?? [];
   const hasLocations = locationList.length > 0;
 
@@ -151,7 +169,7 @@ export default function ReportsClient() {
           {tabs.map((tab) => (
             <button
               key={tab.key}
-              onClick={() => setActiveTab(tab.key)}
+              onClick={() => handleTabChange(tab.key)}
               className={`flex items-center gap-2 px-5 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px ${
                 activeTab === tab.key
                   ? "border-[#23C4C1] text-[#23C4C1]"
@@ -181,9 +199,26 @@ export default function ReportsClient() {
 // ─── Tab 1: Báo cáo ─────────────────────────────────────────────────────────
 
 function ReportsTab({ locationId }: { locationId: number }) {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  
+  const subTabFromUrl = searchParams.get("subTab") as "revenue" | "cost" | "cashflow" | "ledger";
   const [subTab, setSubTab] = useState<
     "revenue" | "cost" | "cashflow" | "ledger"
-  >("ledger");
+  >(subTabFromUrl || "ledger");
+
+  useEffect(() => {
+    if (subTabFromUrl && subTabFromUrl !== subTab) {
+      setSubTab(subTabFromUrl);
+    }
+  }, [subTabFromUrl, subTab]);
+
+  const handleSubTabChange = (key: typeof subTab) => {
+    setSubTab(key);
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("subTab", key);
+    router.replace(`/dashboard/reports?${params.toString()}`, { scroll: false });
+  };
   const { data: revenues, isLoading: revLoading } = useRevenues(locationId);
   const { data: costs, isLoading: costLoading } = useCosts({ locationId });
   const createCostMutation = useCreateManualCost();
@@ -721,7 +756,7 @@ function ReportsTab({ locationId }: { locationId: number }) {
         {subTabs.map((t) => (
           <button
             key={t.key}
-            onClick={() => setSubTab(t.key)}
+            onClick={() => handleSubTabChange(t.key)}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
               subTab === t.key
                 ? "bg-white text-gray-800 shadow-sm"

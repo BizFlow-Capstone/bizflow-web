@@ -364,7 +364,11 @@ export async function completeOrder(
   const response = await authFetch(`/api/orders/${orderId}/complete`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ confirmLowStock: data.confirmLowStock ?? false }),
+    body: JSON.stringify({ 
+      confirmLowStock: data.confirmLowStock ?? false,
+      excessAmount: data.excessAmount,
+      excessDebtorId: data.excessDebtorId
+    }),
   });
 
   if (!response.ok) {

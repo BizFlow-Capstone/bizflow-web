@@ -1,6 +1,6 @@
 "use client";
 
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import {
   ArrowLeft,
@@ -117,6 +117,8 @@ function orderStatusBadge(status: DebtorRecentOrder["status"]) {
 export default function CustomerDetailClient() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const backUrl = searchParams.get("backUrl");
   const debtorId = Number(params.debtorId);
 
   const { data: debtor, isLoading, error } = useDebtorDetail(debtorId);
@@ -169,7 +171,7 @@ export default function CustomerDetailClient() {
           Khách hàng này không tồn tại hoặc đã bị xóa.
         </p>
         <Button
-          onClick={() => router.push("/dashboard/customers")}
+          onClick={() => router.push(backUrl || "/dashboard/customers")}
           variant="outline"
         >
           <ArrowLeft className="w-4 h-4 mr-2" />
@@ -191,7 +193,7 @@ export default function CustomerDetailClient() {
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => router.push("/dashboard/customers")}
+              onClick={() => router.push(backUrl || "/dashboard/customers")}
             >
               <ArrowLeft className="w-4 h-4 mr-2" />
               Quay lại

@@ -37,8 +37,10 @@ import type { AuthAccount, AuthCredentialsData } from "@/lib/types/auth";
 import {
   appendIncomingNotification,
   cleanupWebPushForegroundListener,
+  fetchNotifications,
   getStoredNotifications,
   markAllNotificationsAsRead,
+  markNotificationAsRead,
   notificationEvents,
   setupWebPushNotifications,
   type DashboardNotificationItem,
@@ -390,9 +392,25 @@ export default function DashboardHeader() {
     }, toast.durationMs);
   };
 
-  const navigateToNotificationRoute = (route?: string, toastId?: string) => {
-    const targetRoute = route?.trim() || "/dashboard/employees?tab=invitations";
+  const navigateToNotificationRoute = (
+    route?: string,
+    toastId?: string,
+    notificationId?: string,
+  ) => {
+    const targetRoute =
+      route?.trim() || "/dashboard/employees?tab=invitations";
     setIsNotificationMenuOpen(false);
+
+    if (notificationId) {
+      void markNotificationAsRead(notificationId);
+    } else if (toastId && toastId.includes("-")) {
+      // Best-effort to try and get original ID from floating toast if not provided.
+      const originalId = toastId.split("-")[0];
+      if (originalId) {
+        void markNotificationAsRead(originalId);
+      }
+    }
+
     if (toastId) {
       dismissFloatingToast(toastId);
     } else {
@@ -479,6 +497,7 @@ export default function DashboardHeader() {
 
   useEffect(() => {
     refreshNotifications();
+    void fetchNotifications();
 
     void setupWebPushNotifications().catch(() => {
       // Ignore push setup failures to keep header stable.
@@ -545,8 +564,7 @@ export default function DashboardHeader() {
 
   const handleNotificationMenuOpenChange = (open: boolean) => {
     setIsNotificationMenuOpen(open);
-    if (open && unreadCount > 0) {
-      markAllNotificationsAsRead();
+    if (open) {
       refreshNotifications();
     }
   };
@@ -646,12 +664,29 @@ export default function DashboardHeader() {
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-90 p-0">
                 <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
-                  <p className="text-sm font-semibold text-gray-900">
-                    Thông báo
-                  </p>
-                  <span className="text-xs text-gray-500">
-                    {notifications.length} mục
-                  </span>
+                  <div className="flex items-center gap-3">
+                    <p className="text-sm font-semibold text-gray-900">
+                      Thông báo
+                    </p>
+                    <span className="inline-flex items-center justify-center px-1.5 py-0.5 rounded-full bg-cyan-50 text-[10px] font-bold text-cyan-700 border border-cyan-100/50">
+                      {notifications.length}
+                    </span>
+                  </div>
+                  {unreadCount > 0 && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void markAllNotificationsAsRead().then(() =>
+                          refreshNotifications(),
+                        );
+                      }}
+                      className="inline-flex items-center gap-1.5 text-xs font-medium text-[#23C4C1] hover:text-[#1ba8a5] transition-colors"
+                    >
+                      <Check className="h-3.5 w-3.5" />
+                      Đánh dấu tất cả đã đọc
+                    </button>
+                  )}
                 </div>
 
                 {notifications.length === 0 ? (
@@ -668,7 +703,7 @@ export default function DashboardHeader() {
                           item.isRead ? "bg-white" : "bg-cyan-50/40"
                         }`}
                         onClick={() => {
-                          navigateToNotificationRoute(item.route);
+                          navigateToNotificationRoute(item.route, undefined, item.id);
                         }}
                       >
                         <div className="flex items-start justify-between gap-3">
