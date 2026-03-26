@@ -36,8 +36,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useDebtors } from "@/hooks/useDebtors";
-import { useCreateOrder } from "@/hooks/useOrders";
+import { useDebtors, useCreateDebtor } from "@/hooks/useDebtors";
+import { useCreateOrder, useCompleteOrder } from "@/hooks/useOrders";
 import type { PaymentType } from "@/lib/types/order";
 import type { DebtorFilters, DebtorRecord } from "@/lib/types/debtor";
 import { saveDraftOrder } from "@/lib/draftOrderStorage";
@@ -243,7 +243,11 @@ export default function CreateOrderClient() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
   const [showLeaveDialog, setShowLeaveDialog] = useState(false);
+  const [showConfirmDebt, setShowConfirmDebt] = useState(false);
+  const [lastCreatedOrderId, setLastCreatedOrderId] = useState<number | null>(null);
+
   const createOrderMutation = useCreateOrder();
+  const completeMutation = useCompleteOrder();
 
   const { selectedLocationId } = useDashboardLocation();
 
@@ -524,11 +528,15 @@ export default function CreateOrderClient() {
 
     setIsSubmitting(true);
     try {
+      // USER REQUEST: âm là nợ, dương là trả.
+      // We send negative debt amount to the API as requested.
+      const debtValue = debt > 0 ? -debt : 0;
+
       const result = await createOrderMutation.mutateAsync({
         businessLocationId: selectedLocationId ?? 0,
         cashAmount: cash,
         bankAmount: bank,
-        debtAmount: debt,
+        debtAmount: debtValue,
         debtorId: selectedDebtorId ? Number(selectedDebtorId) : undefined,
         note,
         items: cart.map((item) => ({
@@ -538,7 +546,12 @@ export default function CreateOrderClient() {
         })),
       });
 
-      router.push(`/dashboard/orders/${result.data.orderId}/payment`);
+      if (debt > 0) {
+        setLastCreatedOrderId(result.data.orderId);
+        setShowConfirmDebt(true);
+      } else {
+        router.push(`/dashboard/orders/${result.data.orderId}/payment`);
+      }
     } catch (error) {
       setSubmitError(
         error instanceof Error
@@ -574,6 +587,20 @@ export default function CreateOrderClient() {
       },
     );
     router.push("/dashboard/orders");
+  };
+
+  const handleConfirmDebt = async () => {
+    if (!lastCreatedOrderId) return;
+    setIsSubmitting(true);
+    try {
+      await completeMutation.mutateAsync(lastCreatedOrderId);
+      router.push(`/dashboard/orders/${lastCreatedOrderId}`);
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : "Không thể hoàn tất đơn hàng nợ.");
+    } finally {
+      setIsSubmitting(false);
+      setShowConfirmDebt(false);
+    }
   };
 
   const handleBack = () => {
@@ -1421,6 +1448,51 @@ export default function CreateOrderClient() {
           </div>
         </div>
       </main>
+
+      {/* Confirm Debt Modal */}
+      <AlertDialog open={showConfirmDebt} onOpenChange={setShowConfirmDebt}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Xác nhận tạo đơn ghi nợ</AlertDialogTitle>
+            <AlertDialogDescription>
+              Đơn hàng này có số tiền ghi nợ là{" "}
+              <span className="font-bold text-red-600">
+                {formatCurrency(cartTotal - (Number(cashAmount) || 0) - (Number(bankAmount) || 0))}
+              </span>
+              . Bạn có chắc chắn muốn hoàn tất đơn hàng và ghi vào sổ nợ của{" "}
+              <span className="font-bold text-[#23C4C1]">
+                {selectedDebtor?.name}
+              </span>{" "}
+              không?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel
+              onClick={() => {
+                if (lastCreatedOrderId) {
+                  router.push(`/dashboard/orders/${lastCreatedOrderId}`);
+                }
+              }}
+            >
+              Xem chi tiết (Chờ thanh toán)
+            </AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-[#23C4C1] hover:bg-[#1da8a5] text-white"
+              onClick={handleConfirmDebt}
+              disabled={isSubmitting}
+            >
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Đang xử lý...
+                </>
+              ) : (
+                "Xác nhận ghi nợ"
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Leave Confirmation Dialog */}
       <AlertDialog open={showLeaveDialog} onOpenChange={setShowLeaveDialog}>

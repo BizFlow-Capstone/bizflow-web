@@ -150,6 +150,8 @@ export interface CancelOrderRequest {
 
 export interface CompleteOrderRequest {
   confirmLowStock?: boolean;
+  excessAmount?: number;
+  excessDebtorId?: number;
 }
 
 // --- Draft Order (localStorage "treo đơn") ---

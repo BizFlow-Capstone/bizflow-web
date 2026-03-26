@@ -18,6 +18,26 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useOrderDetail, useCompleteOrder } from "@/hooks/useOrders";
+import { useDashboardLocation } from "@/lib/providers/DashboardLocationProvider";
+import { useDebtors, useCreateDebtor } from "@/hooks/useDebtors";
+import { recordPayment } from "@/services/debtorService";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Plus } from "lucide-react";
 
 // --- Helpers ---
 
@@ -59,6 +79,18 @@ export default function PaymentClient() {
   // Data
   const { data: order, isLoading, error } = useOrderDetail(orderId);
   const completeMutation = useCompleteOrder();
+  const { selectedLocationId } = useDashboardLocation();
+
+  // Excess handling
+  const [isSavingExcess, setIsSavingExcess] = useState(false);
+  const [excessDebtorId, setExcessDebtorId] = useState<string>("");
+  const [isCreatingDebtor, setIsCreatingDebtor] = useState(false);
+  const [newDebtorName, setNewDebtorName] = useState("");
+  const [newDebtorPhone, setNewDebtorPhone] = useState("");
+
+  const { data: debtorsPage } = useDebtors({ isActive: true, page: 1, pageSize: 100 });
+  const debtors = debtorsPage?.items ?? [];
+  const createDebtorMutation = useCreateDebtor();
 
   // Cash change calculation
   const cashChange = useMemo(() => {
@@ -92,10 +124,39 @@ export default function PaymentClient() {
     if (!order) return;
     setIsConfirming(true);
     try {
+      // 1. Complete the order
       await completeMutation.mutateAsync(orderId);
+
+      // 2. Handle excess payment if requested
+      if (isSavingExcess && excessDebtorId && cashChange > 0) {
+        await recordPayment(Number(excessDebtorId), {
+          amount: cashChange,
+          paymentMethod: paymentTab === "qr" ? "bank" : "cash",
+          notes: `Tiền dư từ đơn hàng ${order.orderCode}`,
+        });
+      }
+
       router.push(`/dashboard/orders/${orderId}`);
-    } catch {
+    } catch (err) {
+      console.error("Payment confirmation failed:", err);
       setIsConfirming(false);
+    }
+  };
+
+  const handleCreateDebtor = async () => {
+    if (!newDebtorName) return;
+    try {
+      const result = await createDebtorMutation.mutateAsync({
+        name: newDebtorName,
+        phone: newDebtorPhone,
+        businessLocationId: selectedLocationId || 1, 
+      });
+      setExcessDebtorId(String(result.data.debtorId));
+      setIsCreatingDebtor(false);
+      setNewDebtorName("");
+      setNewDebtorPhone("");
+    } catch (err) {
+      console.error("Failed to create debtor:", err);
     }
   };
 
@@ -453,6 +514,53 @@ export default function PaymentClient() {
                       </>
                     )}
                   </Button>
+
+                  {/* Excess handling for bank transfer */}
+                  <div className="mt-6 pt-6 border-t border-gray-100 space-y-4">
+                    <div className="flex items-center space-x-2">
+                        <Checkbox 
+                          id="saveExcessBank" 
+                          checked={isSavingExcess}
+                          onCheckedChange={(checked) => setIsSavingExcess(!!checked)}
+                        />
+                        <label
+                          htmlFor="saveExcessBank"
+                          className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 text-gray-700 cursor-pointer"
+                        >
+                          Lưu tiền dư vào sổ (Trường hợp khách chuyển khoản dư)
+                        </label>
+                      </div>
+
+                      {isSavingExcess && (
+                        <div className="space-y-3 animate-in fade-in slide-in-from-top-2 duration-200">
+                          <Label className="text-xs text-gray-500 uppercase tracking-wider font-semibold">Chọn khách hàng nhận tiền dư</Label>
+                          <div className="flex gap-2">
+                            <div className="flex-1">
+                              <Select value={excessDebtorId} onValueChange={setExcessDebtorId}>
+                                <SelectTrigger className="w-full">
+                                  <SelectValue placeholder="Chọn khách hàng..." />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {debtors.map((d) => (
+                                    <SelectItem key={d.debtorId} value={String(d.debtorId)}>
+                                      {d.name} {d.phone ? `(${d.phone})` : ""}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <Button 
+                              variant="outline" 
+                              size="icon" 
+                              onClick={() => setIsCreatingDebtor(true)}
+                              title="Thêm khách hàng mới"
+                            >
+                              <Plus className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                  </div>
                 </CardContent>
               </Card>
             )}
@@ -511,16 +619,65 @@ export default function PaymentClient() {
                       </div>
                       <div className="border-t border-gray-200 pt-2 flex justify-between">
                         <span className="font-semibold text-gray-800">
-                          Tiền thối:
+                          {cashChange >= 0 ? "Tiền thối:" : "Còn thiếu:"}
                         </span>
                         <span
                           className={`text-xl font-bold ${
-                            cashChange > 0 ? "text-green-600" : "text-gray-800"
+                            cashChange > 0 ? "text-green-600" : 
+                            cashChange < 0 ? "text-red-600" : "text-gray-800"
                           }`}
                         >
-                          {formatCurrency(cashChange)}
+                          {formatCurrency(Math.abs(cashChange))}
                         </span>
                       </div>
+
+                      {cashChange > 0 && (
+                        <div className="mt-4 pt-4 border-t border-gray-200 space-y-4">
+                          <div className="flex items-center space-x-2">
+                            <Checkbox 
+                              id="saveExcess" 
+                              checked={isSavingExcess}
+                              onCheckedChange={(checked) => setIsSavingExcess(!!checked)}
+                            />
+                            <label
+                              htmlFor="saveExcess"
+                              className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 text-gray-700 cursor-pointer"
+                            >
+                              Khách không lấy tiền dư (Lưu vào sổ khách quen)
+                            </label>
+                          </div>
+
+                          {isSavingExcess && (
+                            <div className="space-y-3 animate-in fade-in slide-in-from-top-2 duration-200">
+                              <div className="flex gap-2">
+                                <div className="flex-1">
+                                  <Select value={excessDebtorId} onValueChange={setExcessDebtorId}>
+                                    <SelectTrigger className="w-full">
+                                      <SelectValue placeholder="Chọn khách hàng..." />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {debtors.map((d) => (
+                                        <SelectItem key={d.debtorId} value={String(d.debtorId)}>
+                                          {d.name} {d.phone ? `(${d.phone})` : ""}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                                <Button 
+                                  variant="outline" 
+                                  size="icon" 
+                                  onClick={() => setIsCreatingDebtor(true)}
+                                  title="Thêm khách hàng mới"
+                                >
+                                  <Plus className="w-4 h-4" />
+                                </Button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      
                       {Number(cashReceived) < order.totalAmount && (
                         <p className="text-xs text-red-500 text-center mt-1">
                           Số tiền chưa đủ
@@ -675,6 +832,57 @@ export default function PaymentClient() {
           </div>
         </div>
       </main>
+
+      {/* New Debtor Dialog */}
+      <Dialog open={isCreatingDebtor} onOpenChange={setIsCreatingDebtor}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Thêm khách hàng mới</DialogTitle>
+            <DialogDescription>
+              Tạo nhanh khách hàng để lưu tiền dư/ghi nợ.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="name">Họ tên</Label>
+              <Input
+                id="name"
+                placeholder="Nhập tên khách hàng..."
+                value={newDebtorName}
+                onChange={(e) => setNewDebtorName(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="phone">Số điện thoại</Label>
+              <Input
+                id="phone"
+                placeholder="Nhập số điện thoại..."
+                value={newDebtorPhone}
+                onChange={(e) => setNewDebtorPhone(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsCreatingDebtor(false)}>
+              Hủy
+            </Button>
+            <Button
+              className="bg-[#23C4C1] hover:bg-[#1da8a5] text-white"
+              onClick={handleCreateDebtor}
+              disabled={createDebtorMutation.isPending || !newDebtorName}
+            >
+              {createDebtorMutation.isPending ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Đang tạo...
+                </>
+              ) : (
+                "Tạo khách hàng"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

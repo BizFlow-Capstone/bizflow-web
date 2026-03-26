@@ -1,6 +1,6 @@
 "use client";
 
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowLeft,
   Calendar,
@@ -160,6 +160,8 @@ function getPaymentStatusLabel(status: PaymentStatus) {
 export default function OrderDetailClient() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const backUrl = searchParams.get("backUrl");
   const orderId = Number(params.orderId);
 
   // Data
@@ -232,7 +234,7 @@ export default function OrderDetailClient() {
         <Button
           variant="outline"
           className="mt-4"
-          onClick={() => router.push("/dashboard/orders")}
+          onClick={() => router.push(backUrl || "/dashboard/orders")}
         >
           <ArrowLeft className="w-4 h-4 mr-2" />
           Quay lại
@@ -257,7 +259,7 @@ export default function OrderDetailClient() {
             <Button
               variant="ghost"
               size="icon"
-              onClick={() => router.push("/dashboard/orders")}
+              onClick={() => router.push(backUrl || "/dashboard/orders")}
             >
               <ArrowLeft className="w-5 h-5" />
             </Button>

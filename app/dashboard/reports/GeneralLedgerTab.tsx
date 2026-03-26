@@ -798,7 +798,10 @@ export default function GeneralLedgerTab({
                           variant="outline"
                           disabled={!path}
                           onClick={() => {
-                            if (path) router.push(path);
+                            if (path) {
+                              const backUrl = encodeURIComponent("/dashboard/reports?tab=reports&subTab=ledger");
+                              router.push(`${path}${path.includes("?") ? "&" : "?" }backUrl=${backUrl}`);
+                            }
                           }}
                         >
                           {path ? "Xem nguồn" : "Không có"}
