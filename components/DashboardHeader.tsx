@@ -294,6 +294,49 @@ function getHeaderContent(pathname: string): HeaderContent {
     };
   }
 
+  // ── Admin routes ──────────────────────────────────────────────────────────
+  if (pathname === "/admin") {
+    return {
+      title: "Tổng Quan Hệ Thống",
+      description: "Theo dõi hoạt động kinh doanh và quản lý dữ liệu tập trung.",
+    };
+  }
+
+  if (pathname.startsWith("/admin/accounts")) {
+    return {
+      title: "Quản Lý Người Dùng",
+      description: "Quản lý tài khoản người dùng trên nền tảng BizFlow.",
+    };
+  }
+
+  if (pathname.startsWith("/admin/notifications")) {
+    return {
+      title: "Quản Lý Thông Báo",
+      description: "Quản lý mẫu thông báo, tạo chiến dịch và theo dõi nhật ký gửi.",
+    };
+  }
+
+  if (pathname.startsWith("/admin/subscriptions")) {
+    return {
+      title: "Quản Lý Gói Đăng Ký",
+      description: "Quản lý các gói đăng ký và pricing trên BizFlow.",
+    };
+  }
+
+  if (pathname.startsWith("/admin/analytics")) {
+    return {
+      title: "Phân Tích Platform",
+      description: "Phân tích dữ liệu và thống kê toàn nền tảng BizFlow.",
+    };
+  }
+
+  if (pathname.startsWith("/admin/system")) {
+    return {
+      title: "Cấu Hình Hệ Thống",
+      description: "Cấu hình hệ thống, loại hình kinh doanh và thuế suất.",
+    };
+  }
+
   return defaultHeader;
 }
 

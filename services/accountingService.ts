@@ -544,16 +544,80 @@ export async function getPeriodAuditLogs(
 export async function getAccountingTemplates(): Promise<
   ApiResponse<AccountingTemplate[]>
 > {
-  return DEFAULT_EMPTY_TEMPLATE_RESPONSE;
+  const hardcodedTemplates: AccountingTemplate[] = [
+    {
+      templateId: 1,
+      templateCode: "S1a",
+      name: "Sổ chi tiết bán hàng hóa, dịch vụ — TT152",
+      applicableGroups: [1, 2, 3, 4],
+      applicableMethods: ["exempt", "method_1", "method_2"],
+      isActive: true,
+    },
+    {
+      templateId: 2,
+      templateCode: "S2a",
+      name: "Sổ doanh thu bán hàng hóa, dịch vụ (Cách 1) — TT152",
+      applicableGroups: [2, 3, 4],
+      applicableMethods: ["method_1"],
+      isActive: true,
+    },
+    {
+      templateId: 3,
+      templateCode: "S2b",
+      name: "Sổ doanh thu bán hàng hóa, dịch vụ (Cách 2) — TT152",
+      applicableGroups: [2, 3, 4],
+      applicableMethods: ["method_2"],
+      isActive: true,
+    },
+    {
+      templateId: 4,
+      templateCode: "S2c",
+      name: "Sổ chi tiết doanh thu, chi phí — TT152",
+      applicableGroups: [2, 3, 4],
+      applicableMethods: ["method_2"],
+      isActive: true,
+    },
+    {
+      templateId: 5,
+      templateCode: "S2d",
+      name: "Sổ chi tiết vật liệu, dụng cụ, sản phẩm, hàng hóa — TT152",
+      applicableGroups: [2, 3, 4],
+      applicableMethods: ["method_2"],
+      isActive: true,
+    },
+    {
+      templateId: 6,
+      templateCode: "S2e",
+      name: "Sổ chi tiết tiền — TT152",
+      applicableGroups: [2, 3, 4],
+      applicableMethods: ["method_2"],
+      isActive: true,
+    },
+  ];
+
+  return {
+    success: true,
+    data: hardcodedTemplates,
+    messageCode: "COMMON_DATA_RETRIEVED",
+    message: "Templates retrieved",
+    timestamp: new Date().toISOString(),
+  };
 }
 
 export async function getAccountingBooks(
-  _locationId: number,
-  _periodId?: number,
+  locationId: number,
+  periodId?: number,
 ): Promise<ApiResponse<AccountingBook[]>> {
-  void _locationId;
-  void _periodId;
-  return DEFAULT_EMPTY_BOOK_RESPONSE;
+  const params = new URLSearchParams();
+  if (periodId) params.append("periodId", String(periodId));
+  const url = `/api/locations/${locationId}/accounting/books${params.toString() ? "?" + params.toString() : ""}`;
+  const response = await authFetch(url, {
+    method: "GET",
+    headers: { "Content-Type": "application/json" },
+    cache: "no-store",
+  });
+  if (!response.ok) throw new Error("Could not fetch accounting books");
+  return parseApiResponse<AccountingBook[]>(response);
 }
 
 export async function getGLEntries(
@@ -624,4 +688,18 @@ export async function getGLReferenceCatalog(): Promise<
       >,
     },
   };
+}
+
+// Get book summary (KPI, formulas, etc.)
+export async function getBookSummary(locationId: number, bookId: number) {
+  const response = await authFetch(
+    `/api/locations/${locationId}/accounting/books/${bookId}/summary`,
+    {
+      method: "GET",
+      headers: { "Content-Type": "application/json" },
+      cache: "no-store",
+    },
+  );
+  if (!response.ok) throw new Error("Không thể tải summary sổ kế toán");
+  return (await response.json()) as ApiResponse<any>;
 }

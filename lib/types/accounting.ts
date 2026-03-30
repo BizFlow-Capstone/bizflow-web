@@ -244,6 +244,8 @@ export interface AccountingBook {
   templateName: string;
   groupNumber: number;
   taxMethod?: string;
+  taxProfileKey?: string;
+  businessTypes?: Array<{ businessTypeId: string; name: string }>;
   status: "active" | "archived";
   createdAt: string;
 }
