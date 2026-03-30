@@ -401,11 +401,11 @@ export default function LoginPage() {
                 {message}
               </p>
             )}
-            {!error && !isGoogleSdkReady && (
+            {/* {!error && !isGoogleSdkReady && (
               <p className="mt-3 text-sm text-gray-400 text-center">
                 Đang khởi tạo Google SDK...
               </p>
-            )}
+            )} */}
 
             <div className="mt-6 text-center">
               <span className="text-gray-600">Chưa có tài khoản? </span>

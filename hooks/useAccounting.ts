@@ -33,6 +33,10 @@ import type {
   OpeningBalanceSuggestionRequest,
   GLEntryFilters,
 } from "@/lib/types/accounting";
+import {
+  createAccountingBook,
+  CreateAccountingBookRequest,
+} from "@/services/createAccountingBookService";
 
 export const accountingKeys = {
   all: ["accounting"] as const,
@@ -319,5 +323,18 @@ export function useOpeningBalanceSuggestion(locationId: number) {
   return useMutation({
     mutationFn: (params: OpeningBalanceSuggestionRequest) =>
       getOpeningBalanceSuggestion(locationId, params),
+  });
+}
+
+export function useCreateAccountingBook(locationId: number) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: CreateAccountingBookRequest) =>
+      createAccountingBook(locationId, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: accountingKeys.books(locationId),
+      });
+    },
   });
 }
