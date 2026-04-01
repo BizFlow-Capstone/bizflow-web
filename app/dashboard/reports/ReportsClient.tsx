@@ -1,12 +1,11 @@
 "use client";
 
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   Loader2,
   DollarSign,
   TrendingDown,
-  TrendingUp,
   Banknote,
   Landmark,
   CreditCard,
@@ -21,13 +20,9 @@ import {
   FileText,
   Download,
   Calculator,
-  CheckCircle2,
-  ShieldCheck,
-  BadgeCheck,
   Terminal,
   AlertCircle,
   Zap,
-  ArrowRightLeft,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -80,6 +75,8 @@ import { useBookSummary } from "@/hooks/useBookSummary";
 import { useLocations } from "@/hooks/useLocations";
 import { useDashboardLocation } from "@/lib/providers/DashboardLocationProvider";
 import NoLocationScreenSkeleton from "@/components/NoLocationScreenSkeleton";
+import OwnerOnlyScreen from "@/components/OwnerOnlyScreen";
+import { useLocationRole } from "@/hooks/useLocationRole";
 import {
   BarChart,
   Bar,
@@ -107,15 +104,6 @@ const fmt = new Intl.NumberFormat("vi-VN", {
   maximumFractionDigits: 0,
 });
 
-const BOOK_COLORS: Record<string, string> = {
-  S1a: "bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-lg",
-  S2a: "bg-gradient-to-br from-emerald-500 to-emerald-600 text-white shadow-lg",
-  S2b: "bg-gradient-to-br from-teal-500 to-teal-600 text-white shadow-lg",
-  S2c: "bg-gradient-to-br from-indigo-500 to-indigo-600 text-white shadow-lg",
-  S2d: "bg-gradient-to-br from-amber-500 to-amber-600 text-white shadow-lg",
-  S2e: "bg-gradient-to-br from-purple-500 to-purple-600 text-white shadow-lg",
-};
-
 // --- Main component ---
 
 type Tab = "reports" | "periods" | "books";
@@ -124,13 +112,12 @@ export default function ReportsClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  const tabFromUrl = (searchParams.get("tab") as Tab) || "reports";
-  const [activeTab, setActiveTab] = useState<Tab>(tabFromUrl);
-  const [openCreate, setOpenCreate] = useState(false);
+  const activeTab = (searchParams.get("tab") as Tab) || "reports";
 
   const { data: locations = [], isLoading: locLoading } = useLocations();
   const { selectedLocationId } = useDashboardLocation();
   const hasLocations = locations.length > 0;
+  const { isOwner, isLoading: isRoleLoading } = useLocationRole();
 
   const activeLocationId = useMemo(() => {
     if (!hasLocations) return 0;
@@ -143,14 +130,7 @@ export default function ReportsClient() {
     return locations[0].id;
   }, [selectedLocationId, locations, hasLocations]);
 
-  useEffect(() => {
-    if (tabFromUrl && tabFromUrl !== activeTab) {
-      setActiveTab(tabFromUrl);
-    }
-  }, [tabFromUrl, activeTab]);
-
   const handleTabChange = (key: Tab) => {
-    setActiveTab(key);
     const params = new URLSearchParams(searchParams.toString());
     params.set("tab", key);
     router.replace(`/dashboard/reports?${params.toString()}`, {
@@ -158,7 +138,7 @@ export default function ReportsClient() {
     });
   };
 
-  if (locLoading) {
+  if (locLoading || isRoleLoading) {
     return (
       <div className="flex-1 flex items-center justify-center">
         <Loader2 className="w-8 h-8 animate-spin text-[#23C4C1]" />
@@ -173,6 +153,10 @@ export default function ReportsClient() {
         description="Đang chờ bạn tạo địa điểm hoặc nhận lời mời trước khi tải dữ liệu."
       />
     );
+  }
+
+  if (!isOwner) {
+    return <OwnerOnlyScreen featureName="Báo Cáo & Thống Kê" />;
   }
 
   const tabs: { key: Tab; label: string; icon: React.ReactNode }[] = [
@@ -237,23 +221,14 @@ function ReportsTab({ locationId }: { locationId: number }) {
   const searchParams = useSearchParams();
   const router = useRouter();
 
-  const subTabFromUrl = searchParams.get("subTab") as
-    | "revenue"
-    | "cost"
-    | "cashflow"
-    | "ledger";
-  const [subTab, setSubTab] = useState<
-    "revenue" | "cost" | "cashflow" | "ledger"
-  >(subTabFromUrl || "ledger");
-
-  useEffect(() => {
-    if (subTabFromUrl && subTabFromUrl !== subTab) {
-      setSubTab(subTabFromUrl);
-    }
-  }, [subTabFromUrl, subTab]);
+  const subTab =
+    (searchParams.get("subTab") as
+      | "revenue"
+      | "cost"
+      | "cashflow"
+      | "ledger") || "ledger";
 
   const handleSubTabChange = (key: typeof subTab) => {
-    setSubTab(key);
     const params = new URLSearchParams(searchParams.toString());
     params.set("subTab", key);
     router.replace(`/dashboard/reports?${params.toString()}`, {
@@ -1521,53 +1496,66 @@ function ReportsTab({ locationId }: { locationId: number }) {
 // ─── Tab 3: Sổ kế toán ──────────────────────────────────────────────────────
 
 function BooksTab({ locationId }: { locationId: number }) {
-  const { data: periods, isLoading: periodLoading } = useAccountingPeriods(locationId);
-  const [periodId, setPeriodId] = useState<number | undefined>(undefined);
+  const { data: periods, isLoading: periodLoading } =
+    useAccountingPeriods(locationId);
+  const [selectedPeriodId, setSelectedPeriodId] = useState<number | undefined>(
+    undefined,
+  );
   const [expandedBookId, setExpandedBookId] = useState<number | null>(null);
 
+  const periodId = useMemo(() => {
+    if (selectedPeriodId !== undefined) return selectedPeriodId;
+    if (!periods || periods.length === 0) return undefined;
+    return (
+      periods.find((p) => p.status === "open")?.periodId ?? periods[0].periodId
+    );
+  }, [selectedPeriodId, periods]);
 
-  // Auto-select first open or most recent period
-  useEffect(() => {
-    if (periods && periods.length > 0 && !periodId) {
-      const openPeriod = periods.find((p: any) => p.status === "open");
-      setPeriodId(openPeriod?.periodId ?? periods[0].periodId);
-    }
-  }, [periods, periodId]);
-
-  const { data: templates, isLoading: tplLoading } = useAccountingTemplates();
-  const { data: books, isLoading: bookLoading } = useAccountingBooks(locationId, periodId);
-  const { mutateAsync: createBook, isPending: creatingBook } = useCreateAccountingBook(locationId);
+  const { data: templates } = useAccountingTemplates();
+  const { data: books, isLoading: bookLoading } = useAccountingBooks(
+    locationId,
+    periodId,
+  );
+  const { mutateAsync: createBook, isPending: creatingBook } =
+    useCreateAccountingBook(locationId);
 
   const [groupNumber, setGroupNumber] = useState<number>(2);
   const [taxMethod, setTaxMethod] = useState<string>("method_1");
   const [selectedTemplates, setSelectedTemplates] = useState<string[]>([]);
 
-  // Update suggested tax method and templates based on group
-  useEffect(() => {
-    if (groupNumber === 1) {
-      setTaxMethod("exempt");
-    } else if (groupNumber === 4 && taxMethod === "exempt") {
-      setTaxMethod("method_2");
-    } else if (taxMethod === "exempt") {
-      setTaxMethod("method_1");
-    }
-  }, [groupNumber]);
-
-  useEffect(() => {
-    if (!templates) return;
-    const codes = templates
-      .filter(
+  const getSuggestedTemplates = (group: number, method: string) =>
+    templates
+      ?.filter(
         (t) =>
-          t.applicableGroups?.includes(groupNumber) &&
-          t.applicableMethods?.includes(taxMethod)
+          t.applicableGroups?.includes(group) &&
+          t.applicableMethods?.includes(method),
       )
-      .map((t) => t.templateCode);
-    setSelectedTemplates(codes);
-  }, [groupNumber, taxMethod, templates]);
+      .map((t) => t.templateCode) ?? [];
+
+  const handleGroupNumberChange = (val: string) => {
+    const group = Number(val);
+    let newMethod = taxMethod;
+    if (group === 1) {
+      newMethod = "exempt";
+    } else if (group === 4 && taxMethod === "exempt") {
+      newMethod = "method_2";
+    } else if (taxMethod === "exempt") {
+      newMethod = "method_1";
+    }
+    setGroupNumber(group);
+    setTaxMethod(newMethod);
+    setSelectedTemplates(getSuggestedTemplates(group, newMethod));
+  };
+
+  const handleTaxMethodChange = (method: string) => {
+    setTaxMethod(method);
+    setSelectedTemplates(getSuggestedTemplates(groupNumber, method));
+  };
 
   const handleCreate = async () => {
     if (!periodId) return alert("Vui lòng chọn hoặc tạo kỳ kế toán trước.");
-    if (selectedTemplates.length === 0) return alert("Vui lòng chọn ít nhất 1 mẫu sổ.");
+    if (selectedTemplates.length === 0)
+      return alert("Vui lòng chọn ít nhất 1 mẫu sổ.");
     try {
       await createBook({
         periodId,
@@ -1576,8 +1564,8 @@ function BooksTab({ locationId }: { locationId: number }) {
         templateCodes: selectedTemplates,
       });
       alert("Tạo sổ thành công!");
-    } catch (err: any) {
-      alert(err.message || "Lỗi tạo sổ.");
+    } catch (err: unknown) {
+      alert((err as Error).message || "Lỗi tạo sổ.");
     }
   };
 
@@ -1603,24 +1591,28 @@ function BooksTab({ locationId }: { locationId: number }) {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <label className="text-sm font-medium text-gray-600">Kỳ Kế Toán:</label>
+          <label className="text-sm font-medium text-gray-600">
+            Kỳ Kế Toán:
+          </label>
           <Select
             value={periodId ? String(periodId) : ""}
-            onValueChange={(v) => setPeriodId(Number(v))}
+            onValueChange={(v) => setSelectedPeriodId(Number(v))}
           >
-            <SelectTrigger className="w-[200px] h-9">
-              <SelectValue placeholder={periodLoading ? "Đang tải..." : "Chọn kỳ..."} />
+            <SelectTrigger className="w-50 h-9">
+              <SelectValue
+                placeholder={periodLoading ? "Đang tải..." : "Chọn kỳ..."}
+              />
             </SelectTrigger>
             <SelectContent>
-              {periods?.map((p: any) => (
+              {periods?.map((p) => (
                 <SelectItem key={p.periodId} value={String(p.periodId)}>
                   {p.periodType === "quarter"
                     ? `Q${p.quarter}/${p.year}`
                     : p.periodType === "year"
-                    ? `Năm ${p.year}`
-                    : `${new Date(p.startDate).toLocaleDateString("vi-VN")} - ${new Date(
-                        p.endDate
-                      ).toLocaleDateString("vi-VN")}`}
+                      ? `Năm ${p.year}`
+                      : `${new Date(p.startDate).toLocaleDateString("vi-VN")} - ${new Date(
+                          p.endDate,
+                        ).toLocaleDateString("vi-VN")}`}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -1631,7 +1623,8 @@ function BooksTab({ locationId }: { locationId: number }) {
       {/* Tạo Sổ Kế Toán Form */}
       <div className="bg-white rounded-2xl border p-5 shadow-sm">
         <h3 className="font-semibold text-gray-800 mb-4 flex items-center gap-2">
-          <Plus className="w-4 h-4 text-[#23C4C1]" /> Tạo Sổ Kế Toán (Gợi ý tự động)
+          <Plus className="w-4 h-4 text-[#23C4C1]" /> Tạo Sổ Kế Toán (Gợi ý tự
+          động)
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-gray-50/50 p-4 rounded-xl border border-gray-100 mb-4">
           <div>
@@ -1640,13 +1633,15 @@ function BooksTab({ locationId }: { locationId: number }) {
             </label>
             <Select
               value={String(groupNumber)}
-              onValueChange={(v) => setGroupNumber(Number(v))}
+              onValueChange={handleGroupNumberChange}
             >
               <SelectTrigger className="bg-white">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="1">Nhóm 1 — Doanh thu {"<"} 500 triệu</SelectItem>
+                <SelectItem value="1">
+                  Nhóm 1 — Doanh thu {"<"} 500 triệu
+                </SelectItem>
                 <SelectItem value="2">Nhóm 2 — 500tr đến 3 tỷ</SelectItem>
                 <SelectItem value="3">Nhóm 3 — 3 tỷ đến 50 tỷ</SelectItem>
                 <SelectItem value="4">Nhóm 4 — {"≥"} 50 tỷ</SelectItem>
@@ -1659,7 +1654,7 @@ function BooksTab({ locationId }: { locationId: number }) {
             </label>
             <Select
               value={taxMethod}
-              onValueChange={setTaxMethod}
+              onValueChange={handleTaxMethodChange}
               disabled={groupNumber === 1}
             >
               <SelectTrigger className="bg-white">
@@ -1667,7 +1662,9 @@ function BooksTab({ locationId }: { locationId: number }) {
               </SelectTrigger>
               <SelectContent>
                 {groupNumber === 1 ? (
-                  <SelectItem value="exempt">Miễn thuế (Chỉ dành cho Nhóm 1)</SelectItem>
+                  <SelectItem value="exempt">
+                    Miễn thuế (Chỉ dành cho Nhóm 1)
+                  </SelectItem>
                 ) : null}
                 <SelectItem value="method_1" disabled={groupNumber === 1}>
                   Cách 1 — Theo % Doanh Thu
@@ -1702,10 +1699,14 @@ function BooksTab({ locationId }: { locationId: number }) {
                   <Checkbox
                     checked={checked}
                     onCheckedChange={(c) => {
-                      if (c) setSelectedTemplates((prev) => [...prev, tpl.templateCode]);
+                      if (c)
+                        setSelectedTemplates((prev) => [
+                          ...prev,
+                          tpl.templateCode,
+                        ]);
                       else
                         setSelectedTemplates((prev) =>
-                          prev.filter((c) => c !== tpl.templateCode)
+                          prev.filter((c) => c !== tpl.templateCode),
                         );
                     }}
                     className="mt-0.5"
@@ -1714,18 +1715,21 @@ function BooksTab({ locationId }: { locationId: number }) {
                     <div className="flex items-center gap-2 mb-1">
                       <span
                         className={`text-xs font-bold font-mono px-2 py-0.5 rounded-md ${
-                          BOOK_COLORS[tpl.templateCode] ?? "bg-gray-100 text-gray-700"
+                          BOOK_COLORS[tpl.templateCode] ??
+                          "bg-gray-100 text-gray-700"
                         }`}
                       >
                         {tpl.templateCode}
                       </span>
                       {suggested && (
-                        <span className="text-[10px] bg-amber-100 text-amber-700 font-semibold px-1.5 py-[2px] rounded uppercase">
+                        <span className="text-[10px] bg-amber-100 text-amber-700 font-semibold px-1.5 py-0.5 rounded uppercase">
                           Gợi ý
                         </span>
                       )}
                     </div>
-                    <p className="text-xs text-slate-700 leading-snug">{tpl.name}</p>
+                    <p className="text-xs text-slate-700 leading-snug">
+                      {tpl.name}
+                    </p>
                   </div>
                 </label>
               );
@@ -1736,7 +1740,9 @@ function BooksTab({ locationId }: { locationId: number }) {
         <div className="mt-5 flex justify-end">
           <Button
             onClick={handleCreate}
-            disabled={creatingBook || !periodId || selectedTemplates.length === 0}
+            disabled={
+              creatingBook || !periodId || selectedTemplates.length === 0
+            }
             className="bg-[#23C4C1] hover:bg-[#1aa8a5]"
           >
             {creatingBook && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
@@ -1751,7 +1757,9 @@ function BooksTab({ locationId }: { locationId: number }) {
       <div className="space-y-4">
         <div className="flex items-end justify-between mb-2">
           <div>
-            <h2 className="text-xl font-bold text-gray-900 tracking-tight">Danh sách sổ kế toán</h2>
+            <h2 className="text-xl font-bold text-gray-900 tracking-tight">
+              Danh sách sổ kế toán
+            </h2>
             <p className="text-sm text-gray-500 mt-1">
               Các sổ đã được thiết lập theo thông tư 152
             </p>
@@ -1767,48 +1775,64 @@ function BooksTab({ locationId }: { locationId: number }) {
             <div className="relative">
               <div className="w-12 h-12 rounded-full border-4 border-gray-100 border-t-[#23C4C1] animate-spin" />
             </div>
-            <p className="text-sm font-medium text-gray-400 animate-pulse">Đang truy xuất dữ liệu sổ...</p>
+            <p className="text-sm font-medium text-gray-400 animate-pulse">
+              Đang truy xuất dữ liệu sổ...
+            </p>
           </div>
         ) : books && books.length > 0 ? (
           <div className="grid grid-cols-1 gap-4">
             {books.map((book) => {
               const isExpanded = expandedBookId === book.bookId;
               return (
-                <div 
+                <div
                   key={book.bookId}
                   className={`group relative bg-white rounded-3xl border transition-all duration-300 overflow-hidden ${
-                    isExpanded 
-                    ? "ring-2 ring-[#23C4C1] shadow-2xl scale-[1.01] z-10" 
-                    : "hover:shadow-xl hover:border-[#23C4C1]/30"
+                    isExpanded
+                      ? "ring-2 ring-[#23C4C1] shadow-2xl scale-[1.01] z-10"
+                      : "hover:shadow-xl hover:border-[#23C4C1]/30"
                   }`}
                 >
-                  <div 
+                  <div
                     className="p-5 cursor-pointer flex items-center justify-between"
-                    onClick={() => setExpandedBookId(isExpanded ? null : book.bookId)}
+                    onClick={() =>
+                      setExpandedBookId(isExpanded ? null : book.bookId)
+                    }
                   >
                     <div className="flex items-center gap-5">
-                      <div className={`w-14 h-14 rounded-2xl flex items-center justify-center text-lg font-black font-mono shadow-inner ${
-                        BOOK_COLORS[book.templateCode] || "bg-gray-100 text-gray-600"
-                      }`}>
+                      <div
+                        className={`w-14 h-14 rounded-2xl flex items-center justify-center text-lg font-black font-mono shadow-inner ${
+                          BOOK_COLORS[book.templateCode] ||
+                          "bg-gray-100 text-gray-600"
+                        }`}
+                      >
                         {book.templateCode}
                       </div>
-                      
+
                       <div>
                         <h3 className="font-bold text-gray-900 group-hover:text-[#23C4C1] transition-colors flex items-center gap-2">
                           {book.templateName}
-                          {isExpanded && <Badge className="bg-[#23C4C1] hover:bg-[#1DA8A5] text-[10px] h-4 px-1.5 uppercase">Active</Badge>}
+                          {isExpanded && (
+                            <Badge className="bg-[#23C4C1] hover:bg-[#1DA8A5] text-[10px] h-4 px-1.5 uppercase">
+                              Active
+                            </Badge>
+                          )}
                         </h3>
                         <div className="flex items-center gap-4 mt-1.5">
                           <span className="inline-flex items-center gap-1 text-xs text-gray-500 font-medium bg-gray-50 px-2 py-0.5 rounded-md border">
-                            <Users className="w-3 h-3" /> Nhóm {book.groupNumber}
+                            <Users className="w-3 h-3" /> Nhóm{" "}
+                            {book.groupNumber}
                           </span>
                           <span className="inline-flex items-center gap-1 text-xs text-gray-500 font-medium bg-gray-50 px-2 py-0.5 rounded-md border">
-                            <Layers className="w-3 h-3" /> 
-                            {book.taxMethod === "method_1" ? "Ấn định" : "Kê khai"}
+                            <Layers className="w-3 h-3" />
+                            {book.taxMethod === "method_1"
+                              ? "Ấn định"
+                              : "Kê khai"}
                           </span>
                           <span className="inline-flex items-center gap-1 text-xs text-gray-400">
                             <Calendar className="w-3 h-3" />
-                            {new Date(book.createdAt).toLocaleDateString("vi-VN")}
+                            {new Date(book.createdAt).toLocaleDateString(
+                              "vi-VN",
+                            )}
                           </span>
                         </div>
                       </div>
@@ -1818,15 +1842,23 @@ function BooksTab({ locationId }: { locationId: number }) {
                       {!isExpanded && (
                         <div className="hidden md:flex items-center gap-3 pr-4 border-r mr-4">
                           <div className="text-right">
-                             <p className="text-[10px] uppercase font-bold text-gray-400 tracking-wider">Trạng thái</p>
-                             <p className="text-xs font-bold text-emerald-600 uppercase italic">Hoạt động</p>
+                            <p className="text-[10px] uppercase font-bold text-gray-400 tracking-wider">
+                              Trạng thái
+                            </p>
+                            <p className="text-xs font-bold text-emerald-600 uppercase italic">
+                              Hoạt động
+                            </p>
                           </div>
                         </div>
                       )}
-                      
-                      <div className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${
-                        isExpanded ? "bg-[#23C4C1] text-white rotate-180" : "bg-gray-50 text-gray-400 group-hover:bg-gray-100"
-                      }`}>
+
+                      <div
+                        className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${
+                          isExpanded
+                            ? "bg-[#23C4C1] text-white rotate-180"
+                            : "bg-gray-50 text-gray-400 group-hover:bg-gray-100"
+                        }`}
+                      >
                         <ChevronDown className="w-5 h-5" />
                       </div>
                     </div>
@@ -1840,22 +1872,26 @@ function BooksTab({ locationId }: { locationId: number }) {
                           bookId={book.bookId}
                         />
                         <div className="mt-6 bg-white rounded-2xl border shadow-sm overflow-hidden">
-                           <div className="p-4 border-b bg-gray-50/50 flex items-center justify-between">
-                              <h4 className="text-sm font-bold text-gray-700 flex items-center gap-2">
-                                <FileText className="w-4 h-4 text-gray-400" />
-                                Nhật ký nghiệp vụ chi tiết
-                              </h4>
-                              <div className="flex items-center gap-2">
-                                 <Button variant="outline" size="sm" className="h-8 text-[10px] uppercase font-bold tracking-wider">
-                                    <Download className="w-3 h-3 mr-1" /> Xuất Excel
-                                 </Button>
-                              </div>
-                           </div>
-                           <BookRowsTable
-                             bookId={book.bookId}
-                             templateCode={book.templateCode}
-                             locationId={locationId}
-                           />
+                          <div className="p-4 border-b bg-gray-50/50 flex items-center justify-between">
+                            <h4 className="text-sm font-bold text-gray-700 flex items-center gap-2">
+                              <FileText className="w-4 h-4 text-gray-400" />
+                              Nhật ký nghiệp vụ chi tiết
+                            </h4>
+                            <div className="flex items-center gap-2">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-8 text-[10px] uppercase font-bold tracking-wider"
+                              >
+                                <Download className="w-3 h-3 mr-1" /> Xuất Excel
+                              </Button>
+                            </div>
+                          </div>
+                          <BookRowsTable
+                            bookId={book.bookId}
+                            templateCode={book.templateCode}
+                            locationId={locationId}
+                          />
                         </div>
                       </div>
                     </div>
@@ -1867,17 +1903,21 @@ function BooksTab({ locationId }: { locationId: number }) {
         ) : (
           <div className="bg-white/50 backdrop-blur-xl rounded-[40px] border border-dashed border-gray-200 p-20 text-center shadow-inner group transition-all hover:bg-white/80">
             <div className="relative w-24 h-24 mx-auto mb-8">
-               <div className="absolute inset-0 bg-gray-100 rounded-[30px] rotate-6 group-hover:rotate-12 transition-transform opacity-50" />
-               <div className="absolute inset-0 bg-white rounded-[30px] border shadow-sm flex items-center justify-center">
-                  <BookOpen className="w-10 h-10 text-gray-300 group-hover:text-[#23C4C1] transition-colors" />
-               </div>
-               <div className="absolute -bottom-2 -right-2 w-8 h-8 bg-[#23C4C1] rounded-full flex items-center justify-center text-white scale-0 group-hover:scale-100 transition-transform">
-                  <Plus className="w-5 h-5 shadow-lg" />
-               </div>
+              <div className="absolute inset-0 bg-gray-100 rounded-[30px] rotate-6 group-hover:rotate-12 transition-transform opacity-50" />
+              <div className="absolute inset-0 bg-white rounded-[30px] border shadow-sm flex items-center justify-center">
+                <BookOpen className="w-10 h-10 text-gray-300 group-hover:text-[#23C4C1] transition-colors" />
+              </div>
+              <div className="absolute -bottom-2 -right-2 w-8 h-8 bg-[#23C4C1] rounded-full flex items-center justify-center text-white scale-0 group-hover:scale-100 transition-transform">
+                <Plus className="w-5 h-5 shadow-lg" />
+              </div>
             </div>
-            <h3 className="text-xl font-black text-gray-900 tracking-tight mb-2">Bắt đầu thiết lập hệ thống sổ</h3>
+            <h3 className="text-xl font-black text-gray-900 tracking-tight mb-2">
+              Bắt đầu thiết lập hệ thống sổ
+            </h3>
             <p className="text-sm text-gray-400 max-w-xs mx-auto leading-relaxed">
-              Hãy chọn kì kế toán và bấm <strong className="text-gray-600 font-bold">Gợi ý tạo sổ</strong> ở phía trên để hệ thống tự động thiết kế sổ sách theo đúng TT152.
+              Hãy chọn kì kế toán và bấm{" "}
+              <strong className="text-gray-600 font-bold">Gợi ý tạo sổ</strong>{" "}
+              ở phía trên để hệ thống tự động thiết kế sổ sách theo đúng TT152.
             </p>
           </div>
         )}
@@ -2423,6 +2463,34 @@ function CostBadge({ type }: { type: string }) {
   );
 }
 
+// ─── Types for BookSummaryPanel ───────────────────────────────────────────────
+interface BookTaxRateItem {
+  taxType: string;
+  taxRate: number;
+  note?: string;
+}
+
+interface BookBtEntry {
+  businessTypeId: string;
+  name: string;
+  taxRates: BookTaxRateItem[];
+}
+
+interface BookFormulaEntry {
+  formulaId: number;
+  formulaCode: string;
+  name?: string;
+  explanation?: string;
+  formulaExpression?: string;
+}
+
+interface BookColumnEntry {
+  fieldCode: string;
+  exportColumn?: string;
+  label: string;
+  fieldType: string;
+}
+
 // BookSummaryPanel: show summary, KPIs, formulas for a book
 function BookSummaryPanel({
   locationId,
@@ -2432,29 +2500,37 @@ function BookSummaryPanel({
   bookId: number;
 }) {
   const { data, isLoading, error } = useBookSummary(locationId, bookId);
-  
+
   if (isLoading)
     return (
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 animate-pulse">
         {[1, 2, 3, 4].map((i) => (
-          <div key={i} className="h-28 bg-gray-100 rounded-3xl border border-gray-200" />
+          <div
+            key={i}
+            className="h-28 bg-gray-100 rounded-3xl border border-gray-200"
+          />
         ))}
       </div>
     );
-    
+
   if (error)
     return (
       <div className="p-10 text-center bg-rose-50 rounded-[40px] border border-rose-100 text-rose-600 flex flex-col items-center gap-3 shadow-sm">
         <AlertCircle className="w-10 h-10" />
-        <p className="font-bold text-lg text-rose-900">Không thể phân xuất dữ liệu</p>
-        <p className="text-sm text-rose-600/80 max-w-md italic">Hệ thống phân tích đang bảo trì hoặc gặp lỗi kết nối. Hãy thử làm mới trang hoặc liên hệ quản trị viên.</p>
+        <p className="font-bold text-lg text-rose-900">
+          Không thể phân xuất dữ liệu
+        </p>
+        <p className="text-sm text-rose-600/80 max-w-md italic">
+          Hệ thống phân tích đang bảo trì hoặc gặp lỗi kết nối. Hãy thử làm mới
+          trang hoặc liên hệ quản trị viên.
+        </p>
       </div>
     );
-    
+
   if (!data?.data) return null;
   const summary = data.data;
 
-  const fmtValue = (val: any) => {
+  const fmtValue = (val: unknown) => {
     if (val === null || val === undefined) return "—";
     return Number(val).toLocaleString("vi-VN");
   };
@@ -2464,15 +2540,42 @@ function BookSummaryPanel({
       {/* KPI Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
         {[
-          { label: "TỔNG DÒNG", value: summary.totalRows, color: "text-blue-600", bg: "bg-blue-50/30" },
-          { label: "TỔNG DOANH THU", value: summary.totalRevenue, color: "text-emerald-600", bg: "bg-emerald-50/30" },
-          { label: "TỔNG CHI PHÍ", value: summary.totalCost, color: "text-rose-600", bg: "bg-rose-50/30" },
-          { label: "TỔNG THUẾ", value: summary.totalTax, color: "text-amber-600", bg: "bg-amber-50/30" },
+          {
+            label: "TỔNG DÒNG",
+            value: summary.totalRows,
+            color: "text-blue-600",
+            bg: "bg-blue-50/30",
+          },
+          {
+            label: "TỔNG DOANH THU",
+            value: summary.totalRevenue,
+            color: "text-emerald-600",
+            bg: "bg-emerald-50/30",
+          },
+          {
+            label: "TỔNG CHI PHÍ",
+            value: summary.totalCost,
+            color: "text-rose-600",
+            bg: "bg-rose-50/30",
+          },
+          {
+            label: "TỔNG THUẾ",
+            value: summary.totalTax,
+            color: "text-amber-600",
+            bg: "bg-amber-50/30",
+          },
         ].map((item) => (
-          <div key={item.label} className={`bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex flex-col items-center justify-center text-center space-y-2 group hover:shadow-md transition-all ${item.bg}`}>
-            <p className="text-[10px] font-black tracking-[0.2em] text-slate-400 uppercase">{item.label}</p>
-            <p className={`text-2xl md:text-3xl font-black ${item.color} tabular-nums tracking-tighter`}>
-               {fmtValue(item.value)}
+          <div
+            key={item.label}
+            className={`bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex flex-col items-center justify-center text-center space-y-2 group hover:shadow-md transition-all ${item.bg}`}
+          >
+            <p className="text-[10px] font-black tracking-[0.2em] text-slate-400 uppercase">
+              {item.label}
+            </p>
+            <p
+              className={`text-2xl md:text-3xl font-black ${item.color} tabular-nums tracking-tighter`}
+            >
+              {fmtValue(item.value)}
             </p>
           </div>
         ))}
@@ -2481,63 +2584,84 @@ function BookSummaryPanel({
       {/* Kết quả công thức */}
       <div className="space-y-4">
         <div className="flex items-center gap-2 text-xs font-bold text-slate-500 uppercase tracking-widest pl-2">
-           <Calculator className="w-4 h-4 text-slate-400" /> Kết quả công thức
+          <Calculator className="w-4 h-4 text-slate-400" /> Kết quả công thức
         </div>
         <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
-           <table className="w-full text-sm">
-             <thead className="bg-slate-50/80 text-slate-500 text-[10px] uppercase font-black border-b">
-               <tr>
-                 <th className="px-6 py-4 text-left tracking-widest">Formula Code</th>
-                 <th className="px-6 py-4 text-right tracking-widest">Giá trị</th>
-               </tr>
-             </thead>
-             <tbody className="divide-y divide-slate-100">
-                {Object.entries(summary.formulaValues || {}).map(([code, val]) => (
-                  <tr key={code} className="hover:bg-slate-50/50 transition-colors">
-                    <td className="px-6 py-4 font-mono text-xs text-slate-500">{code}</td>
+          <table className="w-full text-sm">
+            <thead className="bg-slate-50/80 text-slate-500 text-[10px] uppercase font-black border-b">
+              <tr>
+                <th className="px-6 py-4 text-left tracking-widest">
+                  Formula Code
+                </th>
+                <th className="px-6 py-4 text-right tracking-widest">
+                  Giá trị
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {Object.entries(summary.formulaValues || {}).map(
+                ([code, val]) => (
+                  <tr
+                    key={code}
+                    className="hover:bg-slate-50/50 transition-colors"
+                  >
+                    <td className="px-6 py-4 font-mono text-xs text-slate-500">
+                      {code}
+                    </td>
                     <td className="px-6 py-4 text-right font-black text-slate-900 tabular-nums">
-                       {fmtValue(val)}
+                      {fmtValue(val)}
                     </td>
                   </tr>
-                ))}
-             </tbody>
-           </table>
+                ),
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
 
       {/* Thông tin metadata */}
       <div className="space-y-4">
         <div className="flex items-center gap-2 text-xs font-bold text-slate-500 uppercase tracking-widest pl-2">
-           <FileText className="w-4 h-4 text-slate-400" /> Chú thích cách tính
+          <FileText className="w-4 h-4 text-slate-400" /> Chú thích cách tính
         </div>
         <div className="bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm relative overflow-hidden">
-           <div className="absolute top-0 right-0 p-4 opacity-[0.03] rotate-12">
-              <Zap className="w-24 h-24 text-slate-900" />
-           </div>
-           <ul className="grid grid-cols-1 md:grid-cols-2 gap-y-4 gap-x-12 text-sm relative z-10">
-              <li className="flex items-center gap-3">
-                 <span className="w-1.5 h-1.5 rounded-full bg-slate-300" />
-                 <span className="text-slate-400 font-medium">Kỳ tính:</span>
-                 <span className="font-bold text-slate-800">
-                    {summary.startDate ? `${new Date(summary.startDate).toLocaleDateString("vi-VN")} → ${new Date(summary.endDate).toLocaleDateString("vi-VN")}` : "Toàn thời gian"}
-                 </span>
-              </li>
-              <li className="flex items-center gap-3">
-                 <span className="w-1.5 h-1.5 rounded-full bg-slate-300" />
-                 <span className="text-slate-400 font-medium">Tax method:</span>
-                 <span className="font-bold text-slate-800 uppercase">{summary.taxMethod || "N/A"}</span>
-              </li>
-              <li className="flex items-center gap-3">
-                 <span className="w-1.5 h-1.5 rounded-full bg-slate-300" />
-                 <span className="text-slate-400 font-medium">Ruleset:</span>
-                 <span className="font-bold text-slate-800 tracking-tight">Default Calculation Engine (v1.2)</span>
-              </li>
-              <li className="flex items-center gap-3">
-                 <span className="w-1.5 h-1.5 rounded-full bg-slate-300" />
-                 <span className="text-slate-400 font-medium">Số loại ngành áp dụng:</span>
-                 <span className="font-bold text-slate-800">{summary.businessTypeTaxes?.length || 0}</span>
-              </li>
-           </ul>
+          <div className="absolute top-0 right-0 p-4 opacity-[0.03] rotate-12">
+            <Zap className="w-24 h-24 text-slate-900" />
+          </div>
+          <ul className="grid grid-cols-1 md:grid-cols-2 gap-y-4 gap-x-12 text-sm relative z-10">
+            <li className="flex items-center gap-3">
+              <span className="w-1.5 h-1.5 rounded-full bg-slate-300" />
+              <span className="text-slate-400 font-medium">Kỳ tính:</span>
+              <span className="font-bold text-slate-800">
+                {summary.startDate
+                  ? `${new Date(summary.startDate).toLocaleDateString("vi-VN")} → ${new Date(summary.endDate).toLocaleDateString("vi-VN")}`
+                  : "Toàn thời gian"}
+              </span>
+            </li>
+            <li className="flex items-center gap-3">
+              <span className="w-1.5 h-1.5 rounded-full bg-slate-300" />
+              <span className="text-slate-400 font-medium">Tax method:</span>
+              <span className="font-bold text-slate-800 uppercase">
+                {summary.taxMethod || "N/A"}
+              </span>
+            </li>
+            <li className="flex items-center gap-3">
+              <span className="w-1.5 h-1.5 rounded-full bg-slate-300" />
+              <span className="text-slate-400 font-medium">Ruleset:</span>
+              <span className="font-bold text-slate-800 tracking-tight">
+                Default Calculation Engine (v1.2)
+              </span>
+            </li>
+            <li className="flex items-center gap-3">
+              <span className="w-1.5 h-1.5 rounded-full bg-slate-300" />
+              <span className="text-slate-400 font-medium">
+                Số loại ngành áp dụng:
+              </span>
+              <span className="font-bold text-slate-800">
+                {summary.businessTypeTaxes?.length || 0}
+              </span>
+            </li>
+          </ul>
         </div>
       </div>
 
@@ -2545,41 +2669,56 @@ function BookSummaryPanel({
       {summary.businessTypeTaxes?.length > 0 && (
         <div className="space-y-4">
           <div className="flex items-center gap-2 text-xs font-bold text-slate-500 uppercase tracking-widest pl-2">
-             <Zap className="w-4 h-4 text-amber-500" /> Ngành nghề và thuế suất áp dụng
+            <Zap className="w-4 h-4 text-amber-500" /> Ngành nghề và thuế suất
+            áp dụng
           </div>
           <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
-             <table className="w-full text-sm">
-               <thead className="bg-slate-50/80 text-slate-500 text-[10px] uppercase font-black border-b">
-                 <tr>
-                   <th className="px-6 py-4 text-left tracking-widest">Business Type</th>
-                   <th className="px-6 py-4 text-left tracking-widest">Type</th>
-                   <th className="px-6 py-4 text-right tracking-widest">Rate (%)</th>
-                   <th className="px-6 py-4 text-left tracking-widest">Sync Source</th>
-                 </tr>
-               </thead>
-               <tbody className="divide-y divide-slate-100">
-                  {summary.businessTypeTaxes.map((bt: any) => (
-                    <React.Fragment key={bt.businessTypeId}>
-                      {bt.taxRates?.map((r: any, idx: number) => (
-                        <tr key={idx} className="hover:bg-slate-50/50 transition-colors">
-                          {idx === 0 && (
-                            <td className="px-6 py-4 font-bold text-slate-800 leading-tight" rowSpan={bt.taxRates.length}>
-                               {bt.name}
-                            </td>
-                          )}
-                          <td className="px-6 py-4 text-slate-500 font-mono text-xs italic">{r.taxType}</td>
-                          <td className="px-6 py-4 text-right font-black text-blue-600 tabular-nums">
-                             {(Number(r.taxRate) * 100).toLocaleString("vi-VN")}%
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50/80 text-slate-500 text-[10px] uppercase font-black border-b">
+                <tr>
+                  <th className="px-6 py-4 text-left tracking-widest">
+                    Business Type
+                  </th>
+                  <th className="px-6 py-4 text-left tracking-widest">Type</th>
+                  <th className="px-6 py-4 text-right tracking-widest">
+                    Rate (%)
+                  </th>
+                  <th className="px-6 py-4 text-left tracking-widest">
+                    Sync Source
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {summary.businessTypeTaxes.map((bt: BookBtEntry) => (
+                  <React.Fragment key={bt.businessTypeId}>
+                    {bt.taxRates?.map((r: BookTaxRateItem, idx: number) => (
+                      <tr
+                        key={idx}
+                        className="hover:bg-slate-50/50 transition-colors"
+                      >
+                        {idx === 0 && (
+                          <td
+                            className="px-6 py-4 font-bold text-slate-800 leading-tight"
+                            rowSpan={bt.taxRates.length}
+                          >
+                            {bt.name}
                           </td>
-                          <td className="px-6 py-4 text-slate-400 text-xs italic">
-                             {r.note || "Hệ thống tự động đồng bộ TT152"}
-                          </td>
-                        </tr>
-                      ))}
-                    </React.Fragment>
-                  ))}
-               </tbody>
-             </table>
+                        )}
+                        <td className="px-6 py-4 text-slate-500 font-mono text-xs italic">
+                          {r.taxType}
+                        </td>
+                        <td className="px-6 py-4 text-right font-black text-blue-600 tabular-nums">
+                          {(Number(r.taxRate) * 100).toLocaleString("vi-VN")}%
+                        </td>
+                        <td className="px-6 py-4 text-slate-400 text-xs italic">
+                          {r.note || "Hệ thống tự động đồng bộ TT152"}
+                        </td>
+                      </tr>
+                    ))}
+                  </React.Fragment>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
       )}
@@ -2588,33 +2727,45 @@ function BookSummaryPanel({
       {summary.formulaDetails?.length > 0 && (
         <div className="space-y-4">
           <div className="flex items-center gap-2 text-xs font-bold text-slate-500 uppercase tracking-widest pl-2">
-             <Terminal className="w-4 h-4 text-slate-400" /> Chi tiết công thức (engine)
+            <Terminal className="w-4 h-4 text-slate-400" /> Chi tiết công thức
+            (engine)
           </div>
           <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
-             <table className="w-full text-sm">
-               <thead className="bg-slate-50/80 text-slate-500 text-[10px] uppercase font-black border-b">
-                 <tr>
-                   <th className="px-6 py-4 text-left tracking-widest">Code</th>
-                   <th className="px-6 py-4 text-left tracking-widest">Name</th>
-                   <th className="px-6 py-4 text-left tracking-widest">Expression JSON</th>
-                   <th className="px-6 py-4 text-right tracking-widest">Output</th>
-                 </tr>
-               </thead>
-               <tbody className="divide-y divide-slate-100">
-                  {summary.formulaDetails.map((f: any) => (
-                    <tr key={f.formulaId} className="hover:bg-slate-50/30 transition-colors">
-                      <td className="px-6 py-4 font-mono text-xs text-slate-500">{f.formulaCode}</td>
-                      <td className="px-6 py-4 font-medium text-slate-700">{f.name || f.explanation}</td>
-                      <td className="px-6 py-4 text-slate-400 text-[10px] max-w-xs truncate font-mono italic">
-                         {f.formulaExpression}
-                      </td>
-                      <td className="px-6 py-4 text-right font-black text-slate-900 tabular-nums">
-                         {fmtValue(summary.formulaValues?.[f.formulaCode])}
-                      </td>
-                    </tr>
-                  ))}
-               </tbody>
-             </table>
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50/80 text-slate-500 text-[10px] uppercase font-black border-b">
+                <tr>
+                  <th className="px-6 py-4 text-left tracking-widest">Code</th>
+                  <th className="px-6 py-4 text-left tracking-widest">Name</th>
+                  <th className="px-6 py-4 text-left tracking-widest">
+                    Expression JSON
+                  </th>
+                  <th className="px-6 py-4 text-right tracking-widest">
+                    Output
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {summary.formulaDetails.map((f: BookFormulaEntry) => (
+                  <tr
+                    key={f.formulaId}
+                    className="hover:bg-slate-50/30 transition-colors"
+                  >
+                    <td className="px-6 py-4 font-mono text-xs text-slate-500">
+                      {f.formulaCode}
+                    </td>
+                    <td className="px-6 py-4 font-medium text-slate-700">
+                      {f.name || f.explanation}
+                    </td>
+                    <td className="px-6 py-4 text-slate-400 text-[10px] max-w-xs truncate font-mono italic">
+                      {f.formulaExpression}
+                    </td>
+                    <td className="px-6 py-4 text-right font-black text-slate-900 tabular-nums">
+                      {fmtValue(summary.formulaValues?.[f.formulaCode])}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
       )}
@@ -2623,29 +2774,49 @@ function BookSummaryPanel({
       {summary.columns?.length > 0 && (
         <div className="space-y-4">
           <div className="flex items-center gap-2 text-xs font-bold text-slate-500 uppercase tracking-widest pl-2">
-             <Layers className="w-4 h-4 text-slate-400" /> Bản đồ dữ liệu & Cấu trúc cột
+            <Layers className="w-4 h-4 text-slate-400" /> Bản đồ dữ liệu & Cấu
+            trúc cột
           </div>
           <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
-             <table className="w-full text-sm">
-               <thead className="bg-slate-50/80 text-slate-500 text-[10px] uppercase font-black border-b">
-                 <tr>
-                   <th className="px-6 py-4 text-left tracking-widest">SheetCol</th>
-                   <th className="px-6 py-4 text-left tracking-widest">DB Field</th>
-                   <th className="px-6 py-4 text-left tracking-widest">Table Label</th>
-                   <th className="px-6 py-4 text-left tracking-widest">Data Type</th>
-                 </tr>
-               </thead>
-               <tbody className="divide-y divide-slate-100">
-                  {summary.columns.map((col: any) => (
-                    <tr key={col.fieldCode} className="hover:bg-slate-50/30 transition-colors">
-                      <td className="px-6 py-4 font-black text-slate-700">{col.exportColumn}</td>
-                      <td className="px-6 py-4 font-mono text-xs text-slate-400">{col.fieldCode}</td>
-                      <td className="px-6 py-4 font-medium text-slate-800">{col.label}</td>
-                      <td className="px-6 py-4 text-slate-500 text-xs italic">{col.fieldType}</td>
-                    </tr>
-                  ))}
-               </tbody>
-             </table>
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50/80 text-slate-500 text-[10px] uppercase font-black border-b">
+                <tr>
+                  <th className="px-6 py-4 text-left tracking-widest">
+                    SheetCol
+                  </th>
+                  <th className="px-6 py-4 text-left tracking-widest">
+                    DB Field
+                  </th>
+                  <th className="px-6 py-4 text-left tracking-widest">
+                    Table Label
+                  </th>
+                  <th className="px-6 py-4 text-left tracking-widest">
+                    Data Type
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {summary.columns.map((col: BookColumnEntry) => (
+                  <tr
+                    key={col.fieldCode}
+                    className="hover:bg-slate-50/30 transition-colors"
+                  >
+                    <td className="px-6 py-4 font-black text-slate-700">
+                      {col.exportColumn}
+                    </td>
+                    <td className="px-6 py-4 font-mono text-xs text-slate-400">
+                      {col.fieldCode}
+                    </td>
+                    <td className="px-6 py-4 font-medium text-slate-800">
+                      {col.label}
+                    </td>
+                    <td className="px-6 py-4 text-slate-500 text-xs italic">
+                      {col.fieldType}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
       )}

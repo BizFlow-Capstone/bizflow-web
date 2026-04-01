@@ -41,6 +41,8 @@ import {
   useRejectInvitation,
   useRemoveEmployee,
 } from "@/hooks/useEmployees";
+import OwnerOnlyScreen from "@/components/OwnerOnlyScreen";
+import { useLocationRole } from "@/hooks/useLocationRole";
 
 type EmployeeTab = "employees" | "invitations";
 
@@ -126,6 +128,20 @@ export default function EmployeesClient() {
     () => `${employees?.length ?? 0} nhân viên`,
     [employees?.length],
   );
+
+  const { isOwner, isLoading: isRoleLoading } = useLocationRole();
+
+  if (isRoleLoading) {
+    return (
+      <div className="flex-1 flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-[#23C4C1]" />
+      </div>
+    );
+  }
+
+  if (!isOwner) {
+    return <OwnerOnlyScreen featureName="Quản Lý Nhân Viên" />;
+  }
 
   return (
     <div className="flex-1 flex flex-col">

@@ -68,6 +68,8 @@ import {
 import { useLocations } from "@/hooks/useLocations";
 import { useDashboardLocation } from "@/lib/providers/DashboardLocationProvider";
 import NoLocationScreenSkeleton from "@/components/NoLocationScreenSkeleton";
+import OwnerOnlyScreen from "@/components/OwnerOnlyScreen";
+import { useLocationRole } from "@/hooks/useLocationRole";
 import type {
   ImportFilters,
   ImportStatus,
@@ -191,6 +193,7 @@ export default function ImportsClient() {
     useLocations();
   const { selectedLocationId } = useDashboardLocation();
   const hasLocations = locations.length > 0;
+  const { isOwner, isLoading: isRoleLoading } = useLocationRole();
 
   // Filter state
   const [statusFilter, setStatusFilter] = useState<ImportStatus | "ALL">("ALL");
@@ -282,7 +285,7 @@ export default function ImportsClient() {
     }
   };
 
-  if (isLoadingLocations) {
+  if (isLoadingLocations || isRoleLoading) {
     return (
       <div className="flex-1 flex items-center justify-center">
         <Loader2 className="w-8 h-8 animate-spin text-[#23C4C1]" />
@@ -297,6 +300,10 @@ export default function ImportsClient() {
         description="Đang chờ bạn tạo địa điểm hoặc nhận lời mời trước khi tải dữ liệu."
       />
     );
+  }
+
+  if (!isOwner) {
+    return <OwnerOnlyScreen featureName="Nhập Kho" />;
   }
 
   return (

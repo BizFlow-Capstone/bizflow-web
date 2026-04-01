@@ -34,6 +34,7 @@ import SaleItemPricePanel from "@/components/products/SaleItemPricePanel";
 type ProductManagementTableProps = {
   products: Product[];
   locationId: string | number;
+  isOwner?: boolean;
   onToggleStatus: (product: Product) => void;
   onDelete: (product: Product) => void;
   onAdjustStock?: (product: Product) => void;
@@ -46,6 +47,7 @@ type ProductManagementTableProps = {
 export default function ProductManagementTable({
   products,
   locationId,
+  isOwner = true,
   onToggleStatus,
   onDelete,
   onAdjustStock,
@@ -178,53 +180,58 @@ export default function ProductManagementTable({
                           <Info className="w-4 h-4 mr-2" />
                           <span>Xem chi tiết</span>
                         </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem
-                          onClick={() => {
-                            router.push(
-                              `/dashboard/locations/${locationId}/products/new?productId=${product.productId}`,
-                            );
-                          }}
-                          className="cursor-pointer"
-                        >
-                          <Pencil className="w-4 h-4 mr-2" />
-                          <span>Sửa sản phẩm</span>
-                        </DropdownMenuItem>
-                        {onAdjustStock && product.trackInventory === true && (
-                          <DropdownMenuItem
-                            onClick={() => onAdjustStock(product)}
-                            className="cursor-pointer"
-                          >
-                            <Warehouse className="w-4 h-4 mr-2" />
-                            <span>Điều chỉnh số lượng</span>
-                          </DropdownMenuItem>
-                        )}
-                        <DropdownMenuItem
-                          disabled={statusUpdating}
-                          onClick={() => onToggleStatus(product)}
-                          className="cursor-pointer"
-                        >
-                          {product.status === "active" ? (
-                            <>
+                        {isOwner && (
+                          <>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              onClick={() => {
+                                router.push(
+                                  `/dashboard/locations/${locationId}/products/new?productId=${product.productId}`,
+                                );
+                              }}
+                              className="cursor-pointer"
+                            >
+                              <Pencil className="w-4 h-4 mr-2" />
+                              <span>Sửa sản phẩm</span>
+                            </DropdownMenuItem>
+                            {onAdjustStock &&
+                              product.trackInventory === true && (
+                                <DropdownMenuItem
+                                  onClick={() => onAdjustStock(product)}
+                                  className="cursor-pointer"
+                                >
+                                  <Warehouse className="w-4 h-4 mr-2" />
+                                  <span>Điều chỉnh số lượng</span>
+                                </DropdownMenuItem>
+                              )}
+                            <DropdownMenuItem
+                              disabled={statusUpdating}
+                              onClick={() => onToggleStatus(product)}
+                              className="cursor-pointer"
+                            >
+                              {product.status === "active" ? (
+                                <>
+                                  <AlertTriangle className="w-4 h-4 mr-2" />
+                                  <span>Ngừng bán</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Package className="w-4 h-4 mr-2" />
+                                  <span>Kích hoạt lại</span>
+                                </>
+                              )}
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              disabled={deleteUpdating}
+                              onClick={() => onDelete(product)}
+                              className="cursor-pointer text-red-600 focus:text-red-600"
+                            >
                               <AlertTriangle className="w-4 h-4 mr-2" />
-                              <span>Ngừng bán</span>
-                            </>
-                          ) : (
-                            <>
-                              <Package className="w-4 h-4 mr-2" />
-                              <span>Kích hoạt lại</span>
-                            </>
-                          )}
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem
-                          disabled={deleteUpdating}
-                          onClick={() => onDelete(product)}
-                          className="cursor-pointer text-red-600 focus:text-red-600"
-                        >
-                          <AlertTriangle className="w-4 h-4 mr-2" />
-                          <span>Xóa sản phẩm</span>
-                        </DropdownMenuItem>
+                              <span>Xóa sản phẩm</span>
+                            </DropdownMenuItem>
+                          </>
+                        )}
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </TableCell>

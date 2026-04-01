@@ -14,6 +14,7 @@ type LocationDto = {
   isActive: boolean;
   ownerName: string | null;
   isOwner?: boolean;
+  accessType?: "owned" | "work-at";
 };
 
 type ApiResult<T> = {
@@ -70,11 +71,19 @@ export async function GET(request: NextRequest) {
     const mergedMap = new Map<number, LocationDto>();
 
     for (const location of workData?.data ?? []) {
-      mergedMap.set(location.id, { ...location, isOwner: false });
+      mergedMap.set(location.id, {
+        ...location,
+        isOwner: false,
+        accessType: "work-at",
+      });
     }
 
     for (const location of ownedData?.data ?? []) {
-      mergedMap.set(location.id, { ...location, isOwner: true });
+      mergedMap.set(location.id, {
+        ...location,
+        isOwner: true,
+        accessType: "owned",
+      });
     }
 
     const mergedData = Array.from(mergedMap.values());
