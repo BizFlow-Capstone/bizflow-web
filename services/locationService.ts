@@ -15,7 +15,8 @@ import type {
 import { authFetch } from "@/lib/auth/tokenManager";
 
 /**
- * Get all owned locations
+ * Get all accessible locations for the current user
+ * Includes both owned locations and locations assigned via work-at access
  * Uses cache: 'no-store' to ensure fresh data for CRUD operations
  */
 export async function getLocations(): Promise<ApiResponse<Location[]>> {

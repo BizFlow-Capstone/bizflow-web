@@ -88,6 +88,7 @@ import {
   deleteDraftOrder,
   getDraftOrderCount,
 } from "@/lib/draftOrderStorage";
+import { useLocationRole } from "@/hooks/useLocationRole";
 
 // --- Helpers ---
 
@@ -229,6 +230,22 @@ export default function OrdersClient() {
     useLocations();
   const hasLocations = locations.length > 0;
   const { selectedLocationId } = useDashboardLocation();
+  const { isOwner } = useLocationRole();
+
+  // Current user's profileId — used to gate per-order employee actions
+  const currentProfileId =
+    typeof window !== "undefined"
+      ? (() => {
+          try {
+            const raw = window.localStorage.getItem("bizflow_auth_account");
+            return raw
+              ? ((JSON.parse(raw) as { profileId?: string }).profileId ?? null)
+              : null;
+          } catch {
+            return null;
+          }
+        })()
+      : null;
 
   // Filter state
   const [statusFilter, setStatusFilter] = useState<OrderStatus | "ALL">("ALL");
@@ -277,7 +294,14 @@ export default function OrdersClient() {
       PageNumber: pageNumber,
       PageSize: pageSize,
     }),
-    [statusFilter, paymentTypeFilter, fromDate, toDate, pageNumber, selectedLocationId],
+    [
+      statusFilter,
+      paymentTypeFilter,
+      fromDate,
+      toDate,
+      pageNumber,
+      selectedLocationId,
+    ],
   );
 
   const hasActiveFilters = paymentTypeFilter !== "ALL" || fromDate || toDate;
@@ -996,8 +1020,10 @@ export default function OrdersClient() {
                             </Button>
                           )}
 
-                          {/* Cancel */}
-                          {order.status === "pending" ? (
+                          {/* Cancel — owner can cancel any order; employee only their own */}
+                          {order.status === "pending" &&
+                          (isOwner ||
+                            order.createdByUserId === currentProfileId) ? (
                             <Button
                               variant="outline"
                               className="gap-1.5 h-10 text-red-500 border-red-200 hover:bg-red-50 hover:text-red-700"

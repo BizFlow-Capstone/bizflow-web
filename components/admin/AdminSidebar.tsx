@@ -53,17 +53,17 @@ export default function AdminSidebar() {
   return (
     <aside className="w-60 border-r border-gray-200 bg-white min-h-full flex flex-col shrink-0">
       {/* Back to dashboard */}
-      <div className="p-4">
+      {/* <div className="p-4">
         <Link
           href="/dashboard"
           className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-900 transition-colors"
         >
           <ArrowLeft className="w-4 h-4" />
-          <span>Quay về Dashboard</span>
+          <span>board</span>
         </Link>
-      </div>
+      </div> */}
 
-      <Separator />
+      {/* <Separator /> */}
 
       {/* Brand */}
       <div className="px-4 pt-4 pb-2">

@@ -64,7 +64,7 @@ import {
 import ProductManagementTable from "@/components/products/ProductManagementTable";
 import { useBusinessTypes } from "@/hooks/useBusinessTypes";
 import type { ProductFilters } from "@/lib/types/product";
-import { useLocationDetail } from "@/hooks/useLocations";
+import { useLocationDetail, useLocations } from "@/hooks/useLocations";
 
 /**
  * LocationDetailClient - Client Component for Location Detail
@@ -99,9 +99,18 @@ export default function LocationDetailClient({
     status?: string;
   }>({});
 
+  const locationIdNumber = Number(locationId);
+
   // Fetch location detail
-  const { data: location, isLoading: isLocationLoading } = useLocationDetail(
-    Number(locationId),
+  const { data: location, isLoading: isLocationLoading } =
+    useLocationDetail(locationIdNumber);
+  const { data: accessibleLocations = [] } = useLocations();
+  const canManageLocation = useMemo(
+    () =>
+      accessibleLocations.some(
+        (item) => item.id === locationIdNumber && item.isOwner === true,
+      ),
+    [accessibleLocations, locationIdNumber],
   );
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [scanOpen, setScanOpen] = useState(false);
@@ -287,6 +296,12 @@ export default function LocationDetailClient({
 
         {/* Search and Actions Bar */}
         <div className="bg-white rounded-lg border border-gray-200 p-4 mb-6">
+          {!canManageLocation && (
+            <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+              Bạn đang xem địa điểm được người khác giao quản lý. Ở màn hình này
+              bạn chỉ có quyền xem sản phẩm.
+            </div>
+          )}
           <div className="flex items-center gap-4">
             {/* Search */}
             <div className="flex-1 relative">
@@ -330,27 +345,33 @@ export default function LocationDetailClient({
                 </span>
               )}
             </Button>
-            <Button
-              variant="outline"
-              className="border-blue-500 text-blue-600 hover:bg-blue-50"
-              onClick={() =>
-                router.push(
-                  `/dashboard/imports/create?locationId=${locationId}`,
-                )
-              }
-            >
-              <Upload className="w-4 h-4 mr-2" />
-              Nhập Kho
-            </Button>
-            <Button
-              onClick={() =>
-                router.push(`/dashboard/locations/${locationId}/products/new`)
-              }
-              className="bg-[#23C4C1] hover:bg-[#1da8a5] text-white"
-            >
-              <Plus className="w-4 h-4 mr-2" />
-              Thêm sản phẩm
-            </Button>
+            {canManageLocation ? (
+              <>
+                <Button
+                  variant="outline"
+                  className="border-blue-500 text-blue-600 hover:bg-blue-50"
+                  onClick={() =>
+                    router.push(
+                      `/dashboard/imports/create?locationId=${locationId}`,
+                    )
+                  }
+                >
+                  <Upload className="w-4 h-4 mr-2" />
+                  Nhập Kho
+                </Button>
+                <Button
+                  onClick={() =>
+                    router.push(
+                      `/dashboard/locations/${locationId}/products/new`,
+                    )
+                  }
+                  className="bg-[#23C4C1] hover:bg-[#1da8a5] text-white"
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  Thêm sản phẩm
+                </Button>
+              </>
+            ) : null}
           </div>
         </div>
 
@@ -469,7 +490,7 @@ export default function LocationDetailClient({
                     </button>
                   )}
                 </div>
-                <div className="flex flex-wrap gap-2 p-3 bg-gray-50/50 rounded-lg border border-gray-100 min-h-[82px] content-start">
+                <div className="flex min-h-20.5 flex-wrap content-start gap-2 rounded-lg border border-gray-100 bg-gray-50/50 p-3">
                   {businessTypes.map((bt) => {
                     const isSelected = filterBusinessTypeIds.includes(
                       bt.businessTypeId,
@@ -486,7 +507,7 @@ export default function LocationDetailClient({
                         }`}
                       >
                         {isSelected && (
-                          <span className="inline-block w-3.5 h-3.5 rounded-full bg-white/30 flex items-center justify-center">
+                          <span className="flex h-3.5 w-3.5 items-center justify-center rounded-full bg-white/30">
                             ✓
                           </span>
                         )}
@@ -701,7 +722,7 @@ export default function LocationDetailClient({
         )}
 
         {/* Draft Import Note Alert */}
-        {draftCount > 0 && (
+        {canManageLocation && draftCount > 0 && (
           <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 p-4">
             <div className="flex items-center gap-3">
               <FileText className="h-5 w-5 text-blue-600 shrink-0" />
@@ -749,9 +770,11 @@ export default function LocationDetailClient({
           <ProductManagementTable
             products={filteredProducts}
             locationId={locationId}
+            isOwner={canManageLocation}
             statusUpdating={updateStatusMutation.isPending}
             deleteUpdating={deleteProductMutation.isPending}
             onToggleStatus={(product) => {
+              if (!canManageLocation) return;
               updateStatusMutation.mutate({
                 productId: product.productId,
                 data: {
@@ -759,12 +782,13 @@ export default function LocationDetailClient({
                 },
               });
             }}
-            onDelete={(product) =>
+            onDelete={(product) => {
+              if (!canManageLocation) return;
               setDeleteTarget({
                 productId: product.productId,
                 name: product.productName || product.name,
-              })
-            }
+              });
+            }}
           />
         )}
       </main>

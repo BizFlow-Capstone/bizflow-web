@@ -55,6 +55,7 @@ import {
   useDeleteProduct,
   useAdjustProductStock,
 } from "@/hooks/useProducts";
+import { useLocations } from "@/hooks/useLocations";
 import type { ProductCostPriceHistoryItem } from "@/lib/types/product";
 import StockAdjustmentDialog from "@/components/products/StockAdjustmentDialog";
 
@@ -267,6 +268,7 @@ export default function ProductDetailClient({
   const [activeTab, setActiveTab] = useState<"overview" | "price">("overview");
   const [selectedRange, setSelectedRange] = useState<TimeRange>("ALL");
   const [useMockData, setUseMockData] = useState(false);
+  const locationIdNum = Number(locationId);
 
   // Mutations
   const updateStatusMutation = useUpdateProductStatus();
@@ -284,6 +286,17 @@ export default function ProductDetailClient({
     isLoading: isLoadingCostPriceHistory,
     error: costPriceHistoryError,
   } = useProductCostPriceHistory(productIdNum);
+  const { data: locations = [] } = useLocations();
+
+  const canManageProduct = useMemo(() => {
+    if (!Number.isFinite(locationIdNum)) {
+      return false;
+    }
+
+    return locations.some(
+      (location) => location.id === locationIdNum && location.isOwner === true,
+    );
+  }, [locationIdNum, locations]);
 
   const saleItems = product?.saleItems ?? [];
 
@@ -508,49 +521,54 @@ export default function ProductDetailClient({
               {product.status === "active" ? "Đang bán" : "Ngừng bán"}
             </Badge>
 
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={updateStatusMutation.isPending}
-              onClick={() =>
-                updateStatusMutation.mutate({
-                  productId: productIdNum,
-                  data: {
-                    status: product.status === "active" ? "inactive" : "active",
-                  },
-                })
-              }
-            >
-              {updateStatusMutation.isPending ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <>
-                  <ToggleRight className="h-4 w-4 mr-1" />
-                  {product.status === "active" ? "Ngừng bán" : "Kích hoạt"}
-                </>
-              )}
-            </Button>
+            {canManageProduct ? (
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={updateStatusMutation.isPending}
+                  onClick={() =>
+                    updateStatusMutation.mutate({
+                      productId: productIdNum,
+                      data: {
+                        status:
+                          product.status === "active" ? "inactive" : "active",
+                      },
+                    })
+                  }
+                >
+                  {updateStatusMutation.isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <>
+                      <ToggleRight className="h-4 w-4 mr-1" />
+                      {product.status === "active" ? "Ngừng bán" : "Kích hoạt"}
+                    </>
+                  )}
+                </Button>
 
-            <Button variant="outline" className="gap-2" asChild>
-              <Link
-                href={`/dashboard/locations/${locationId}/products/new?productId=${encodeURIComponent(
-                  product.productId,
-                )}`}
-              >
-                <Pencil className="h-4 w-4" />
-                Chỉnh sửa
-              </Link>
-            </Button>
+                <Button variant="outline" className="gap-2" asChild>
+                  <Link
+                    href={`/dashboard/locations/${locationId}/products/new?productId=${encodeURIComponent(
+                      product.productId,
+                    )}`}
+                  >
+                    <Pencil className="h-4 w-4" />
+                    Chỉnh sửa
+                  </Link>
+                </Button>
 
-            <Button
-              variant="outline"
-              size="sm"
-              className="text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700"
-              onClick={() => setShowDeleteDialog(true)}
-            >
-              <Trash2 className="h-4 w-4 mr-1" />
-              Xóa
-            </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700"
+                  onClick={() => setShowDeleteDialog(true)}
+                >
+                  <Trash2 className="h-4 w-4 mr-1" />
+                  Xóa
+                </Button>
+              </>
+            ) : null}
           </div>
         </div>
       </header>

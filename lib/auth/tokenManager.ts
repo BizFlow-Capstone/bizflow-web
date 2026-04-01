@@ -29,7 +29,9 @@ function isBrowser(): boolean {
   return typeof window !== "undefined";
 }
 
-function decodeJwtPayload(token: string): Record<string, unknown> | null {
+export function decodeJwtPayload(
+  token: string,
+): Record<string, unknown> | null {
   try {
     const parts = token.split(".");
     if (parts.length < 2) return null;
@@ -44,6 +46,16 @@ function decodeJwtPayload(token: string): Record<string, unknown> | null {
   } catch {
     return null;
   }
+}
+
+const ROLE_CLAIM =
+  "http://schemas.microsoft.com/ws/2008/06/identity/claims/role";
+
+export function getRoleFromToken(token: string): string | null {
+  const payload = decodeJwtPayload(token);
+  if (!payload) return null;
+  const role = payload[ROLE_CLAIM];
+  return typeof role === "string" ? role : null;
 }
 
 function isExpired(token: string, clockSkewSeconds = 30): boolean {

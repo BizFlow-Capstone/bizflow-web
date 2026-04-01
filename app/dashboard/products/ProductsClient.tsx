@@ -39,6 +39,7 @@ import ProductManagementTable from "@/components/products/ProductManagementTable
 import { BarcodeScanModal } from "@/components/BarcodeScanModal";
 import StockAdjustmentDialog from "@/components/products/StockAdjustmentDialog";
 import NoLocationScreenSkeleton from "@/components/NoLocationScreenSkeleton";
+import { useLocationRole } from "@/hooks/useLocationRole";
 
 // --- Main Component ---
 
@@ -50,6 +51,7 @@ export default function ProductsClient() {
     useLocations();
   const { selectedLocationId } = useDashboardLocation();
   const hasLocations = locations.length > 0;
+  const { isOwner } = useLocationRole();
 
   // Mutations
   const updateStatusMutation = useUpdateProductStatus();
@@ -158,7 +160,7 @@ export default function ProductsClient() {
             Làm mới
           </Button>
 
-          {locationId ? (
+          {isOwner && locationId ? (
             <Button
               onClick={() =>
                 router.push(`/dashboard/locations/${locationId}/products/new`)
@@ -254,6 +256,7 @@ export default function ProductsClient() {
             <ProductManagementTable
               products={products}
               locationId={locationId ?? 0}
+              isOwner={isOwner}
               statusUpdating={updateStatusMutation.isPending}
               deleteUpdating={deleteProductMutation.isPending}
               emptyTitle={

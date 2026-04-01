@@ -24,6 +24,7 @@ import {
 } from "@/services/authService";
 import type { AuthAccount } from "@/lib/types/auth";
 import { persistAccountWithLocalAvatar } from "@/lib/auth/avatarLocalCache";
+import { getRoleFromToken } from "@/lib/auth/tokenManager";
 
 const ACCESS_TOKEN_KEY = "bizflow_access_token";
 const REFRESH_TOKEN_KEY = "bizflow_refresh_token";
@@ -118,7 +119,13 @@ export default function LoginPage() {
         );
         window.dispatchEvent(new Event(AUTH_UPDATED_EVENT));
       }
-      router.push("/dashboard");
+
+      const role = getRoleFromToken(token);
+      if (role === "admin") {
+        router.push("/admin");
+      } else {
+        router.push("/dashboard");
+      }
     },
     [router],
   );

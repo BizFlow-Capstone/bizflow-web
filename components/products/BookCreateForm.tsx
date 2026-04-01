@@ -29,6 +29,8 @@ interface BookCreateFormProps {
   onClose: () => void;
   onCreated?: () => void;
   locationId: number;
+  periodId: number;
+  groupNumber?: number;
 }
 
 export default function BookCreateForm({
@@ -36,6 +38,8 @@ export default function BookCreateForm({
   onClose,
   onCreated,
   locationId,
+  periodId,
+  groupNumber = 2,
 }: BookCreateFormProps) {
   const { data: businessTypes } = useBusinessTypes();
   const { data: templates } = useAccountingTemplates();
@@ -91,7 +95,8 @@ export default function BookCreateForm({
     }
     try {
       await createBookMutation.mutateAsync({
-        businessTypeId: selectedBusinessType,
+        periodId,
+        groupNumber,
         taxMethod: selectedTaxMethod,
         templateCodes: selectedTemplates,
       });

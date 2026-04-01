@@ -60,6 +60,17 @@ import {
 } from "@/hooks/useLocations";
 import { toast } from "sonner";
 
+const roleBadgeClassNames = {
+  owned: "bg-[#23C4C1]/10 text-[#0c7f7d] border-[#23C4C1]/20",
+  managed: "bg-amber-50 text-amber-700 border-amber-200",
+} as const;
+
+function getLocationAccessType(location: Location): "owned" | "managed" {
+  return location.isOwner === true || location.accessType === "owned"
+    ? "owned"
+    : "managed";
+}
+
 // Status Badge Component
 const StatusBadge = ({ isActive }: { isActive: boolean }) => (
   <span
@@ -204,11 +215,24 @@ export default function LocationsClient() {
     });
   }, [locations, activeTab, searchQuery]);
 
-  const hasOwnerPermission = useMemo(() => {
-    // Allow creating the very first location when account has no assigned locations yet.
-    if (locations.length === 0) return true;
-    return locations.some((loc) => loc.isOwner === true);
-  }, [locations]);
+  const ownedLocations = useMemo(
+    () =>
+      filteredLocations.filter((loc) => getLocationAccessType(loc) === "owned"),
+    [filteredLocations],
+  );
+
+  const managedLocations = useMemo(
+    () =>
+      filteredLocations.filter(
+        (loc) => getLocationAccessType(loc) === "managed",
+      ),
+    [filteredLocations],
+  );
+
+  // Any authenticated user can create their own location.
+  // The new location is always associated with the logged-in user via Bearer token —
+  // it has nothing to do with which existing locations the user manages.
+  const hasOwnerPermission = true;
 
   // Stats calculation
   const stats = useMemo(
@@ -216,8 +240,188 @@ export default function LocationsClient() {
       total: locations.length,
       active: locations.filter((l) => l.isActive).length,
       inactive: locations.filter((l) => !l.isActive).length,
+      owned: locations.filter((l) => getLocationAccessType(l) === "owned")
+        .length,
+      managed: locations.filter((l) => getLocationAccessType(l) === "managed")
+        .length,
     }),
     [locations],
+  );
+
+  const renderLocationCard = (location: Location) => {
+    const accessType = getLocationAccessType(location);
+    const isOwnedLocation = accessType === "owned";
+
+    return (
+      <Card
+        key={location.id}
+        className={`group relative overflow-hidden transition-all duration-300 border-gray-200 hover:border-[#23C4C1] hover:shadow-lg hover:shadow-[#23C4C1]/10 ${
+          !location.isActive ? "bg-gray-50/50" : "bg-white"
+        }`}
+      >
+        <div
+          className={`h-1 w-full absolute top-0 left-0 ${location.isActive ? "bg-[#23C4C1]" : "bg-gray-300"}`}
+        ></div>
+
+        <CardContent className="p-6">
+          <div className="flex items-center justify-between mb-4 gap-3">
+            <div className="min-w-0">
+              <h3
+                className={`text-lg font-bold truncate ${location.isActive ? "text-gray-800" : "text-gray-500"}`}
+              >
+                {location.name}
+              </h3>
+              <div className="mt-2 flex items-center gap-2">
+                <span
+                  className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${
+                    isOwnedLocation
+                      ? roleBadgeClassNames.owned
+                      : roleBadgeClassNames.managed
+                  }`}
+                >
+                  {isOwnedLocation
+                    ? "Địa điểm của bạn"
+                    : "Địa điểm được thuê quản lý"}
+                </span>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <Switch
+                checked={location.isActive}
+                onCheckedChange={(checked) =>
+                  handleStatusToggle(
+                    location.id,
+                    checked,
+                    location.isActive,
+                    location.isOwner === true,
+                  )
+                }
+                disabled={
+                  updateStatusMutation.isPending || location.isOwner !== true
+                }
+                className="scale-150 data-[state=checked]:bg-[#23C4C1]"
+              />
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-gray-400 hover:text-gray-600"
+                  >
+                    <MoreVertical className="w-5 h-5" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-56">
+                  <DropdownMenuItem
+                    onClick={() => handleDetailClick(location)}
+                    className="cursor-pointer"
+                  >
+                    <Eye className="w-4 h-4 mr-2" />
+                    <span>Xem chi tiết</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onClick={() => handleEditClick(location)}
+                    className="cursor-pointer"
+                    disabled={location.isOwner !== true}
+                  >
+                    <Pencil className="w-4 h-4 mr-2" />
+                    <span>
+                      {location.isOwner
+                        ? "Sửa thông tin"
+                        : "Sửa thông tin (chỉ chủ sở hữu)"}
+                    </span>
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onClick={() => handleDeleteClick(location)}
+                    className="cursor-pointer text-red-600 focus:text-red-600"
+                    disabled={
+                      deleteMutation.isPending || location.isOwner !== true
+                    }
+                  >
+                    <Trash2 className="w-4 h-4 mr-2" />
+                    <span>
+                      {location.isOwner
+                        ? "Xóa địa điểm"
+                        : "Xóa địa điểm (chỉ chủ sở hữu)"}
+                    </span>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          </div>
+
+          <div className="mb-4">
+            <StatusBadge isActive={location.isActive} />
+          </div>
+
+          <div className="space-y-3 mb-6">
+            <div className="flex items-start gap-3 text-sm group-hover:translate-x-1 transition-transform duration-300">
+              <MapPin className="w-4 h-4 mt-0.5 text-gray-400 shrink-0" />
+              <span className="text-gray-600 leading-snug">
+                {location.address}, {location.district ?? "-"},{" "}
+                {location.city ?? "-"}
+              </span>
+            </div>
+            <div className="flex items-center gap-3 text-sm group-hover:translate-x-1 transition-transform duration-300 delay-75">
+              <User className="w-4 h-4 text-gray-400 shrink-0" />
+              <span className="text-gray-600 font-medium">
+                {location.ownerName}
+              </span>
+            </div>
+            <div className="flex items-center gap-3 text-sm group-hover:translate-x-1 transition-transform duration-300 delay-100">
+              <Phone className="w-4 h-4 text-gray-400 shrink-0" />
+              <span className="text-gray-600">{location.phone}</span>
+            </div>
+          </div>
+
+          <div className="pt-4 border-t border-gray-100">
+            <Link
+              href={`/dashboard/locations/${location.id}`}
+              className="flex items-center justify-between text-sm font-medium text-[#23C4C1] hover:text-[#1da8a5] transition-colors"
+            >
+              <span>Chi tiết</span>
+              <ArrowRight className="w-4 h-4" />
+            </Link>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  };
+
+  const renderLocationSection = ({
+    title,
+    description,
+    locations: sectionLocations,
+    emptyMessage,
+  }: {
+    title: string;
+    description: string;
+    locations: Location[];
+    emptyMessage: string;
+  }) => (
+    <section className="space-y-4">
+      <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
+          <p className="text-sm text-gray-600">{description}</p>
+        </div>
+        <span className="text-sm font-medium text-gray-500">
+          {sectionLocations.length} địa điểm
+        </span>
+      </div>
+
+      {sectionLocations.length > 0 ? (
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+          {sectionLocations.map(renderLocationCard)}
+        </div>
+      ) : (
+        <div className="rounded-xl border border-dashed border-gray-300 bg-white px-6 py-10 text-center text-sm text-gray-500">
+          {emptyMessage}
+        </div>
+      )}
+    </section>
   );
 
   // Handle status toggle with optimistic update
@@ -363,6 +567,10 @@ export default function LocationsClient() {
             <p className="text-gray-600">
               Quản lý trạng thái và thông tin các điểm kinh doanh.
             </p>
+            <p className="mt-2 text-sm text-gray-500">
+              {stats.owned} địa điểm của bạn, {stats.managed} địa điểm được
+              người khác giao quản lý.
+            </p>
           </div>
           <div className="flex gap-2">
             <Button
@@ -495,135 +703,27 @@ export default function LocationsClient() {
 
         {/* Grid Content */}
         {!isLoading && !error && filteredLocations.length > 0 && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredLocations.map((location) => (
-              <Card
-                key={location.id}
-                className={`group relative overflow-hidden transition-all duration-300 border-gray-200 hover:border-[#23C4C1] hover:shadow-lg hover:shadow-[#23C4C1]/10 ${
-                  !location.isActive ? "bg-gray-50/50" : "bg-white"
-                }`}
-              >
-                {/* Decorative top bar */}
-                <div
-                  className={`h-1 w-full absolute top-0 left-0 ${location.isActive ? "bg-[#23C4C1]" : "bg-gray-300"}`}
-                ></div>
+          <div className="space-y-8">
+            {renderLocationSection({
+              title: "Địa điểm của chính bạn",
+              description: "Các location bạn tạo và có toàn quyền quản lý.",
+              locations: ownedLocations,
+              emptyMessage:
+                searchQuery || activeTab !== "ALL"
+                  ? "Không có địa điểm sở hữu nào khớp bộ lọc hiện tại."
+                  : "Bạn chưa tạo địa điểm nào.",
+            })}
 
-                <CardContent className="p-6">
-                  {/* Header: Name & Switch + Menu */}
-                  <div className="flex items-center justify-between mb-4">
-                    <h3
-                      className={`text-lg font-bold ${location.isActive ? "text-gray-800" : "text-gray-500"}`}
-                    >
-                      {location.name}
-                    </h3>
-                    <div className="flex items-center gap-2">
-                      <Switch
-                        checked={location.isActive}
-                        onCheckedChange={(checked) =>
-                          handleStatusToggle(
-                            location.id,
-                            checked,
-                            location.isActive,
-                            location.isOwner === true,
-                          )
-                        }
-                        disabled={
-                          updateStatusMutation.isPending ||
-                          location.isOwner !== true
-                        }
-                        className="scale-150 data-[state=checked]:bg-[#23C4C1]"
-                      />
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 text-gray-400 hover:text-gray-600"
-                          >
-                            <MoreVertical className="w-5 h-5" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="w-48">
-                          <DropdownMenuItem
-                            onClick={() => handleDetailClick(location)}
-                            className="cursor-pointer"
-                          >
-                            <Eye className="w-4 h-4 mr-2" />
-                            <span>Xem chi tiết</span>
-                          </DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem
-                            onClick={() => handleEditClick(location)}
-                            className="cursor-pointer"
-                            disabled={location.isOwner !== true}
-                          >
-                            <Pencil className="w-4 h-4 mr-2" />
-                            <span>
-                              {location.isOwner
-                                ? "Sửa thông tin"
-                                : "Sửa thông tin (chỉ chủ sở hữu)"}
-                            </span>
-                          </DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem
-                            onClick={() => handleDeleteClick(location)}
-                            className="cursor-pointer text-red-600 focus:text-red-600"
-                            disabled={
-                              deleteMutation.isPending ||
-                              location.isOwner !== true
-                            }
-                          >
-                            <Trash2 className="w-4 h-4 mr-2" />
-                            <span>
-                              {location.isOwner
-                                ? "Xóa địa điểm"
-                                : "Xóa địa điểm (chỉ chủ sở hữu)"}
-                            </span>
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </div>
-                  </div>
-
-                  {/* Status Badge */}
-                  <div className="mb-4">
-                    <StatusBadge isActive={location.isActive} />
-                  </div>
-
-                  {/* Info List */}
-                  <div className="space-y-3 mb-6">
-                    <div className="flex items-start gap-3 text-sm group-hover:translate-x-1 transition-transform duration-300">
-                      <MapPin className="w-4 h-4 mt-0.5 text-gray-400 shrink-0" />
-                      <span className="text-gray-600 leading-snug">
-                        {location.address}, {location.district ?? "-"},{" "}
-                        {location.city ?? "-"}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-3 text-sm group-hover:translate-x-1 transition-transform duration-300 delay-75">
-                      <User className="w-4 h-4 text-gray-400 shrink-0" />
-                      <span className="text-gray-600 font-medium">
-                        {location.ownerName}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-3 text-sm group-hover:translate-x-1 transition-transform duration-300 delay-100">
-                      <Phone className="w-4 h-4 text-gray-400 shrink-0" />
-                      <span className="text-gray-600">{location.phone}</span>
-                    </div>
-                  </div>
-
-                  {/* Footer: Chi tiết link → products page */}
-                  <div className="pt-4 border-t border-gray-100">
-                    <Link
-                      href={`/dashboard/locations/${location.id}`}
-                      className="flex items-center justify-between text-sm font-medium text-[#23C4C1] hover:text-[#1da8a5] transition-colors"
-                    >
-                      <span>Chi tiết</span>
-                      <ArrowRight className="w-4 h-4" />
-                    </Link>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+            {renderLocationSection({
+              title: "Địa điểm được người khác thuê quản lý",
+              description:
+                "Các location bạn đang làm việc với vai trò nhân viên hoặc người quản lý được phân công.",
+              locations: managedLocations,
+              emptyMessage:
+                searchQuery || activeTab !== "ALL"
+                  ? "Không có địa điểm được thuê quản lý nào khớp bộ lọc hiện tại."
+                  : "Bạn chưa được gán quản lý địa điểm nào từ chủ sở hữu khác.",
+            })}
           </div>
         )}
 

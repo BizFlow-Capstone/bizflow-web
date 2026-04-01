@@ -10,6 +10,7 @@ export interface Location {
   isActive: boolean;
   ownerName: string;
   isOwner?: boolean;
+  accessType?: "owned" | "work-at";
 }
 
 export interface ApiResponse<T> {

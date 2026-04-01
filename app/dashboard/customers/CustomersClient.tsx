@@ -61,6 +61,7 @@ import {
 } from "@/hooks/useDebtors";
 import { useLocations } from "@/hooks/useLocations";
 import NoLocationScreenSkeleton from "@/components/NoLocationScreenSkeleton";
+import { useLocationRole } from "@/hooks/useLocationRole";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
 import type {
@@ -161,6 +162,7 @@ export default function CustomersClient() {
   const { data: locations = [], isLoading: isLoadingLocations } =
     useLocations();
   const hasLocations = locations.length > 0;
+  const { isOwner } = useLocationRole();
 
   // Build filters
   const filters: DebtorFilters = useMemo(
@@ -372,10 +374,12 @@ export default function CustomersClient() {
               Làm mới
             </Button>
             <Link href="/dashboard/customers/create">
-              <Button className="bg-[#23C4C1] hover:bg-[#1da8a5] text-white shadow-lg shadow-[#23C4C1]/20 transition-all">
-                <Plus className="w-4 h-4 mr-2" />
-                Thêm khách hàng
-              </Button>
+              {isOwner && (
+                <Button className="bg-[#23C4C1] hover:bg-[#1da8a5] text-white shadow-lg shadow-[#23C4C1]/20 transition-all">
+                  <Plus className="w-4 h-4 mr-2" />
+                  Thêm khách hàng
+                </Button>
+              )}
             </Link>
           </div>
         </div>
@@ -883,45 +887,49 @@ export default function CustomersClient() {
                             <FileText className="w-4 h-4" />
                             Lịch sử
                           </Button>
-                          <Button
-                            variant="outline"
-                            className="gap-1.5 h-10"
-                            onClick={() =>
-                              router.push(
-                                `/dashboard/customers/${debtor.debtorId}/edit`,
-                              )
-                            }
-                          >
-                            <Pencil className="w-4 h-4" />
-                            Chỉnh sửa
-                          </Button>
-                          <Button
-                            variant="outline"
-                            className="gap-1.5 h-10"
-                            disabled={
-                              statusMutation.isPending &&
-                              statusUpdatingId === debtor.debtorId
-                            }
-                            onClick={() => handleToggleDebtorStatus(debtor)}
-                          >
-                            {statusMutation.isPending &&
-                            statusUpdatingId === debtor.debtorId ? (
-                              <Loader2 className="w-4 h-4 animate-spin" />
-                            ) : debtor.isActive ? (
-                              <ToggleLeft className="w-4 h-4" />
-                            ) : (
-                              <ToggleRight className="w-4 h-4" />
-                            )}
-                            {debtor.isActive ? "Tạm ngưng" : "Kích hoạt"}
-                          </Button>
-                          <Button
-                            variant="outline"
-                            className="gap-1.5 h-10 text-red-500 border-red-200 hover:bg-red-50 hover:text-red-700"
-                            onClick={() => setDeleteTarget(debtor)}
-                          >
-                            <Trash2 className="w-4 h-4" />
-                            Xóa
-                          </Button>
+                          {isOwner && (
+                            <>
+                              <Button
+                                variant="outline"
+                                className="gap-1.5 h-10"
+                                onClick={() =>
+                                  router.push(
+                                    `/dashboard/customers/${debtor.debtorId}/edit`,
+                                  )
+                                }
+                              >
+                                <Pencil className="w-4 h-4" />
+                                Chỉnh sửa
+                              </Button>
+                              <Button
+                                variant="outline"
+                                className="gap-1.5 h-10"
+                                disabled={
+                                  statusMutation.isPending &&
+                                  statusUpdatingId === debtor.debtorId
+                                }
+                                onClick={() => handleToggleDebtorStatus(debtor)}
+                              >
+                                {statusMutation.isPending &&
+                                statusUpdatingId === debtor.debtorId ? (
+                                  <Loader2 className="w-4 h-4 animate-spin" />
+                                ) : debtor.isActive ? (
+                                  <ToggleLeft className="w-4 h-4" />
+                                ) : (
+                                  <ToggleRight className="w-4 h-4" />
+                                )}
+                                {debtor.isActive ? "Tạm ngưng" : "Kích hoạt"}
+                              </Button>
+                              <Button
+                                variant="outline"
+                                className="gap-1.5 h-10 text-red-500 border-red-200 hover:bg-red-50 hover:text-red-700"
+                                onClick={() => setDeleteTarget(debtor)}
+                              >
+                                <Trash2 className="w-4 h-4" />
+                                Xóa
+                              </Button>
+                            </>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -977,7 +985,7 @@ export default function CustomersClient() {
                 ? "Bắt đầu bằng cách thêm khách hàng thân thiết."
                 : "Thử thay đổi từ khóa hoặc bộ lọc."}
             </p>
-            {debtors.length === 0 && (
+            {debtors.length === 0 && isOwner && (
               <Link href="/dashboard/customers/create">
                 <Button className="mt-4 bg-[#23C4C1] hover:bg-[#1da8a5]">
                   <Plus className="w-4 h-4 mr-2" />

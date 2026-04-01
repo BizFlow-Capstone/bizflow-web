@@ -14,17 +14,20 @@ import {
   LogOut,
   PackagePlus,
   Package,
+  Zap,
 } from "lucide-react";
 import Image from "next/image";
 import { Separator } from "@/components/ui/separator";
+import { useLocationRole } from "@/hooks/useLocationRole";
 
 export default function DashboardSidebar() {
   const pathname = usePathname();
+  const { isOwner } = useLocationRole();
 
-  const menuItems = [
+  // Items visible to ALL users (owner + employee)
+  const sharedMenuItems = [
     { href: "/dashboard", label: "Trang Chủ", icon: Home },
     { href: "/dashboard/orders", label: "Đơn Hàng", icon: ShoppingCart },
-    { href: "/dashboard/imports", label: "Nhập Kho", icon: PackagePlus },
     { href: "/dashboard/products", label: "Sản Phẩm", icon: Package },
     {
       href: "/dashboard/customers",
@@ -36,15 +39,43 @@ export default function DashboardSidebar() {
       label: "Địa Điểm Kinh Doanh",
       icon: MapPin,
     },
+  ];
+
+  // Items visible to OWNER only
+  const ownerMenuItems = [
+    { href: "/dashboard/imports", label: "Nhập Kho", icon: PackagePlus },
     { href: "/dashboard/employees", label: "Nhân Viên", icon: Users },
     {
       href: "/dashboard/reports",
-      label: "Báo Cáo & Thống kê",
+      label: "Báo Cáo & Thống Kê",
       icon: BarChart3,
     },
   ];
 
+  const menuItems = isOwner
+    ? [
+        sharedMenuItems[0], // Trang Chủ
+        sharedMenuItems[1], // Đơn Hàng
+        ownerMenuItems[0], // Nhập Kho  (owner only)
+        sharedMenuItems[2], // Sản Phẩm
+        sharedMenuItems[3], // Khách Hàng
+        sharedMenuItems[4], // Địa Điểm
+        ownerMenuItems[1], // Nhân Viên (owner only)
+        ownerMenuItems[2], // Báo Cáo   (owner only)
+      ]
+    : sharedMenuItems;
+
   const bottomMenuItems = [
+    ...(isOwner
+      ? [
+          {
+            href: "/dashboard/subscription",
+            label: "Nâng Cấp Tài Khoản",
+            icon: Zap,
+            highlight: true,
+          },
+        ]
+      : []),
     { href: "/dashboard/profile", label: "Tài Khoản", icon: UserCircle },
     { href: "/dashboard/settings", label: "Cài Đặt", icon: Settings },
     { href: "/auth/logout", label: "Đăng Xuất", icon: LogOut },
@@ -95,17 +126,22 @@ export default function DashboardSidebar() {
           {bottomMenuItems.map((item) => {
             const isActive = pathname === item.href;
             const Icon = item.icon;
+            const isHighlight = "highlight" in item && item.highlight;
             return (
               <li key={item.href}>
                 <Link
                   href={item.href}
                   className={`flex items-center gap-3 px-4 py-2.5 rounded-lg transition-colors ${
                     isActive
-                      ? "bg-gray-100 text-gray-900"
-                      : "text-gray-700 hover:bg-gray-50"
+                      ? "bg-cyan-50 text-[#23C4C1]"
+                      : isHighlight
+                        ? "bg-linear-to-r from-[#052659]/5 to-[#23C4C1]/10 text-[#052659] hover:from-[#052659]/10 hover:to-[#23C4C1]/20 font-semibold"
+                        : "text-gray-700 hover:bg-gray-50"
                   }`}
                 >
-                  <Icon className="w-5 h-5" />
+                  <Icon
+                    className={`w-5 h-5 ${isHighlight && !isActive ? "text-[#23C4C1]" : ""}`}
+                  />
                   <span className="text-sm font-medium">{item.label}</span>
                 </Link>
               </li>
