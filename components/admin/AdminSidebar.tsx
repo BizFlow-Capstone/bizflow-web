@@ -9,9 +9,8 @@ import {
   CreditCard,
   BarChart3,
   Settings,
-  ArrowLeft,
+  BookOpen,
 } from "lucide-react";
-import { Separator } from "@/components/ui/separator";
 
 const adminMenuItems = [
   {
@@ -29,6 +28,11 @@ const adminMenuItems = [
     href: "/admin/notifications",
     label: "Quản Lý Thông Báo",
     icon: Bell,
+  },
+  {
+    href: "/admin/accounting",
+    label: "Quản Lý Kế Toán",
+    icon: BookOpen,
   },
   {
     href: "/admin/subscriptions",
@@ -87,12 +91,12 @@ export default function AdminSidebar() {
                   href={item.href}
                   className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 ${
                     isActive
-                      ? "bg-gradient-to-r from-teal-50 to-cyan-50 text-teal-700 shadow-sm"
+                      ? "bg-linear-to-r from-teal-50 to-cyan-50 text-teal-700 shadow-sm"
                       : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
                   }`}
                 >
                   <Icon
-                    className={`w-[18px] h-[18px] ${isActive ? "text-teal-600" : "text-gray-400"}`}
+                    className={`h-4.5 w-4.5 ${isActive ? "text-teal-600" : "text-gray-400"}`}
                   />
                   {item.label}
                 </Link>
