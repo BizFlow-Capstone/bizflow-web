@@ -78,8 +78,9 @@ const defaultProfile: HeaderProfile = {
 };
 
 const defaultHeader: HeaderContent = {
-  title: "Tổng Quan Hệ Thống",
-  description: "Theo dõi hoạt động kinh doanh và quản lý dữ liệu tập trung.",
+  title: "Quản Lý Mẫu Sổ Sách Kinh Doanh",
+  description:
+    "Hỗ trợ điều chỉnh thay đổi của mẫu sổ kế toán theo quy định mới nhất.",
 };
 
 type LocationWithRole = Location & {
@@ -298,7 +299,8 @@ function getHeaderContent(pathname: string): HeaderContent {
   if (pathname === "/admin") {
     return {
       title: "Tổng Quan Hệ Thống",
-      description: "Theo dõi hoạt động kinh doanh và quản lý dữ liệu tập trung.",
+      description:
+        "Theo dõi hoạt động kinh doanh và quản lý dữ liệu tập trung.",
     };
   }
 
@@ -312,7 +314,8 @@ function getHeaderContent(pathname: string): HeaderContent {
   if (pathname.startsWith("/admin/notifications")) {
     return {
       title: "Quản Lý Thông Báo",
-      description: "Quản lý mẫu thông báo, tạo chiến dịch và theo dõi nhật ký gửi.",
+      description:
+        "Quản lý mẫu thông báo, tạo chiến dịch và theo dõi nhật ký gửi.",
     };
   }
 
@@ -440,8 +443,7 @@ export default function DashboardHeader() {
     toastId?: string,
     notificationId?: string,
   ) => {
-    const targetRoute =
-      route?.trim() || "/dashboard/employees?tab=invitations";
+    const targetRoute = route?.trim() || "/dashboard/employees?tab=invitations";
     setIsNotificationMenuOpen(false);
 
     if (notificationId) {
@@ -746,7 +748,11 @@ export default function DashboardHeader() {
                           item.isRead ? "bg-white" : "bg-cyan-50/40"
                         }`}
                         onClick={() => {
-                          navigateToNotificationRoute(item.route, undefined, item.id);
+                          navigateToNotificationRoute(
+                            item.route,
+                            undefined,
+                            item.id,
+                          );
                         }}
                       >
                         <div className="flex items-start justify-between gap-3">
