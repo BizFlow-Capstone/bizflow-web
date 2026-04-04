@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -46,21 +46,24 @@ import {
   getTemplateVersionFormulas,
   getTemplateVersionFullStructure,
   runAccountingCompare,
+  runAccountingPreview,
   runAccountingTrace,
+  replaceBusinessTypeTaxRates,
   updateFieldMappingForTesting,
   updateFormulaTesting,
+  updateBusinessTypeMetadata,
   updateMappableEntity,
   updateMappableField,
   updateRowDefinition,
   updateTemplateVersion,
 } from "@/lib/admin-accounting-api";
+import type { BusinessTypeWithRatesDto } from "@/lib/admin-accounting-api";
 import type {
   AccountingBusinessTypeSummary,
   AccountingFormulaSummary,
   AccountingOverviewResponse,
   AccountingTemplateSummary,
 } from "@/lib/types/adminAccounting";
-import JsonTree from "./components/JsonTree";
 import VersionFlowTab from "./components/VersionFlowTab";
 import FormulaTab from "./components/FormulaTab";
 import MappingTab from "./components/MappingTab";
@@ -68,6 +71,7 @@ import type { MappingFormState } from "./components/types";
 
 type AccountingTabKey =
   | "overview"
+  | "business-types"
   | "version"
   | "formulas"
   | "mappings"
@@ -75,6 +79,7 @@ type AccountingTabKey =
   | "entities"
   | "reference"
   | "compare"
+  | "preview"
   | "trace"
   | "schema";
 
@@ -108,6 +113,18 @@ interface RowTaxRateHint {
   description: string;
 }
 
+interface BusinessTypeMetadataForm {
+  name: string;
+  description: string;
+  status: string;
+}
+
+interface BusinessTypeTaxRateForm {
+  taxType: string;
+  taxRate: string;
+  description: string;
+}
+
 const tabs: Array<{
   key: AccountingTabKey;
   label: string;
@@ -118,6 +135,12 @@ const tabs: Array<{
     key: "overview",
     label: "Overview",
     icon: <Boxes className="h-4 w-4" />,
+    group: "core",
+  },
+  {
+    key: "business-types",
+    label: "Business Types & Tax Rates",
+    icon: <BookOpen className="h-4 w-4" />,
     group: "core",
   },
   {
@@ -154,6 +177,12 @@ const tabs: Array<{
     key: "compare",
     label: "Compare (A/B)",
     icon: <Scale className="h-4 w-4" />,
+    group: "support",
+  },
+  {
+    key: "preview",
+    label: "Preview",
+    icon: <Play className="h-4 w-4" />,
     group: "support",
   },
   {
@@ -206,6 +235,18 @@ const emptyRowForm: RowFormState = {
   visibleFieldCodes: "",
 };
 
+const emptyBusinessTypeMetadataForm: BusinessTypeMetadataForm = {
+  name: "",
+  description: "",
+  status: "active",
+};
+
+const emptyBusinessTypeTaxRateForm: BusinessTypeTaxRateForm = {
+  taxType: "",
+  taxRate: "",
+  description: "",
+};
+
 function toNum(value: string): number | null {
   if (!value.trim()) return null;
   const parsed = Number(value);
@@ -218,6 +259,19 @@ function asArray(value: unknown): Array<Record<string, unknown>> {
     (item): item is Record<string, unknown> =>
       !!item && typeof item === "object",
   );
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function toDisplayText(value: unknown): string {
+  if (value == null) return "-";
+  if (typeof value === "number") return value.toLocaleString("vi-VN");
+  if (typeof value === "boolean") return value ? "true" : "false";
+  if (typeof value === "string") return value || "-";
+  return JSON.stringify(value);
 }
 
 function asOptionList(value: unknown): Array<{ value: string; label: string }> {
@@ -393,6 +447,15 @@ export default function AdminAccountingClient() {
   >([]);
   const [rowTaxRateHints, setRowTaxRateHints] = useState<RowTaxRateHint[]>([]);
 
+  const [btRulesetId, setBtRulesetId] = useState("1");
+  const [businessTypesWithRates, setBusinessTypesWithRates] = useState<
+    BusinessTypeWithRatesDto[]
+  >([]);
+  const [btSelectedId, setBtSelectedId] = useState("");
+  const [btMetadataForm, setBtMetadataForm] =
+    useState<BusinessTypeMetadataForm>(emptyBusinessTypeMetadataForm);
+  const [btRatesForm, setBtRatesForm] = useState<BusinessTypeTaxRateForm[]>([]);
+
   const [entities, setEntities] = useState<Array<Record<string, unknown>>>([]);
   const [entityFields, setEntityFields] = useState<
     Array<Record<string, unknown>>
@@ -430,6 +493,19 @@ export default function AdminAccountingClient() {
     unknown
   > | null>(null);
 
+  const [pvLoc, setPvLoc] = useState("6");
+  const [pvPer, setPvPer] = useState("1");
+  const [pvVer, setPvVer] = useState("");
+  const [pvGrp, setPvGrp] = useState("3");
+  const [pvMeth, setPvMeth] = useState("method_1");
+  const [pvRule, setPvRule] = useState("1");
+  const [pvBiz, setPvBiz] = useState("");
+  const [pvBatch, setPvBatch] = useState("10");
+  const [previewResult, setPreviewResult] = useState<Record<
+    string,
+    unknown
+  > | null>(null);
+
   const [trFId, setTrFId] = useState("");
   const [trLoc, setTrLoc] = useState("6");
   const [trPer, setTrPer] = useState("1");
@@ -452,6 +528,233 @@ export default function AdminAccountingClient() {
     () => overview?.businessTypes ?? [],
     [overview?.businessTypes],
   );
+
+  const previewSummary = useMemo(() => {
+    const root = asRecord(previewResult);
+    const summary = asRecord(root?.summary);
+    if (!summary) return null;
+    return {
+      totalRows: Number(summary.totalRows ?? 0),
+      totalRevenue: summary.totalRevenue,
+      totalCost: summary.totalCost,
+      totalTax: summary.totalTax,
+    };
+  }, [previewResult]);
+
+  const previewFormulaValues = useMemo(() => {
+    const root = asRecord(previewResult);
+    const summary = asRecord(root?.summary);
+    const formulaValues = asRecord(summary?.formulaValues);
+    if (!formulaValues) return [];
+    return Object.entries(formulaValues).map(([code, value]) => ({
+      code,
+      value,
+    }));
+  }, [previewResult]);
+
+  const previewRowsMeta = useMemo(() => {
+    const root = asRecord(previewResult);
+    const rows = asRecord(root?.rows);
+    if (!rows) return null;
+
+    return {
+      hasMore: Boolean(rows.hasMore),
+      loadedCount: Number(rows.loadedCount ?? 0),
+      totalEstimated: Number(rows.totalEstimated ?? 0),
+      nextCursor: String(rows.nextCursor ?? ""),
+    };
+  }, [previewResult]);
+
+  const previewRowItems = useMemo(() => {
+    const root = asRecord(previewResult);
+    const rows = asRecord(root?.rows);
+    return asArray(rows?.items);
+  }, [previewResult]);
+
+  const compareActive = useMemo(() => {
+    const root = asRecord(compareResult);
+    const active = asRecord(root?.active);
+    const summary = asRecord(active?.summary);
+    const formulaValues = asRecord(summary?.formulaValues);
+    const rows = asRecord(active?.rows);
+
+    return {
+      summary: summary
+        ? {
+            totalRows: Number(summary.totalRows ?? 0),
+            totalRevenue: summary.totalRevenue,
+            totalCost: summary.totalCost,
+            totalTax: summary.totalTax,
+          }
+        : null,
+      formulaValues: formulaValues
+        ? Object.entries(formulaValues).map(([code, value]) => ({
+            code,
+            value,
+          }))
+        : [],
+      rowsMeta: rows
+        ? {
+            hasMore: Boolean(rows.hasMore),
+            loadedCount: Number(rows.loadedCount ?? 0),
+            totalEstimated: Number(rows.totalEstimated ?? 0),
+            nextCursor: String(rows.nextCursor ?? ""),
+          }
+        : null,
+      rowItems: asArray(rows?.items),
+    };
+  }, [compareResult]);
+
+  const compareDraft = useMemo(() => {
+    const root = asRecord(compareResult);
+    const draft = asRecord(root?.draft);
+    const summary = asRecord(draft?.summary);
+    const formulaValues = asRecord(summary?.formulaValues);
+    const rows = asRecord(draft?.rows);
+
+    return {
+      summary: summary
+        ? {
+            totalRows: Number(summary.totalRows ?? 0),
+            totalRevenue: summary.totalRevenue,
+            totalCost: summary.totalCost,
+            totalTax: summary.totalTax,
+          }
+        : null,
+      formulaValues: formulaValues
+        ? Object.entries(formulaValues).map(([code, value]) => ({
+            code,
+            value,
+          }))
+        : [],
+      rowsMeta: rows
+        ? {
+            hasMore: Boolean(rows.hasMore),
+            loadedCount: Number(rows.loadedCount ?? 0),
+            totalEstimated: Number(rows.totalEstimated ?? 0),
+            nextCursor: String(rows.nextCursor ?? ""),
+          }
+        : null,
+      rowItems: asArray(rows?.items),
+    };
+  }, [compareResult]);
+
+  const compareDiff = useMemo(() => {
+    const root = asRecord(compareResult);
+    const diff = asRecord(root?.diff);
+
+    return {
+      changedFormulas: Array.isArray(diff?.changedFormulas)
+        ? diff.changedFormulas.map((item) => String(item ?? "")).filter(Boolean)
+        : [],
+      valueChanges: asArray(diff?.valueChanges).map((item) => ({
+        code: String(item.code ?? ""),
+        before: item.before,
+        after: item.after,
+      })),
+    };
+  }, [compareResult]);
+
+  const traceOverview = useMemo(() => {
+    const root = asRecord(traceResult);
+    const traceItems = asArray(root?.trace).map((item) => {
+      const rawDebug = item.debug;
+      const debugText =
+        rawDebug == null
+          ? "-"
+          : typeof rawDebug === "string"
+            ? rawDebug
+            : JSON.stringify(rawDebug);
+
+      return {
+        step: Number(item.step ?? 0),
+        nodeType: String(item.nodeType ?? ""),
+        description: String(item.description ?? ""),
+        resolvedValue: item.resolvedValue,
+        source: String(item.source ?? ""),
+        debug: debugText,
+        childrenCount: Array.isArray(item.children) ? item.children.length : 0,
+      };
+    });
+
+    return {
+      formulaCode: String(root?.formulaCode ?? ""),
+      formulaName: String(root?.formulaName ?? ""),
+      finalValue: root?.finalValue,
+      traceItems,
+    };
+  }, [traceResult]);
+
+  const referenceRows = useMemo(() => {
+    return Object.entries(refData).map(([groupName, rawValue]) => {
+      const normalizedValues: string[] = Array.isArray(rawValue)
+        ? rawValue
+            .map((item) => {
+              if (item && typeof item === "object") {
+                const record = item as Record<string, unknown>;
+                const value = String(
+                  record.value ?? record.code ?? record.key ?? "",
+                ).trim();
+                const label = String(
+                  record.label ?? record.name ?? record.description ?? "",
+                ).trim();
+                if (value && label && label !== value) {
+                  return `${value} (${label})`;
+                }
+                return value || label || toDisplayText(record);
+              }
+              return toDisplayText(item);
+            })
+            .filter(Boolean)
+        : rawValue && typeof rawValue === "object"
+          ? Object.entries(rawValue as Record<string, unknown>).map(
+              ([k, v]) => `${k}: ${toDisplayText(v)}`,
+            )
+          : [toDisplayText(rawValue)];
+
+      const previewItems = normalizedValues.slice(0, 8);
+      return {
+        groupName,
+        count: normalizedValues.length,
+        previewText: previewItems.join(", ") || "-",
+        remainingCount:
+          normalizedValues.length > previewItems.length
+            ? normalizedValues.length - previewItems.length
+            : 0,
+      };
+    });
+  }, [refData]);
+
+  const schemaRows = useMemo(() => {
+    return schemas.map((schema, index) => {
+      const nodeType = String(
+        schema.nodeType ?? schema.type ?? schema.code ?? `schema-${index + 1}`,
+      );
+      const name = String(schema.displayName ?? schema.name ?? "-");
+      const category = String(
+        schema.category ?? schema.group ?? schema.nodeGroup ?? "-",
+      );
+      const resultType = String(
+        schema.resultType ?? schema.returnType ?? schema.outputType ?? "-",
+      );
+      const inputCount = Array.isArray(schema.inputs)
+        ? schema.inputs.length
+        : Array.isArray(schema.parameters)
+          ? schema.parameters.length
+          : 0;
+      const description = String(schema.description ?? schema.summary ?? "-");
+
+      return {
+        nodeType,
+        name,
+        category,
+        resultType,
+        inputCount,
+        description,
+        fieldCount: Object.keys(schema).length,
+      };
+    });
+  }, [schemas]);
 
   const filteredRowTaxRateHints = useMemo(() => {
     const taxType = rowForm.taxType.trim().toUpperCase();
@@ -634,6 +937,24 @@ export default function AdminAccountingClient() {
     return matched ? rdRulesetId : rowRulesetOptions[0].value;
   }, [rdRulesetId, rowRulesetOptions]);
 
+  const effectiveBtRulesetId = useMemo(() => {
+    if (rowRulesetOptions.length === 0) {
+      return btRulesetId || "1";
+    }
+    const matched = rowRulesetOptions.some(
+      (option) => option.value === btRulesetId,
+    );
+    return matched ? btRulesetId : rowRulesetOptions[0].value;
+  }, [btRulesetId, rowRulesetOptions]);
+
+  const selectedBusinessTypeWithRates = useMemo(
+    () =>
+      businessTypesWithRates.find(
+        (item) => item.businessTypeId === btSelectedId,
+      ) ?? null,
+    [businessTypesWithRates, btSelectedId],
+  );
+
   const formulaOptions = useMemo(() => {
     return formulas.map((f: AccountingFormulaSummary) => ({
       value: String(f.formulaId),
@@ -655,6 +976,179 @@ export default function AdminAccountingClient() {
     navigateToTab("formulas");
     void fmDetail(String(id));
   };
+
+  const hydrateBusinessTypeEditor = useCallback(
+    (businessType: BusinessTypeWithRatesDto | null) => {
+      if (!businessType) {
+        setBtSelectedId("");
+        setBtMetadataForm(emptyBusinessTypeMetadataForm);
+        setBtRatesForm([]);
+        return;
+      }
+
+      setBtSelectedId(businessType.businessTypeId);
+      setBtMetadataForm({
+        name: String(businessType.name ?? ""),
+        description: String(businessType.description ?? ""),
+        status: String(businessType.status ?? "active") || "active",
+      });
+      setBtRatesForm(
+        (businessType.taxRates ?? []).map((rate) => ({
+          taxType: String(rate.taxType ?? ""),
+          taxRate: String(rate.taxRate ?? ""),
+          description: String(rate.description ?? ""),
+        })),
+      );
+    },
+    [],
+  );
+
+  const btLoad = useCallback(
+    async (rawRulesetId?: string, preferredBusinessTypeId?: string) => {
+      const rulesetId = toNum(rawRulesetId ?? effectiveBtRulesetId) ?? 1;
+      await runSafe(async () => {
+        const list = await getBusinessTypesWithRates(rulesetId);
+        setBusinessTypesWithRates(list);
+
+        if (list.length === 0) {
+          hydrateBusinessTypeEditor(null);
+          log(`No business types for ruleset ${rulesetId}`, "info");
+          return;
+        }
+
+        const selected =
+          list.find(
+            (item) => item.businessTypeId === preferredBusinessTypeId,
+          ) ?? list[0];
+        hydrateBusinessTypeEditor(selected);
+        log(`Loaded business types for ruleset ${rulesetId}`, "ok");
+      });
+    },
+    [effectiveBtRulesetId, hydrateBusinessTypeEditor, log, runSafe],
+  );
+
+  const goBusinessType = useCallback(
+    (businessTypeId?: string) => {
+      const targetRulesetId = effectiveBtRulesetId;
+      setBtRulesetId(targetRulesetId);
+      navigateToTab("business-types");
+      void btLoad(targetRulesetId, businessTypeId);
+    },
+    [btLoad, effectiveBtRulesetId, navigateToTab],
+  );
+
+  const handleBtRulesetSelect = (nextRulesetId: string) => {
+    setBtRulesetId(nextRulesetId);
+    void btLoad(nextRulesetId, btSelectedId || undefined);
+  };
+
+  const handleBtSelect = (nextBusinessTypeId: string) => {
+    const selected =
+      businessTypesWithRates.find(
+        (item) => item.businessTypeId === nextBusinessTypeId,
+      ) ?? null;
+    hydrateBusinessTypeEditor(selected);
+  };
+
+  const addBtRate = () => {
+    setBtRatesForm((prev) => [...prev, emptyBusinessTypeTaxRateForm]);
+  };
+
+  const updateBtRateField = (
+    index: number,
+    key: keyof BusinessTypeTaxRateForm,
+    value: string,
+  ) => {
+    setBtRatesForm((prev) =>
+      prev.map((rate, rateIndex) =>
+        rateIndex === index ? { ...rate, [key]: value } : rate,
+      ),
+    );
+  };
+
+  const removeBtRate = (index: number) => {
+    setBtRatesForm((prev) =>
+      prev.filter((_, rateIndex) => rateIndex !== index),
+    );
+  };
+
+  const btUpdateMetadata = async () => {
+    if (!selectedBusinessTypeWithRates) return;
+    await runSafe(async () => {
+      const payload = {
+        name: btMetadataForm.name.trim(),
+        description: btMetadataForm.description.trim(),
+        status: btMetadataForm.status.trim() || "active",
+      };
+
+      if (!payload.name) {
+        throw new Error("Business type name không được để trống.");
+      }
+
+      await updateBusinessTypeMetadata(
+        selectedBusinessTypeWithRates.businessTypeId,
+        payload,
+      );
+      log(`Updated metadata for ${selectedBusinessTypeWithRates.code}`, "ok");
+      await loadOverview();
+      await btLoad(
+        effectiveBtRulesetId,
+        selectedBusinessTypeWithRates.businessTypeId,
+      );
+    });
+  };
+
+  const btReplaceRates = async () => {
+    if (!selectedBusinessTypeWithRates) return;
+    const rulesetId = toNum(effectiveBtRulesetId) ?? 1;
+
+    await runSafe(async () => {
+      const normalizedRows = btRatesForm
+        .map((rate) => ({
+          taxType: rate.taxType.trim(),
+          taxRate: rate.taxRate.trim(),
+          description: rate.description.trim(),
+        }))
+        .filter((rate) => rate.taxType || rate.taxRate || rate.description);
+
+      const rates = normalizedRows.map((rate, index) => {
+        if (!rate.taxType) {
+          throw new Error(`Thiếu taxType ở dòng ${index + 1}.`);
+        }
+        const parsedTaxRate = Number(rate.taxRate);
+        if (!Number.isFinite(parsedTaxRate)) {
+          throw new Error(`taxRate không hợp lệ ở dòng ${index + 1}.`);
+        }
+
+        return {
+          taxType: rate.taxType,
+          taxRate: parsedTaxRate,
+          description: rate.description,
+        };
+      });
+
+      await replaceBusinessTypeTaxRates(
+        rulesetId,
+        selectedBusinessTypeWithRates.businessTypeId,
+        { rates },
+      );
+      log(
+        `Replaced tax rates for ${selectedBusinessTypeWithRates.code} (ruleset ${rulesetId})`,
+        "ok",
+      );
+      await btLoad(
+        effectiveBtRulesetId,
+        selectedBusinessTypeWithRates.businessTypeId,
+      );
+    });
+  };
+
+  useEffect(() => {
+    if (activeTab !== "business-types") return;
+    queueMicrotask(() => {
+      void btLoad();
+    });
+  }, [activeTab, btLoad]);
 
   const tvDetail = async (rawId?: string) => {
     const id = toNum(rawId ?? tvId);
@@ -1567,6 +2061,29 @@ export default function AdminAccountingClient() {
     });
   };
 
+  const runPreview = async () => {
+    await runSafe(async () => {
+      const payload = {
+        businessLocationId: Number(pvLoc || 0),
+        periodId: Number(pvPer || 0),
+        templateVersionId: Number(pvVer || 0),
+        groupNumber: Number(pvGrp || 0),
+        taxMethod: pvMeth,
+        rulesetId: Number(pvRule || 0),
+        businessTypeIds: pvBiz
+          ? pvBiz
+              .split(",")
+              .map((item) => item.trim())
+              .filter(Boolean)
+          : [],
+        batchSize: Number(pvBatch || 10),
+      };
+      const d = await runAccountingPreview(payload);
+      setPreviewResult(d);
+      log("Preview finished", "ok");
+    });
+  };
+
   const toggleBusinessTypeCsv = useCallback(
     (
       currentValue: string,
@@ -1692,7 +2209,7 @@ export default function AdminAccountingClient() {
                   ))}
                 </div>
               ) : null}
-              <div className="max-h-72 overflow-auto rounded-xl border border-gray-200 bg-white">
+              <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
                 <table className="w-full text-sm">
                   <thead className="sticky top-0 bg-gray-50 text-left text-xs uppercase text-gray-500">
                     <tr>
@@ -1758,23 +2275,31 @@ export default function AdminAccountingClient() {
           </Card>
 
           <Card className="rounded-xl border border-gray-200 bg-white shadow-sm">
-            <CardHeader>
+            <CardHeader className="flex-row items-center justify-between">
               <CardTitle>Business Types</CardTitle>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => goBusinessType()}
+              >
+                Open Manager
+              </Button>
             </CardHeader>
             <CardContent>
-              <div className="max-h-64 overflow-auto rounded-xl border border-gray-200 bg-white">
+              <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
                 <table className="w-full text-sm">
                   <thead className="sticky top-0 bg-gray-50 text-left text-xs uppercase text-gray-500">
                     <tr>
                       <th className="px-3 py-2">Code</th>
                       <th className="px-3 py-2">Tên ngành</th>
                       <th className="px-3 py-2">ID</th>
+                      <th className="px-3 py-2 text-right">Action</th>
                     </tr>
                   </thead>
                   <tbody>
                     {businessTypes.length === 0 ? (
                       <tr>
-                        <td className="px-3 py-3 text-gray-500" colSpan={3}>
+                        <td className="px-3 py-3 text-gray-500" colSpan={4}>
                           Chưa có business type trong overview.
                         </td>
                       </tr>
@@ -1788,6 +2313,17 @@ export default function AdminAccountingClient() {
                             <td className="px-3 py-2">{item.name}</td>
                             <td className="px-3 py-2 font-mono text-[11px] text-gray-500">
                               {item.businessTypeId}
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  goBusinessType(item.businessTypeId)
+                                }
+                                className="inline-flex items-center gap-1 text-sky-700 hover:underline"
+                              >
+                                Manage <ArrowRight className="h-3 w-3" />
+                              </button>
                             </td>
                           </tr>
                         ),
@@ -1804,7 +2340,7 @@ export default function AdminAccountingClient() {
               <CardTitle>Formulas</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="max-h-80 overflow-auto rounded-xl border border-gray-200 bg-white">
+              <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
                 <table className="w-full text-sm">
                   <thead className="sticky top-0 bg-gray-50 text-left text-xs uppercase text-gray-500">
                     <tr>
@@ -1850,6 +2386,246 @@ export default function AdminAccountingClient() {
                     ))}
                   </tbody>
                 </table>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      ) : null}
+
+      {activeTab === "business-types" ? (
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+          <Card className="xl:col-span-2 rounded-xl border border-gray-200 bg-white shadow-sm">
+            <CardHeader>
+              <CardTitle>Business Types By Ruleset</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                <select
+                  value={effectiveBtRulesetId}
+                  onChange={(e) => handleBtRulesetSelect(e.target.value)}
+                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                >
+                  {rowRulesetOptions.length === 0 ? (
+                    <option value="1">1 - Default Ruleset</option>
+                  ) : (
+                    rowRulesetOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))
+                  )}
+                </select>
+              </div>
+
+              <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
+                <table className="w-full text-sm">
+                  <thead className="sticky top-0 bg-gray-50 text-left text-xs uppercase text-gray-500">
+                    <tr>
+                      <th className="px-3 py-2">Code</th>
+                      <th className="px-3 py-2">Name</th>
+                      <th className="px-3 py-2">Status</th>
+                      <th className="px-3 py-2">Rates</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {businessTypesWithRates.length === 0 ? (
+                      <tr>
+                        <td className="px-3 py-3 text-gray-500" colSpan={4}>
+                          Chưa có dữ liệu business type theo ruleset này.
+                        </td>
+                      </tr>
+                    ) : (
+                      businessTypesWithRates.map((item) => {
+                        const isSelected = item.businessTypeId === btSelectedId;
+                        return (
+                          <tr
+                            key={item.businessTypeId}
+                            className={`cursor-pointer border-t transition-colors ${
+                              isSelected
+                                ? "bg-[#23C4C1]/15 text-teal-900 shadow-[inset_4px_0_0_0_#23C4C1]"
+                                : "hover:bg-gray-50/70"
+                            }`}
+                            onClick={() => handleBtSelect(item.businessTypeId)}
+                          >
+                            <td className="px-3 py-2 font-mono text-xs">
+                              {item.code}
+                            </td>
+                            <td className="px-3 py-2">{item.name}</td>
+                            <td className="px-3 py-2">
+                              <Badge
+                                variant="secondary"
+                                className={
+                                  item.status?.toLowerCase() === "active"
+                                    ? "bg-emerald-50 text-emerald-700"
+                                    : "bg-red-50 text-red-700"
+                                }
+                              >
+                                {item.status || "unknown"}
+                              </Badge>
+                            </td>
+                            <td className="px-3 py-2 text-xs text-gray-600">
+                              {(item.taxRates ?? [])
+                                .map(
+                                  (rate) =>
+                                    `${rate.taxType}: ${(Number(rate.taxRate || 0) * 100).toFixed(2)}%`,
+                                )
+                                .join(" | ") || "-"}
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="rounded-xl border border-gray-200 bg-white shadow-sm">
+            <CardHeader>
+              <CardTitle>Business Type Editor</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs text-gray-600">
+                <div className="font-medium text-gray-700">
+                  {selectedBusinessTypeWithRates
+                    ? `${selectedBusinessTypeWithRates.code} - ${selectedBusinessTypeWithRates.businessTypeId}`
+                    : "Chọn business type để chỉnh sửa"}
+                </div>
+              </div>
+
+              <div className="space-y-2 rounded-xl border border-gray-100 bg-gray-50/60 p-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                  Metadata (PATCH)
+                </p>
+                <input
+                  value={btMetadataForm.name}
+                  onChange={(e) =>
+                    setBtMetadataForm((prev) => ({
+                      ...prev,
+                      name: e.target.value,
+                    }))
+                  }
+                  placeholder="Name"
+                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                  disabled={!selectedBusinessTypeWithRates}
+                />
+                <textarea
+                  value={btMetadataForm.description}
+                  onChange={(e) =>
+                    setBtMetadataForm((prev) => ({
+                      ...prev,
+                      description: e.target.value,
+                    }))
+                  }
+                  placeholder="Description"
+                  rows={2}
+                  className="w-full resize-y rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                  disabled={!selectedBusinessTypeWithRates}
+                />
+                <select
+                  value={btMetadataForm.status}
+                  onChange={(e) =>
+                    setBtMetadataForm((prev) => ({
+                      ...prev,
+                      status: e.target.value,
+                    }))
+                  }
+                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                  disabled={!selectedBusinessTypeWithRates}
+                >
+                  <option value="active">active</option>
+                  <option value="inactive">inactive</option>
+                </select>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => void btUpdateMetadata()}
+                  disabled={!selectedBusinessTypeWithRates}
+                >
+                  Save Metadata
+                </Button>
+              </div>
+
+              <div className="space-y-2 rounded-xl border border-gray-100 bg-gray-50/60 p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                    Tax Rates (PUT Replace)
+                  </p>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={addBtRate}
+                    disabled={!selectedBusinessTypeWithRates}
+                  >
+                    Add Rate
+                  </Button>
+                </div>
+                <div className="max-h-72 space-y-2 overflow-auto">
+                  {btRatesForm.length === 0 ? (
+                    <div className="rounded-md border border-dashed border-gray-300 px-3 py-2 text-xs text-gray-500">
+                      Chưa có tax rate. Bấm Add Rate để thêm mới.
+                    </div>
+                  ) : (
+                    btRatesForm.map((rate, index) => (
+                      <div
+                        key={`${rate.taxType || "rate"}-${index}`}
+                        className="space-y-2 rounded-lg border border-gray-200 bg-white p-2"
+                      >
+                        <input
+                          value={rate.taxType}
+                          onChange={(e) =>
+                            updateBtRateField(index, "taxType", e.target.value)
+                          }
+                          placeholder="Tax Type (VAT, PIT_METHOD_1...)"
+                          className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                          disabled={!selectedBusinessTypeWithRates}
+                        />
+                        <input
+                          value={rate.taxRate}
+                          onChange={(e) =>
+                            updateBtRateField(index, "taxRate", e.target.value)
+                          }
+                          placeholder="Tax Rate (e.g. 0.05)"
+                          className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                          disabled={!selectedBusinessTypeWithRates}
+                        />
+                        <input
+                          value={rate.description}
+                          onChange={(e) =>
+                            updateBtRateField(
+                              index,
+                              "description",
+                              e.target.value,
+                            )
+                          }
+                          placeholder="Description"
+                          className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                          disabled={!selectedBusinessTypeWithRates}
+                        />
+                        <div className="text-right">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="text-red-600 hover:text-red-700"
+                            onClick={() => removeBtRate(index)}
+                            disabled={!selectedBusinessTypeWithRates}
+                          >
+                            Remove
+                          </Button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+                <Button
+                  size="sm"
+                  className="w-full bg-[#23C4C1] text-white hover:bg-[#1ea8a6]"
+                  onClick={() => void btReplaceRates()}
+                  disabled={!selectedBusinessTypeWithRates}
+                >
+                  Replace Tax Rates
+                </Button>
               </div>
             </CardContent>
           </Card>
@@ -1975,7 +2751,7 @@ export default function AdminAccountingClient() {
                   )}
                 </select>
               </div>
-              <div className="max-h-130 overflow-auto rounded-xl border border-gray-200 bg-white">
+              <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
                 <table className="w-full text-sm">
                   <thead className="sticky top-0 bg-gray-50 text-left text-xs uppercase text-gray-500">
                     <tr>
@@ -2281,7 +3057,7 @@ export default function AdminAccountingClient() {
                 <CardTitle>Entities</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="max-h-80 overflow-auto rounded-xl border border-gray-200 bg-white">
+                <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
                   <table className="w-full text-sm">
                     <thead className="sticky top-0 z-10 border-b border-gray-200 bg-white/95 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600 backdrop-blur">
                       <tr>
@@ -2358,7 +3134,7 @@ export default function AdminAccountingClient() {
                 <CardTitle>Fields of {selectedEntityName}</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="max-h-80 overflow-auto rounded-xl border border-gray-200 bg-white">
+                <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
                   <table className="w-full text-sm">
                     <thead className="sticky top-0 z-10 border-b border-gray-200 bg-white/95 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600 backdrop-blur">
                       <tr>
@@ -2852,11 +3628,734 @@ export default function AdminAccountingClient() {
               <Play className="h-4 w-4" />
               Run Compare
             </Button>
-            <div className="max-h-80 overflow-auto rounded-xl border border-gray-200 bg-gray-50 p-4 font-mono text-xs text-gray-700">
-              <JsonTree
-                value={compareResult ?? { note: "Run compare to view output" }}
+
+            {!compareResult ? (
+              <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 px-4 py-6 text-center text-sm text-gray-500">
+                Chạy Compare để xem bảng đối chiếu Active và Draft.
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                  <div className="space-y-3 rounded-xl border border-gray-200 bg-white p-3">
+                    <h4 className="text-sm font-semibold text-gray-800">
+                      Active Version
+                    </h4>
+
+                    <div className="overflow-x-auto rounded-lg border border-gray-200">
+                      <table className="w-full min-w-180 border-collapse text-sm">
+                        <thead>
+                          <tr className="bg-[#ecfbfa] text-gray-700">
+                            <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                              Chỉ tiêu
+                            </th>
+                            <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                              Giá trị
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr>
+                            <td className="border border-gray-200 px-3 py-2">
+                              Tổng số dòng
+                            </td>
+                            <td className="border border-gray-200 px-3 py-2 font-medium">
+                              {compareActive.summary?.totalRows ?? 0}
+                            </td>
+                          </tr>
+                          <tr>
+                            <td className="border border-gray-200 px-3 py-2">
+                              Tổng doanh thu
+                            </td>
+                            <td className="border border-gray-200 px-3 py-2 font-medium">
+                              {compareActive.summary?.totalRevenue == null
+                                ? "-"
+                                : Number(
+                                    compareActive.summary.totalRevenue,
+                                  ).toLocaleString("vi-VN")}
+                            </td>
+                          </tr>
+                          <tr>
+                            <td className="border border-gray-200 px-3 py-2">
+                              Tổng chi phí
+                            </td>
+                            <td className="border border-gray-200 px-3 py-2 font-medium">
+                              {compareActive.summary?.totalCost == null
+                                ? "-"
+                                : Number(
+                                    compareActive.summary.totalCost,
+                                  ).toLocaleString("vi-VN")}
+                            </td>
+                          </tr>
+                          <tr>
+                            <td className="border border-gray-200 px-3 py-2">
+                              Tổng thuế
+                            </td>
+                            <td className="border border-gray-200 px-3 py-2 font-medium">
+                              {compareActive.summary?.totalTax == null
+                                ? "-"
+                                : Number(
+                                    compareActive.summary.totalTax,
+                                  ).toLocaleString("vi-VN")}
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {compareActive.formulaValues.length > 0 ? (
+                      <div className="overflow-x-auto rounded-lg border border-gray-200">
+                        <table className="w-full min-w-180 border-collapse text-sm">
+                          <thead>
+                            <tr className="bg-[#ecfbfa] text-gray-700">
+                              <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                                Formula
+                              </th>
+                              <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                                Giá trị
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {compareActive.formulaValues.map((formula) => (
+                              <tr key={`active-${formula.code}`}>
+                                <td className="border border-gray-200 px-3 py-2 font-mono text-xs">
+                                  {formula.code}
+                                </td>
+                                <td className="border border-gray-200 px-3 py-2">
+                                  {formula.value == null
+                                    ? "-"
+                                    : typeof formula.value === "number"
+                                      ? formula.value.toLocaleString("vi-VN")
+                                      : String(formula.value)}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : null}
+                  </div>
+
+                  <div className="space-y-3 rounded-xl border border-gray-200 bg-white p-3">
+                    <h4 className="text-sm font-semibold text-gray-800">
+                      Draft Version
+                    </h4>
+
+                    <div className="overflow-x-auto rounded-lg border border-gray-200">
+                      <table className="w-full min-w-180 border-collapse text-sm">
+                        <thead>
+                          <tr className="bg-[#ecfbfa] text-gray-700">
+                            <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                              Chỉ tiêu
+                            </th>
+                            <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                              Giá trị
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr>
+                            <td className="border border-gray-200 px-3 py-2">
+                              Tổng số dòng
+                            </td>
+                            <td className="border border-gray-200 px-3 py-2 font-medium">
+                              {compareDraft.summary?.totalRows ?? 0}
+                            </td>
+                          </tr>
+                          <tr>
+                            <td className="border border-gray-200 px-3 py-2">
+                              Tổng doanh thu
+                            </td>
+                            <td className="border border-gray-200 px-3 py-2 font-medium">
+                              {compareDraft.summary?.totalRevenue == null
+                                ? "-"
+                                : Number(
+                                    compareDraft.summary.totalRevenue,
+                                  ).toLocaleString("vi-VN")}
+                            </td>
+                          </tr>
+                          <tr>
+                            <td className="border border-gray-200 px-3 py-2">
+                              Tổng chi phí
+                            </td>
+                            <td className="border border-gray-200 px-3 py-2 font-medium">
+                              {compareDraft.summary?.totalCost == null
+                                ? "-"
+                                : Number(
+                                    compareDraft.summary.totalCost,
+                                  ).toLocaleString("vi-VN")}
+                            </td>
+                          </tr>
+                          <tr>
+                            <td className="border border-gray-200 px-3 py-2">
+                              Tổng thuế
+                            </td>
+                            <td className="border border-gray-200 px-3 py-2 font-medium">
+                              {compareDraft.summary?.totalTax == null
+                                ? "-"
+                                : Number(
+                                    compareDraft.summary.totalTax,
+                                  ).toLocaleString("vi-VN")}
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {compareDraft.formulaValues.length > 0 ? (
+                      <div className="overflow-x-auto rounded-lg border border-gray-200">
+                        <table className="w-full min-w-180 border-collapse text-sm">
+                          <thead>
+                            <tr className="bg-[#ecfbfa] text-gray-700">
+                              <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                                Formula
+                              </th>
+                              <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                                Giá trị
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {compareDraft.formulaValues.map((formula) => (
+                              <tr key={`draft-${formula.code}`}>
+                                <td className="border border-gray-200 px-3 py-2 font-mono text-xs">
+                                  {formula.code}
+                                </td>
+                                <td className="border border-gray-200 px-3 py-2">
+                                  {formula.value == null
+                                    ? "-"
+                                    : typeof formula.value === "number"
+                                      ? formula.value.toLocaleString("vi-VN")
+                                      : String(formula.value)}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                  <div className="space-y-2">
+                    <h4 className="text-sm font-semibold text-gray-800">
+                      Active Rows
+                    </h4>
+                    <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
+                      <table className="w-full min-w-275 border-collapse text-sm">
+                        <thead>
+                          <tr className="bg-[#ecfbfa] text-gray-700">
+                            <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                              STT
+                            </th>
+                            <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                              Ngày tháng
+                            </th>
+                            <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                              Diễn giải
+                            </th>
+                            <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                              Số tiền
+                            </th>
+                            <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                              Business Type ID
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {compareActive.rowItems.length === 0 ? (
+                            <tr>
+                              <td
+                                className="border border-gray-200 px-3 py-4 text-center text-gray-500"
+                                colSpan={5}
+                              >
+                                Không có dòng dữ liệu.
+                              </td>
+                            </tr>
+                          ) : (
+                            compareActive.rowItems.map((row, index) => (
+                              <tr
+                                key={`active-row-${String(row.stt ?? index)}-${String(row.businessTypeId ?? "")}`}
+                              >
+                                <td className="border border-gray-200 px-3 py-2">
+                                  {String(row.stt ?? "-")}
+                                </td>
+                                <td className="border border-gray-200 px-3 py-2">
+                                  {String(row.ngay_thang ?? "-")}
+                                </td>
+                                <td className="border border-gray-200 px-3 py-2">
+                                  {String(row.dien_giai ?? "-")}
+                                </td>
+                                <td className="border border-gray-200 px-3 py-2">
+                                  {row.so_tien == null
+                                    ? "-"
+                                    : Number(row.so_tien).toLocaleString(
+                                        "vi-VN",
+                                      )}
+                                </td>
+                                <td className="border border-gray-200 px-3 py-2 font-mono text-xs text-gray-600">
+                                  {String(row.businessTypeId ?? "-")}
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600">
+                      <span className="mr-4">
+                        Loaded:{" "}
+                        {compareActive.rowsMeta?.loadedCount ??
+                          compareActive.rowItems.length}
+                      </span>
+                      <span className="mr-4">
+                        Estimated Total:{" "}
+                        {compareActive.rowsMeta?.totalEstimated ??
+                          compareActive.rowItems.length}
+                      </span>
+                      <span>
+                        Next Cursor: {compareActive.rowsMeta?.nextCursor || "-"}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <h4 className="text-sm font-semibold text-gray-800">
+                      Draft Rows
+                    </h4>
+                    <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
+                      <table className="w-full min-w-275 border-collapse text-sm">
+                        <thead>
+                          <tr className="bg-[#ecfbfa] text-gray-700">
+                            <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                              STT
+                            </th>
+                            <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                              Ngày tháng
+                            </th>
+                            <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                              Diễn giải
+                            </th>
+                            <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                              Số tiền
+                            </th>
+                            <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                              Business Type ID
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {compareDraft.rowItems.length === 0 ? (
+                            <tr>
+                              <td
+                                className="border border-gray-200 px-3 py-4 text-center text-gray-500"
+                                colSpan={5}
+                              >
+                                Không có dòng dữ liệu.
+                              </td>
+                            </tr>
+                          ) : (
+                            compareDraft.rowItems.map((row, index) => (
+                              <tr
+                                key={`draft-row-${String(row.stt ?? index)}-${String(row.businessTypeId ?? "")}`}
+                              >
+                                <td className="border border-gray-200 px-3 py-2">
+                                  {String(row.stt ?? "-")}
+                                </td>
+                                <td className="border border-gray-200 px-3 py-2">
+                                  {String(row.ngay_thang ?? "-")}
+                                </td>
+                                <td className="border border-gray-200 px-3 py-2">
+                                  {String(row.dien_giai ?? "-")}
+                                </td>
+                                <td className="border border-gray-200 px-3 py-2">
+                                  {row.so_tien == null
+                                    ? "-"
+                                    : Number(row.so_tien).toLocaleString(
+                                        "vi-VN",
+                                      )}
+                                </td>
+                                <td className="border border-gray-200 px-3 py-2 font-mono text-xs text-gray-600">
+                                  {String(row.businessTypeId ?? "-")}
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600">
+                      <span className="mr-4">
+                        Loaded:{" "}
+                        {compareDraft.rowsMeta?.loadedCount ??
+                          compareDraft.rowItems.length}
+                      </span>
+                      <span className="mr-4">
+                        Estimated Total:{" "}
+                        {compareDraft.rowsMeta?.totalEstimated ??
+                          compareDraft.rowItems.length}
+                      </span>
+                      <span>
+                        Next Cursor: {compareDraft.rowsMeta?.nextCursor || "-"}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-3 rounded-xl border border-gray-200 bg-white p-3">
+                  <h4 className="text-sm font-semibold text-gray-800">Diff</h4>
+
+                  {compareDiff.changedFormulas.length > 0 ? (
+                    <div className="flex flex-wrap gap-2">
+                      {compareDiff.changedFormulas.map((formulaCode) => (
+                        <span
+                          key={formulaCode}
+                          className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700"
+                        >
+                          {formulaCode}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-xs text-gray-500">
+                      Không có công thức thay đổi.
+                    </div>
+                  )}
+
+                  <div className="overflow-x-auto rounded-lg border border-gray-200">
+                    <table className="w-full min-w-180 border-collapse text-sm">
+                      <thead>
+                        <tr className="bg-[#ecfbfa] text-gray-700">
+                          <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                            Code
+                          </th>
+                          <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                            Before
+                          </th>
+                          <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                            After
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {compareDiff.valueChanges.length === 0 ? (
+                          <tr>
+                            <td
+                              className="border border-gray-200 px-3 py-4 text-center text-gray-500"
+                              colSpan={3}
+                            >
+                              Không có value changes.
+                            </td>
+                          </tr>
+                        ) : (
+                          compareDiff.valueChanges.map((item, index) => (
+                            <tr key={`${item.code || "diff"}-${index}`}>
+                              <td className="border border-gray-200 px-3 py-2 font-mono text-xs">
+                                {item.code || "-"}
+                              </td>
+                              <td className="border border-gray-200 px-3 py-2">
+                                {item.before == null
+                                  ? "-"
+                                  : typeof item.before === "number"
+                                    ? item.before.toLocaleString("vi-VN")
+                                    : String(item.before)}
+                              </td>
+                              <td className="border border-gray-200 px-3 py-2">
+                                {item.after == null
+                                  ? "-"
+                                  : typeof item.after === "number"
+                                    ? item.after.toLocaleString("vi-VN")
+                                    : String(item.after)}
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {activeTab === "preview" ? (
+        <Card className="rounded-xl border border-gray-200 bg-white shadow-sm">
+          <CardHeader>
+            <CardTitle>Template Preview</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+              <input
+                value={pvLoc}
+                onChange={(e) => setPvLoc(e.target.value)}
+                placeholder="Location ID"
+                className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+              />
+              <input
+                value={pvPer}
+                onChange={(e) => setPvPer(e.target.value)}
+                placeholder="Period ID"
+                className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+              />
+              <input
+                value={pvVer}
+                onChange={(e) => setPvVer(e.target.value)}
+                placeholder="Template Version ID"
+                className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+              />
+              <input
+                value={pvGrp}
+                onChange={(e) => setPvGrp(e.target.value)}
+                placeholder="Group"
+                className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+              />
+              <input
+                value={pvMeth}
+                onChange={(e) => setPvMeth(e.target.value)}
+                placeholder="Tax Method"
+                className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+              />
+              <input
+                value={pvRule}
+                onChange={(e) => setPvRule(e.target.value)}
+                placeholder="Ruleset ID"
+                className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+              />
+              <input
+                value={pvBatch}
+                onChange={(e) => setPvBatch(e.target.value)}
+                placeholder="Batch Size"
+                className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
               />
             </div>
+            <input
+              value={pvBiz}
+              onChange={(e) => setPvBiz(e.target.value)}
+              placeholder="BusinessTypeIds (comma separated GUIDs)"
+              className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+            />
+            {businessTypes.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {businessTypes.map((item: AccountingBusinessTypeSummary) => {
+                  const selected = pvBiz
+                    .split(",")
+                    .map((token) => token.trim())
+                    .filter(Boolean)
+                    .includes(item.businessTypeId);
+                  return (
+                    <button
+                      key={item.businessTypeId}
+                      type="button"
+                      onClick={() =>
+                        toggleBusinessTypeCsv(
+                          pvBiz,
+                          setPvBiz,
+                          item.businessTypeId,
+                        )
+                      }
+                      className={`rounded-full border px-3 py-1 text-xs transition ${
+                        selected
+                          ? "border-[#23C4C1]/40 bg-[#23C4C1]/10 text-[#15918f]"
+                          : "border-gray-200 bg-white text-gray-600 hover:border-[#23C4C1]/30 hover:bg-[#23C4C1]/5"
+                      }`}
+                    >
+                      {item.code} - {item.name}
+                    </button>
+                  );
+                })}
+              </div>
+            ) : null}
+            <Button
+              onClick={() => void runPreview()}
+              className="gap-2 bg-[#23C4C1] text-white hover:bg-[#1ea8a6]"
+            >
+              <Play className="h-4 w-4" />
+              Run Preview
+            </Button>
+
+            {!previewResult ? (
+              <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 px-4 py-6 text-center text-sm text-gray-500">
+                Chạy Preview để xem dữ liệu dạng sổ.
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
+                  <table className="w-full min-w-180 border-collapse text-sm">
+                    <thead>
+                      <tr className="bg-[#ecfbfa] text-gray-700">
+                        <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                          Chỉ tiêu
+                        </th>
+                        <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                          Giá trị
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td className="border border-gray-200 px-3 py-2">
+                          Tổng số dòng
+                        </td>
+                        <td className="border border-gray-200 px-3 py-2 font-medium">
+                          {previewSummary?.totalRows ?? 0}
+                        </td>
+                      </tr>
+                      <tr>
+                        <td className="border border-gray-200 px-3 py-2">
+                          Tổng doanh thu
+                        </td>
+                        <td className="border border-gray-200 px-3 py-2 font-medium">
+                          {previewSummary?.totalRevenue == null
+                            ? "-"
+                            : Number(
+                                previewSummary.totalRevenue,
+                              ).toLocaleString("vi-VN")}
+                        </td>
+                      </tr>
+                      <tr>
+                        <td className="border border-gray-200 px-3 py-2">
+                          Tổng chi phí
+                        </td>
+                        <td className="border border-gray-200 px-3 py-2 font-medium">
+                          {previewSummary?.totalCost == null
+                            ? "-"
+                            : Number(previewSummary.totalCost).toLocaleString(
+                                "vi-VN",
+                              )}
+                        </td>
+                      </tr>
+                      <tr>
+                        <td className="border border-gray-200 px-3 py-2">
+                          Tổng thuế
+                        </td>
+                        <td className="border border-gray-200 px-3 py-2 font-medium">
+                          {previewSummary?.totalTax == null
+                            ? "-"
+                            : Number(previewSummary.totalTax).toLocaleString(
+                                "vi-VN",
+                              )}
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                {previewFormulaValues.length > 0 ? (
+                  <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
+                    <table className="w-full min-w-180 border-collapse text-sm">
+                      <thead>
+                        <tr className="bg-[#ecfbfa] text-gray-700">
+                          <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                            Formula
+                          </th>
+                          <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                            Giá trị
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {previewFormulaValues.map((formula) => (
+                          <tr key={formula.code}>
+                            <td className="border border-gray-200 px-3 py-2 font-mono text-xs">
+                              {formula.code}
+                            </td>
+                            <td className="border border-gray-200 px-3 py-2">
+                              {formula.value == null
+                                ? "-"
+                                : typeof formula.value === "number"
+                                  ? formula.value.toLocaleString("vi-VN")
+                                  : String(formula.value)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : null}
+
+                <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
+                  <table className="w-full min-w-275 border-collapse text-sm">
+                    <thead>
+                      <tr className="bg-[#ecfbfa] text-gray-700">
+                        <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                          Line Type
+                        </th>
+                        <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                          STT
+                        </th>
+                        <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                          Số hiệu
+                        </th>
+                        <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                          Ngày tháng
+                        </th>
+                        <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                          Diễn giải
+                        </th>
+                        <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                          Business Type ID
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {previewRowItems.length === 0 ? (
+                        <tr>
+                          <td
+                            className="border border-gray-200 px-3 py-4 text-center text-gray-500"
+                            colSpan={6}
+                          >
+                            Không có dòng dữ liệu.
+                          </td>
+                        </tr>
+                      ) : (
+                        previewRowItems.map((row, index) => (
+                          <tr
+                            key={`${String(row.stt ?? index)}-${String(row.businessTypeId ?? "")}`}
+                          >
+                            <td className="border border-gray-200 px-3 py-2">
+                              {String(row.lineType ?? "-")}
+                            </td>
+                            <td className="border border-gray-200 px-3 py-2">
+                              {String(row.stt ?? "-")}
+                            </td>
+                            <td className="border border-gray-200 px-3 py-2">
+                              {String(row.so_hieu ?? "-")}
+                            </td>
+                            <td className="border border-gray-200 px-3 py-2">
+                              {String(row.ngay_thang ?? "-")}
+                            </td>
+                            <td className="border border-gray-200 px-3 py-2">
+                              {String(row.dien_giai ?? "-")}
+                            </td>
+                            <td className="border border-gray-200 px-3 py-2 font-mono text-xs text-gray-600">
+                              {String(row.businessTypeId ?? "-")}
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600">
+                  <span className="mr-4">
+                    Loaded:{" "}
+                    {previewRowsMeta?.loadedCount ?? previewRowItems.length}
+                  </span>
+                  <span className="mr-4">
+                    Estimated Total:{" "}
+                    {previewRowsMeta?.totalEstimated ?? previewRowItems.length}
+                  </span>
+                  <span className="mr-4">
+                    Has More: {previewRowsMeta?.hasMore ? "Yes" : "No"}
+                  </span>
+                  <span>Next Cursor: {previewRowsMeta?.nextCursor || "-"}</span>
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
       ) : null}
@@ -2937,11 +4436,133 @@ export default function AdminAccountingClient() {
               <Play className="h-4 w-4" />
               Run Trace
             </Button>
-            <div className="max-h-80 overflow-auto rounded-xl border border-gray-200 bg-gray-50 p-4 font-mono text-xs text-gray-700">
-              <JsonTree
-                value={traceResult ?? { note: "Run trace to view execution" }}
-              />
-            </div>
+
+            {!traceResult ? (
+              <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 px-4 py-6 text-center text-sm text-gray-500">
+                Chạy Trace để xem các bước tính công thức dạng bảng.
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
+                  <table className="w-full min-w-180 border-collapse text-sm">
+                    <thead>
+                      <tr className="bg-[#ecfbfa] text-gray-700">
+                        <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                          Trường
+                        </th>
+                        <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                          Giá trị
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td className="border border-gray-200 px-3 py-2">
+                          Formula Code
+                        </td>
+                        <td className="border border-gray-200 px-3 py-2 font-mono text-xs">
+                          {traceOverview.formulaCode || "-"}
+                        </td>
+                      </tr>
+                      <tr>
+                        <td className="border border-gray-200 px-3 py-2">
+                          Formula Name
+                        </td>
+                        <td className="border border-gray-200 px-3 py-2">
+                          {traceOverview.formulaName || "-"}
+                        </td>
+                      </tr>
+                      <tr>
+                        <td className="border border-gray-200 px-3 py-2">
+                          Final Value
+                        </td>
+                        <td className="border border-gray-200 px-3 py-2 font-medium">
+                          {traceOverview.finalValue == null
+                            ? "-"
+                            : typeof traceOverview.finalValue === "number"
+                              ? traceOverview.finalValue.toLocaleString("vi-VN")
+                              : String(traceOverview.finalValue)}
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
+                  <table className="w-full min-w-275 border-collapse text-sm">
+                    <thead>
+                      <tr className="bg-[#ecfbfa] text-gray-700">
+                        <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                          Step
+                        </th>
+                        <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                          Node Type
+                        </th>
+                        <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                          Description
+                        </th>
+                        <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                          Resolved Value
+                        </th>
+                        <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                          Source
+                        </th>
+                        <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                          Debug
+                        </th>
+                        <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                          Children
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {traceOverview.traceItems.length === 0 ? (
+                        <tr>
+                          <td
+                            className="border border-gray-200 px-3 py-4 text-center text-gray-500"
+                            colSpan={7}
+                          >
+                            Không có trace steps.
+                          </td>
+                        </tr>
+                      ) : (
+                        traceOverview.traceItems.map((item, index) => (
+                          <tr
+                            key={`${item.step || index}-${item.nodeType || "node"}`}
+                          >
+                            <td className="border border-gray-200 px-3 py-2">
+                              {item.step || index + 1}
+                            </td>
+                            <td className="border border-gray-200 px-3 py-2">
+                              {item.nodeType || "-"}
+                            </td>
+                            <td className="border border-gray-200 px-3 py-2">
+                              {item.description || "-"}
+                            </td>
+                            <td className="border border-gray-200 px-3 py-2">
+                              {item.resolvedValue == null
+                                ? "-"
+                                : typeof item.resolvedValue === "number"
+                                  ? item.resolvedValue.toLocaleString("vi-VN")
+                                  : String(item.resolvedValue)}
+                            </td>
+                            <td className="border border-gray-200 px-3 py-2">
+                              {item.source || "-"}
+                            </td>
+                            <td className="border border-gray-200 px-3 py-2 text-xs text-gray-600">
+                              {item.debug}
+                            </td>
+                            <td className="border border-gray-200 px-3 py-2">
+                              {item.childrenCount}
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
       ) : null}
@@ -2955,13 +4576,47 @@ export default function AdminAccountingClient() {
             </Button>
           </CardHeader>
           <CardContent>
-            <div className="max-h-130 overflow-auto rounded-xl border border-gray-200 bg-gray-50 p-4 font-mono text-xs text-gray-700">
-              <JsonTree
-                value={
-                  Object.keys(refData).length ? refData : { note: "Click Load" }
-                }
-              />
-            </div>
+            {referenceRows.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 px-4 py-6 text-center text-sm text-gray-500">
+                Bấm Load để lấy danh sách enum.
+              </div>
+            ) : (
+              <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
+                <table className="w-full min-w-275 border-collapse text-sm">
+                  <thead>
+                    <tr className="bg-[#ecfbfa] text-gray-700">
+                      <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                        Enum Group
+                      </th>
+                      <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                        Count
+                      </th>
+                      <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                        Values Preview
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {referenceRows.map((row) => (
+                      <tr key={row.groupName}>
+                        <td className="border border-gray-200 px-3 py-2 font-mono text-xs">
+                          {row.groupName}
+                        </td>
+                        <td className="border border-gray-200 px-3 py-2">
+                          {row.count}
+                        </td>
+                        <td className="border border-gray-200 px-3 py-2 text-xs text-gray-700">
+                          {row.previewText}
+                          {row.remainingCount > 0
+                            ? ` ... (+${row.remainingCount})`
+                            : ""}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </CardContent>
         </Card>
       ) : null}
@@ -2979,11 +4634,68 @@ export default function AdminAccountingClient() {
             </Button>
           </CardHeader>
           <CardContent>
-            <div className="max-h-130 overflow-auto rounded-xl border border-gray-200 bg-gray-50 p-4 font-mono text-xs text-gray-700">
-              <JsonTree
-                value={schemas.length ? schemas : { note: "Click Load" }}
-              />
-            </div>
+            {schemaRows.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 px-4 py-6 text-center text-sm text-gray-500">
+                Bấm Load để lấy danh sách node schemas.
+              </div>
+            ) : (
+              <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
+                <table className="w-full min-w-275 border-collapse text-sm">
+                  <thead>
+                    <tr className="bg-[#ecfbfa] text-gray-700">
+                      <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                        Node Type
+                      </th>
+                      <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                        Name
+                      </th>
+                      <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                        Category
+                      </th>
+                      <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                        Result Type
+                      </th>
+                      <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                        Inputs
+                      </th>
+                      <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                        Fields
+                      </th>
+                      <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                        Description
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {schemaRows.map((row) => (
+                      <tr key={row.nodeType}>
+                        <td className="border border-gray-200 px-3 py-2 font-mono text-xs">
+                          {row.nodeType}
+                        </td>
+                        <td className="border border-gray-200 px-3 py-2">
+                          {row.name}
+                        </td>
+                        <td className="border border-gray-200 px-3 py-2">
+                          {row.category}
+                        </td>
+                        <td className="border border-gray-200 px-3 py-2">
+                          {row.resultType}
+                        </td>
+                        <td className="border border-gray-200 px-3 py-2">
+                          {row.inputCount}
+                        </td>
+                        <td className="border border-gray-200 px-3 py-2">
+                          {row.fieldCount}
+                        </td>
+                        <td className="border border-gray-200 px-3 py-2 text-xs text-gray-700">
+                          {row.description}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </CardContent>
         </Card>
       ) : null}

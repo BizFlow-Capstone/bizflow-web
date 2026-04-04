@@ -139,6 +139,17 @@ export interface CompareRequest {
   businessTypeIds: string[];
 }
 
+export interface PreviewRequest {
+  businessLocationId: number;
+  periodId: number;
+  templateVersionId: number;
+  groupNumber: number;
+  taxMethod: string;
+  rulesetId: number;
+  businessTypeIds: string[];
+  batchSize: number;
+}
+
 export interface MappableEntityCreateRequest {
   entityCode: string;
   displayName: string;
@@ -182,6 +193,22 @@ export interface BusinessTypeWithRatesDto {
   description?: string;
   status: string;
   taxRates: BusinessTypeTaxRateDto[];
+}
+
+export interface BusinessTypeMetadataPatchRequest {
+  name: string;
+  description: string;
+  status: string;
+}
+
+export interface BusinessTypeRateReplaceItem {
+  taxType: string;
+  taxRate: number;
+  description?: string;
+}
+
+export interface BusinessTypeTaxRatesReplaceRequest {
+  rates: BusinessTypeRateReplaceItem[];
 }
 
 export async function getTemplateVersionDetail(
@@ -377,6 +404,27 @@ export async function getBusinessTypesWithRates(
   );
 }
 
+export async function updateBusinessTypeMetadata(
+  businessTypeId: string,
+  payload: BusinessTypeMetadataPatchRequest,
+): Promise<Record<string, unknown>> {
+  return request<Record<string, unknown>>(
+    `/api/admin/accounting/business-types/${businessTypeId}`,
+    { method: "PATCH", body: JSON.stringify(payload) },
+  );
+}
+
+export async function replaceBusinessTypeTaxRates(
+  rulesetId: number,
+  businessTypeId: string,
+  payload: BusinessTypeTaxRatesReplaceRequest,
+): Promise<Record<string, unknown>> {
+  return request<Record<string, unknown>>(
+    `/api/admin/accounting/rulesets/${rulesetId}/business-types/${businessTypeId}/tax-rates`,
+    { method: "PUT", body: JSON.stringify(payload) },
+  );
+}
+
 export async function getMappableEntityDetail(
   entityId: number,
 ): Promise<Record<string, unknown>> {
@@ -452,6 +500,15 @@ export async function runAccountingTrace(
 ): Promise<Record<string, unknown>> {
   return request<Record<string, unknown>>(
     "/api/admin/accounting/testing/trace",
+    { method: "POST", body: JSON.stringify(payload) },
+  );
+}
+
+export async function runAccountingPreview(
+  payload: PreviewRequest,
+): Promise<Record<string, unknown>> {
+  return request<Record<string, unknown>>(
+    "/api/admin/accounting/testing/preview",
     { method: "POST", body: JSON.stringify(payload) },
   );
 }

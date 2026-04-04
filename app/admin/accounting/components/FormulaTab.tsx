@@ -664,7 +664,7 @@ export default function FormulaTab(props: FormulaTabProps) {
               placeholder="Tìm công thức..."
               className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
             />
-            <div className="max-h-105 space-y-2 overflow-auto pr-1">
+            <div className="max-h-1/3 space-y-2 overflow-auto pr-1">
               {filteredFormulas.map((formula) => (
                 <button
                   key={formula.formulaId}

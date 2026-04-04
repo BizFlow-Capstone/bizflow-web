@@ -49,7 +49,7 @@ export default function MappingTab(props: MappingTabProps) {
               ))}
             </select>
           </div>
-          <div className="max-h-130 overflow-auto rounded-xl border border-gray-200 bg-white">
+          <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
             <table className="w-full text-sm">
               <thead className="sticky top-0 bg-gray-50 text-left text-xs uppercase text-gray-500">
                 <tr>

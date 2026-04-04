@@ -1556,7 +1556,7 @@ export default function VersionTab(props: VersionTabProps) {
             icon={Activity}
             count={fieldMappings.length}
           >
-            <div className="max-h-80 overflow-auto">
+            <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
               <table className="w-full text-sm">
                 <thead className="sticky top-0 bg-gray-50 text-left text-xs uppercase text-gray-500">
                   <tr>
@@ -1602,7 +1602,7 @@ export default function VersionTab(props: VersionTabProps) {
             icon={Layers}
             count={rowDefinitions.length}
           >
-            <div className="max-h-80 overflow-auto">
+            <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
               <table className="w-full text-sm">
                 <thead className="sticky top-0 bg-gray-50 text-left text-xs uppercase text-gray-500">
                   <tr>
