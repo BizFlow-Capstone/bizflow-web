@@ -1,9 +1,12 @@
+import { useState } from "react";
+import { MoreVertical } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import type { MappingFormState } from "./types";
 
 interface MappingTabProps {
   fldVer: string;
+  versionOptions: Array<{ value: string; label: string }>;
   fieldMappings: Array<Record<string, unknown>>;
   mappingForm: MappingFormState;
   fieldTypeOptions: Array<{ value: string; label: string }>;
@@ -12,18 +15,19 @@ interface MappingTabProps {
   formulaOptions: Array<{ value: string; label: string }>;
   entityOptions: Array<{ value: string; label: string }>;
   entityFieldOptions: Array<{ value: string; label: string }>;
-  setFldVer: (value: string) => void;
+  onVersionChange: (value: string) => void;
   setMappingForm: (next: MappingFormState) => void;
-  onLoad: () => void;
   onPick: (mapping: Record<string, unknown>) => void;
   onCreate: () => void;
   onUpdate: () => void;
-  onDelete: () => void;
+  onDelete: (mappingId?: string) => void;
 }
 
 const primaryBtnClass = "bg-[#23C4C1] text-white hover:bg-[#1ea8a6]";
 
 export default function MappingTab(props: MappingTabProps) {
+  const [mappingActionMenuId, setMappingActionMenuId] = useState("");
+
   return (
     <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
       <Card className="xl:col-span-2 rounded-xl border border-gray-200 bg-white shadow-sm">
@@ -31,20 +35,19 @@ export default function MappingTab(props: MappingTabProps) {
           <CardTitle>Field Mappings</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          <div className="flex items-center gap-2">
-            <input
+          <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+            <select
               value={props.fldVer}
-              onChange={(e) => props.setFldVer(e.target.value)}
-              placeholder="Template Version ID"
-              className="w-40 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-            />
-            <Button
-              size="sm"
-              className={primaryBtnClass}
-              onClick={props.onLoad}
+              onChange={(e) => props.onVersionChange(e.target.value)}
+              className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
             >
-              Load
-            </Button>
+              <option value="">Chọn Template Version</option>
+              {props.versionOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
           </div>
           <div className="max-h-130 overflow-auto rounded-xl border border-gray-200 bg-white">
             <table className="w-full text-sm">
@@ -58,31 +61,91 @@ export default function MappingTab(props: MappingTabProps) {
                   <th className="px-3 py-2">Entity</th>
                   <th className="px-3 py-2">Field</th>
                   <th className="px-3 py-2">Sort</th>
+                  <th className="px-3 py-2 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {props.fieldMappings.map((m, index) => (
-                  <tr
-                    key={String(m.mappingId ?? `mapping-${index}`)}
-                    className="cursor-pointer border-t hover:bg-[#23C4C1]/10"
-                    onClick={() => props.onPick(m)}
-                  >
-                    <td className="px-3 py-2">{String(m.mappingId ?? "-")}</td>
-                    <td className="px-3 py-2 font-mono text-xs">
-                      {String(m.fieldCode ?? "-")}
+                {props.fieldMappings.length === 0 ? (
+                  <tr>
+                    <td className="px-3 py-3 text-gray-500" colSpan={9}>
+                      Chưa có field mapping.
                     </td>
-                    <td className="px-3 py-2">{String(m.fieldLabel ?? "-")}</td>
-                    <td className="px-3 py-2">{String(m.fieldType ?? "-")}</td>
-                    <td className="px-3 py-2">{String(m.sourceType ?? "-")}</td>
-                    <td className="px-3 py-2">
-                      {String(m.sourceEntityId ?? "-")}
-                    </td>
-                    <td className="px-3 py-2">
-                      {String(m.sourceFieldId ?? "-")}
-                    </td>
-                    <td className="px-3 py-2">{String(m.sortOrder ?? "-")}</td>
                   </tr>
-                ))}
+                ) : (
+                  props.fieldMappings.map((m, index) => {
+                    const mappingId = String(m.mappingId ?? "");
+                    const isSelected =
+                      mappingId === props.mappingForm.mappingId;
+                    return (
+                      <tr
+                        key={mappingId || `mapping-${index}`}
+                        className={`cursor-pointer border-t transition-colors ${
+                          isSelected
+                            ? "bg-[#23C4C1]/10"
+                            : "hover:bg-[#23C4C1]/5"
+                        }`}
+                        onClick={() => props.onPick(m)}
+                      >
+                        <td className="px-3 py-2">
+                          {String(m.mappingId ?? "-")}
+                        </td>
+                        <td className="px-3 py-2 font-mono text-xs">
+                          {String(m.fieldCode ?? "-")}
+                        </td>
+                        <td className="px-3 py-2">
+                          {String(m.fieldLabel ?? "-")}
+                        </td>
+                        <td className="px-3 py-2">
+                          {String(m.fieldType ?? "-")}
+                        </td>
+                        <td className="px-3 py-2">
+                          {String(m.sourceType ?? "-")}
+                        </td>
+                        <td className="px-3 py-2">
+                          {String(m.sourceEntityId ?? "-")}
+                        </td>
+                        <td className="px-3 py-2">
+                          {String(m.sourceFieldId ?? "-")}
+                        </td>
+                        <td className="px-3 py-2">
+                          {String(m.sortOrder ?? "-")}
+                        </td>
+                        <td className="px-3 py-2 text-right">
+                          <div className="relative inline-block text-left">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setMappingActionMenuId((prev) =>
+                                  prev === mappingId ? "" : mappingId,
+                                );
+                              }}
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
+                              aria-label="Mapping actions"
+                            >
+                              <MoreVertical className="h-4 w-4" />
+                            </button>
+                            {mappingActionMenuId === mappingId ? (
+                              <div className="absolute right-0 top-9 z-10 w-28 rounded-md border border-gray-200 bg-white p-1 shadow-lg">
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    props.onDelete(mappingId);
+                                    setMappingActionMenuId("");
+                                  }}
+                                  className="w-full rounded px-2 py-1.5 text-left text-xs text-red-600 hover:bg-red-50"
+                                >
+                                  Delete
+                                </button>
+                              </div>
+                            ) : null}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
               </tbody>
             </table>
           </div>
@@ -299,7 +362,7 @@ export default function MappingTab(props: MappingTabProps) {
               size="sm"
               variant="destructive"
               className="col-span-2"
-              onClick={props.onDelete}
+              onClick={() => props.onDelete(props.mappingForm.mappingId)}
             >
               Delete
             </Button>

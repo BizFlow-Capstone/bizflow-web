@@ -10,6 +10,7 @@ import {
   FileJson,
   FunctionSquare,
   GitBranch,
+  MoreVertical,
   Play,
   Plug,
   Rows,
@@ -24,6 +25,7 @@ import {
   activateTemplateVersion,
   cloneFormula,
   cloneTemplateVersion,
+  createFormula,
   createFieldMapping,
   createMappableEntity,
   createMappableField,
@@ -34,6 +36,7 @@ import {
   deleteTemplateVersion,
   getAccountingOverview,
   getAccountingReference,
+  getBusinessTypesWithRates,
   getFormulaDetail,
   getFormulaNodeSchemas,
   getMappableEntities,
@@ -95,6 +98,14 @@ interface RowFormState {
   formulaId: string;
   taxType: string;
   visibleFieldCodes: string;
+}
+
+interface RowTaxRateHint {
+  taxType: string;
+  businessTypeCode: string;
+  businessTypeName: string;
+  taxRate: number;
+  description: string;
 }
 
 const tabs: Array<{
@@ -224,6 +235,46 @@ function asOptionList(value: unknown): Array<{ value: string; label: string }> {
     .filter((option): option is { value: string; label: string } => !!option);
 }
 
+function parseVisibleFieldCodes(raw: string): string[] {
+  if (!raw.trim()) return [];
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .map((item) => (typeof item === "string" ? item.trim() : ""))
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+function stringifyVisibleFieldCodes(values: string[]): string {
+  return JSON.stringify(Array.from(new Set(values.filter(Boolean))));
+}
+
+function parseAllowedAggregations(raw: string): string[] {
+  if (!raw.trim()) return [];
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (Array.isArray(parsed)) {
+      return parsed
+        .map((item) => (typeof item === "string" ? item.trim() : ""))
+        .filter(Boolean);
+    }
+  } catch {
+    // Fallback for legacy comma-separated values.
+  }
+
+  return raw
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function stringifyAllowedAggregations(values: string[]): string {
+  return JSON.stringify(Array.from(new Set(values.filter(Boolean))));
+}
+
 function isAccountingTabKey(value: string | null): value is AccountingTabKey {
   return Boolean(value) && tabs.some((tab) => tab.key === value);
 }
@@ -256,7 +307,9 @@ export default function AdminAccountingClient() {
   const [fmExplanation, setFmExplanation] = useState("-");
   const [fmCloneCode, setFmCloneCode] = useState("");
   const [fmCloneSuffix, setFmCloneSuffix] = useState(" (draft)");
-  const [fmJsonView, setFmJsonView] = useState<unknown>(null);
+  const [fmResultDataType, setFmResultDataType] = useState("decimal");
+  const [fmRoundingMode, setFmRoundingMode] = useState("");
+  const [fmRoundingPrecision, setFmRoundingPrecision] = useState("2");
 
   const [fldVer, setFldVer] = useState("");
   const [fieldMappings, setFieldMappings] = useState<
@@ -294,8 +347,51 @@ export default function AdminAccountingClient() {
   >([]);
 
   const [rdVer, setRdVer] = useState("");
+  const [rdRulesetId, setRdRulesetId] = useState("1");
   const [rowDefs, setRowDefs] = useState<Array<Record<string, unknown>>>([]);
   const [rowForm, setRowForm] = useState<RowFormState>(emptyRowForm);
+  const [rowEditorMode, setRowEditorMode] = useState<"create" | "update">(
+    "create",
+  );
+  const [rowActionMenuId, setRowActionMenuId] = useState("");
+  const [rowTypeOptions, setRowTypeOptions] = useState<
+    Array<{ value: string; label: string }>
+  >([
+    { value: "data_placeholder", label: "Vùng dữ liệu" },
+    { value: "industry_header", label: "Tiêu đề ngành" },
+    { value: "subtotal", label: "Cộng nhóm" },
+    { value: "tax_line", label: "Dòng thuế" },
+    { value: "grand_total", label: "Tổng cộng" },
+  ]);
+  const [rowPositionOptions, setRowPositionOptions] = useState<
+    Array<{ value: string; label: string }>
+  >([
+    { value: "per_group", label: "Mỗi nhóm" },
+    { value: "per_section", label: "Mỗi phần" },
+    { value: "start_of_book", label: "Đầu sổ" },
+    { value: "end_of_book", label: "Cuối sổ" },
+  ]);
+  const [rowSectionTypeOptions, setRowSectionTypeOptions] = useState<
+    Array<{ value: string; label: string }>
+  >([
+    { value: "industry_group", label: "Nhóm ngành nghề" },
+    { value: "revenue_cost", label: "Doanh thu / Chi phí" },
+    { value: "cash_bank", label: "Tiền mặt / Ngân hàng" },
+    { value: "per_product", label: "Theo sản phẩm" },
+  ]);
+  const [rowTaxTypeOptions, setRowTaxTypeOptions] = useState<
+    Array<{ value: string; label: string }>
+  >([
+    { value: "VAT", label: "VAT" },
+    { value: "PIT_METHOD_1", label: "PIT_METHOD_1" },
+  ]);
+  const [rowFormulaOptions, setRowFormulaOptions] = useState<
+    Array<{ value: string; label: string }>
+  >([]);
+  const [rowVisibleFieldOptions, setRowVisibleFieldOptions] = useState<
+    Array<{ value: string; label: string }>
+  >([]);
+  const [rowTaxRateHints, setRowTaxRateHints] = useState<RowTaxRateHint[]>([]);
 
   const [entities, setEntities] = useState<Array<Record<string, unknown>>>([]);
   const [entityFields, setEntityFields] = useState<
@@ -307,6 +403,7 @@ export default function AdminAccountingClient() {
   const [entName, setEntName] = useState("");
   const [entCat, setEntCat] = useState("revenue");
   const [entDesc, setEntDesc] = useState("");
+  const [entIsActive, setEntIsActive] = useState("true");
   const [efEditId, setEfEditId] = useState("");
   const [efEntId, setEfEntId] = useState("");
   const [efCode, setEfCode] = useState("");
@@ -314,6 +411,7 @@ export default function AdminAccountingClient() {
   const [efDtype, setEfDtype] = useState("decimal");
   const [efAggs, setEfAggs] = useState('["sum","none"]');
   const [efDesc, setEfDesc] = useState("");
+  const [efIsActive, setEfIsActive] = useState("true");
 
   const [refData, setRefData] = useState<Record<string, unknown>>({});
   const [schemas, setSchemas] = useState<Array<Record<string, unknown>>>([]);
@@ -354,6 +452,37 @@ export default function AdminAccountingClient() {
     () => overview?.businessTypes ?? [],
     [overview?.businessTypes],
   );
+
+  const filteredRowTaxRateHints = useMemo(() => {
+    const taxType = rowForm.taxType.trim().toUpperCase();
+    if (!taxType) return rowTaxRateHints;
+    return rowTaxRateHints.filter((item) => item.taxType === taxType);
+  }, [rowForm.taxType, rowTaxRateHints]);
+
+  const fieldAggregationOptions = useMemo(
+    () => ["none", "sum", "avg", "count", "min", "max"],
+    [],
+  );
+  const selectedFieldAggregations = useMemo(
+    () => parseAllowedAggregations(efAggs),
+    [efAggs],
+  );
+
+  const hasSelectedEntity = Boolean(toNum(entEditId));
+  const hasSelectedField = Boolean(toNum(efEditId));
+  const currentFieldEntityId = efEntId || entEditId;
+
+  const toggleFieldAggregation = (aggregation: string) => {
+    setEfAggs((prev) => {
+      const selected = new Set(parseAllowedAggregations(prev));
+      if (selected.has(aggregation)) {
+        selected.delete(aggregation);
+      } else {
+        selected.add(aggregation);
+      }
+      return stringifyAllowedAggregations(Array.from(selected));
+    });
+  };
 
   const versionIsActiveMap = useMemo(() => {
     const map = new Map<number, boolean>();
@@ -484,6 +613,26 @@ export default function AdminAccountingClient() {
     });
     return options;
   }, [templates]);
+
+  const effectiveFldVer = fldVer || versionOptions[0]?.value || "";
+
+  const rowRulesetOptions = useMemo(() => {
+    return (overview?.taxRulesets ?? []).map((ruleset) => ({
+      value: String(ruleset.rulesetId),
+      label: `${ruleset.rulesetId} - ${ruleset.name} (${ruleset.code})`,
+    }));
+  }, [overview?.taxRulesets]);
+
+  const effectiveRdVer = rdVer || versionOptions[0]?.value || "";
+  const effectiveRdRulesetId = useMemo(() => {
+    if (rowRulesetOptions.length === 0) {
+      return rdRulesetId || "1";
+    }
+    const matched = rowRulesetOptions.some(
+      (option) => option.value === rdRulesetId,
+    );
+    return matched ? rdRulesetId : rowRulesetOptions[0].value;
+  }, [rdRulesetId, rowRulesetOptions]);
 
   const formulaOptions = useMemo(() => {
     return formulas.map((f: AccountingFormulaSummary) => ({
@@ -616,35 +765,48 @@ export default function AdminAccountingClient() {
       setFmName(String(d.name ?? ""));
       setFmDesc(String(d.description ?? ""));
       setFmFType(String(d.formulaType ?? ""));
+      setFmIsActive(Boolean(d.isActive) ? "true" : "false");
+      setFmResultDataType(String(d.resultDataType ?? "decimal"));
+      setFmRoundingMode(String(d.roundingMode ?? ""));
+      setFmRoundingPrecision(String(d.roundingPrecision ?? "2"));
       const expr = String(d.expressionJson ?? "{}");
       setFmExprJson(expr);
-      try {
-        setFmJsonView(JSON.parse(expr));
-      } catch {
-        setFmJsonView(expr);
-      }
       log(`Loaded formula ${id}`, "ok");
     });
   };
 
-  const fmFormat = () => {
-    try {
-      const parsed = JSON.parse(fmExprJson);
-      setFmExprJson(JSON.stringify(parsed, null, 2));
-      setFmJsonView(parsed);
-      log("Formatted formula JSON", "ok");
-    } catch (err) {
-      log(err instanceof Error ? err.message : "JSON không hợp lệ", "error");
-    }
-  };
+  const fmCreate = async () => {
+    await runSafe(async () => {
+      if (!fmCode.trim() || !fmName.trim() || !fmFType.trim()) {
+        throw new Error("Tạo công thức cần nhập đủ code, name, formulaType.");
+      }
 
-  const fmValidate = () => {
-    try {
-      JSON.parse(fmExprJson);
-      log("JSON hợp lệ", "ok");
-    } catch (err) {
-      log(err instanceof Error ? err.message : "JSON không hợp lệ", "error");
-    }
+      const payload: Record<string, unknown> = {
+        code: fmCode.trim(),
+        name: fmName.trim(),
+        formulaType: fmFType.trim(),
+        expressionJson: fmExprJson.trim() || "{}",
+      };
+
+      if (fmDesc.trim()) payload.description = fmDesc.trim();
+      if (fmResultDataType.trim())
+        payload.resultDataType = fmResultDataType.trim();
+      if (fmRoundingMode.trim()) payload.roundingMode = fmRoundingMode.trim();
+      if (fmRoundingPrecision.trim()) {
+        const precision = Number(fmRoundingPrecision);
+        if (Number.isFinite(precision)) payload.roundingPrecision = precision;
+      }
+
+      const created = await createFormula(payload as never);
+      const newId = Number(created.formulaId ?? 0);
+      if (newId > 0) {
+        setFmId(String(newId));
+        await fmDetail(String(newId));
+      }
+
+      log("Created formula", "ok");
+      await loadOverview();
+    });
   };
 
   const fmUpdate = async () => {
@@ -681,62 +843,101 @@ export default function AdminAccountingClient() {
     });
   };
 
-  const fldLoad = async () => {
-    const versionId = toNum(fldVer);
-    if (!versionId) return;
+  const fmActivate = async () => {
+    const id = toNum(fmId);
+    if (!id) return;
     await runSafe(async () => {
-      const [d, formulasForVersion, activeEntities, reference] =
-        await Promise.all([
-          getTemplateVersionDetail(versionId),
-          getTemplateVersionFormulas(versionId),
-          getMappableEntities(true),
-          getAccountingReference(),
-        ]);
-
-      setFieldMappings(asArray(d.fieldMappings));
-
-      setMappingFormulaOptions(
-        formulasForVersion.map((formula) => {
-          const formulaId = String(formula.formulaId ?? "");
-          const formulaCode = String(formula.code ?? "");
-          const formulaName = String(formula.name ?? "");
-          return {
-            value: formulaId,
-            label:
-              `${formulaId} - ${formulaCode} ${formulaName ? `(${formulaName})` : ""}`.trim(),
-          };
-        }),
-      );
-
-      setMappingEntityOptions(
-        activeEntities.map((entity) => {
-          const entityId = String(entity.entityId ?? "");
-          const entityCode = String(entity.entityCode ?? "");
-          const entityName = String(entity.displayName ?? "");
-          return {
-            value: entityId,
-            label: `${entityCode} - ${entityName}`,
-          };
-        }),
-      );
-
-      const fieldTypes = asOptionList(reference.fieldTypes);
-      if (fieldTypes.length > 0) setMappingFieldTypeOptions(fieldTypes);
-
-      const sourceTypes = asOptionList(reference.sourceTypes);
-      if (sourceTypes.length > 0) setMappingSourceTypeOptions(sourceTypes);
-
-      const aggregationTypes = asOptionList(reference.aggregateTypes);
-      if (aggregationTypes.length > 0) {
-        setMappingAggregationOptions([
-          { value: "none", label: "none" },
-          ...aggregationTypes,
-        ]);
-      }
-
-      log(`Loaded field mappings for v${versionId}`, "ok");
+      await updateFormulaTesting(id, { isActive: true });
+      setFmIsActive("true");
+      await fmDetail(String(id));
+      log(`Activated formula ${id}`, "ok");
+      await loadOverview();
     });
   };
+
+  const fmDeactivate = async () => {
+    const id = toNum(fmId);
+    if (!id) return;
+    await runSafe(async () => {
+      await updateFormulaTesting(id, { isActive: false });
+      setFmIsActive("false");
+      await fmDetail(String(id));
+      log(`Deactivated formula ${id}`, "ok");
+      await loadOverview();
+    });
+  };
+
+  const fldLoad = useCallback(
+    async (rawVersionId?: string) => {
+      const versionId = toNum(rawVersionId ?? effectiveFldVer);
+      if (!versionId) return;
+      await runSafe(async () => {
+        const [d, formulasForVersion, activeEntities, reference] =
+          await Promise.all([
+            getTemplateVersionDetail(versionId),
+            getTemplateVersionFormulas(versionId),
+            getMappableEntities(true),
+            getAccountingReference(),
+          ]);
+
+        setFieldMappings(asArray(d.fieldMappings));
+
+        setMappingFormulaOptions(
+          formulasForVersion.map((formula) => {
+            const formulaId = String(formula.formulaId ?? "");
+            const formulaCode = String(formula.code ?? "");
+            const formulaName = String(formula.name ?? "");
+            return {
+              value: formulaId,
+              label:
+                `${formulaId} - ${formulaCode} ${formulaName ? `(${formulaName})` : ""}`.trim(),
+            };
+          }),
+        );
+
+        setMappingEntityOptions(
+          activeEntities.map((entity) => {
+            const entityId = String(entity.entityId ?? "");
+            const entityCode = String(entity.entityCode ?? "");
+            const entityName = String(entity.displayName ?? "");
+            return {
+              value: entityId,
+              label: `${entityCode} - ${entityName}`,
+            };
+          }),
+        );
+
+        const fieldTypes = asOptionList(reference.fieldTypes);
+        if (fieldTypes.length > 0) setMappingFieldTypeOptions(fieldTypes);
+
+        const sourceTypes = asOptionList(reference.sourceTypes);
+        if (sourceTypes.length > 0) setMappingSourceTypeOptions(sourceTypes);
+
+        const aggregationTypes = asOptionList(reference.aggregateTypes);
+        if (aggregationTypes.length > 0) {
+          setMappingAggregationOptions([
+            { value: "none", label: "none" },
+            ...aggregationTypes,
+          ]);
+        }
+
+        log(`Loaded field mappings for v${versionId}`, "ok");
+      });
+    },
+    [effectiveFldVer, log, runSafe],
+  );
+
+  const handleFldVersionSelect = (nextVersionId: string) => {
+    setFldVer(nextVersionId);
+    void fldLoad(nextVersionId);
+  };
+
+  useEffect(() => {
+    if (activeTab !== "mappings") return;
+    queueMicrotask(() => {
+      void fldLoad();
+    });
+  }, [activeTab, fldLoad]);
 
   useEffect(() => {
     const entityId = toNum(mappingForm.sourceEntityId);
@@ -788,7 +989,10 @@ export default function AdminAccountingClient() {
   };
 
   const fldCreate = async () => {
-    const versionId = ensureDraftVersion(fldVer, "field mapping create");
+    const versionId = ensureDraftVersion(
+      effectiveFldVer,
+      "field mapping create",
+    );
     if (!versionId) return;
     await runSafe(async () => {
       const sourceType = mappingForm.sourceType.trim().toLowerCase();
@@ -842,7 +1046,10 @@ export default function AdminAccountingClient() {
   };
 
   const fldUpdate = async () => {
-    const versionId = ensureDraftVersion(fldVer, "field mapping update");
+    const versionId = ensureDraftVersion(
+      effectiveFldVer,
+      "field mapping update",
+    );
     if (!versionId) return;
     const mappingId = toNum(mappingForm.mappingId);
     if (!mappingId) return;
@@ -897,26 +1104,162 @@ export default function AdminAccountingClient() {
     });
   };
 
-  const fldDelete = async () => {
-    const versionId = ensureDraftVersion(fldVer, "field mapping delete");
+  const fldDelete = async (rawMappingId?: string) => {
+    const versionId = ensureDraftVersion(
+      effectiveFldVer,
+      "field mapping delete",
+    );
     if (!versionId) return;
-    const mappingId = toNum(mappingForm.mappingId);
+    const mappingId = toNum(rawMappingId ?? mappingForm.mappingId);
     if (!mappingId) return;
     await runSafe(async () => {
       await deleteFieldMapping(mappingId);
-      setMappingForm(emptyMappingForm);
+      if (String(mappingId) === mappingForm.mappingId) {
+        setMappingForm(emptyMappingForm);
+      }
       log(`Deleted mapping ${mappingId}`, "ok");
       await fldLoad();
     });
   };
 
-  const rdLoad = async () => {
-    const versionId = toNum(rdVer);
-    if (!versionId) return;
-    await runSafe(async () => {
-      const rows = await getRowDefinitions(versionId);
-      setRowDefs(asArray(rows));
-      log(`Loaded row definitions for v${versionId}`, "ok");
+  const rdLoad = useCallback(
+    async (rawVersionId?: string, rawRulesetId?: string) => {
+      const versionId = toNum(rawVersionId ?? effectiveRdVer);
+      if (!versionId) return;
+      const rulesetId = toNum(rawRulesetId ?? effectiveRdRulesetId) ?? 1;
+      await runSafe(async () => {
+        const [rows, detail, formulasForVersion, reference, businessTypeRates] =
+          await Promise.all([
+            getRowDefinitions(versionId),
+            getTemplateVersionDetail(versionId),
+            getTemplateVersionFormulas(versionId),
+            getAccountingReference(),
+            getBusinessTypesWithRates(rulesetId),
+          ]);
+
+        setRowDefs(asArray(rows));
+
+        const formulaOptions = formulasForVersion
+          .map((formula) => {
+            const formulaId = String(formula.formulaId ?? "").trim();
+            if (!formulaId) return null;
+            const formulaCode = String(formula.code ?? "").trim();
+            const formulaName = String(formula.name ?? "").trim();
+            return {
+              value: formulaId,
+              label:
+                `${formulaId} - ${formulaCode} ${formulaName ? `(${formulaName})` : ""}`.trim(),
+            };
+          })
+          .filter(
+            (option): option is { value: string; label: string } => !!option,
+          );
+        setRowFormulaOptions(formulaOptions);
+
+        const visibleOptions = asArray(detail.fieldMappings)
+          .map((mapping) => {
+            const code = String(mapping.fieldCode ?? "").trim();
+            if (!code) return null;
+            const label = String(mapping.fieldLabel ?? code).trim();
+            return {
+              value: code,
+              label: `${code} - ${label}`,
+            };
+          })
+          .filter(
+            (option): option is { value: string; label: string } => !!option,
+          );
+        setRowVisibleFieldOptions(visibleOptions);
+
+        const refRowTypes = asOptionList(
+          (reference as Record<string, unknown>).rowTypes,
+        );
+        if (refRowTypes.length > 0) setRowTypeOptions(refRowTypes);
+        const refPositions = asOptionList(
+          (reference as Record<string, unknown>).positions,
+        );
+        if (refPositions.length > 0) setRowPositionOptions(refPositions);
+        const refSections = asOptionList(
+          (reference as Record<string, unknown>).sectionTypes,
+        );
+        if (refSections.length > 0) setRowSectionTypeOptions(refSections);
+
+        const refTaxTypes = asOptionList(
+          (reference as Record<string, unknown>).taxTypes,
+        );
+        const taxTypeFromRates = businessTypeRates
+          .flatMap((item) => item.taxRates ?? [])
+          .map((rate) =>
+            String(rate.taxType ?? "")
+              .trim()
+              .toUpperCase(),
+          )
+          .filter(Boolean);
+        const mergedTaxTypes = Array.from(
+          new Set([
+            ...refTaxTypes.map((item) => item.value.toUpperCase()),
+            ...taxTypeFromRates,
+          ]),
+        ).map((value) => {
+          const refMatch = refTaxTypes.find(
+            (item) => item.value.toUpperCase() === value,
+          );
+          return {
+            value,
+            label: refMatch?.label || value,
+          };
+        });
+        if (mergedTaxTypes.length > 0) setRowTaxTypeOptions(mergedTaxTypes);
+
+        const hints: RowTaxRateHint[] = businessTypeRates.flatMap(
+          (businessType) =>
+            (businessType.taxRates ?? []).map((rate) => ({
+              taxType: String(rate.taxType ?? "")
+                .trim()
+                .toUpperCase(),
+              businessTypeCode: String(businessType.code ?? ""),
+              businessTypeName: String(businessType.name ?? ""),
+              taxRate: Number(rate.taxRate ?? 0),
+              description: String(rate.description ?? ""),
+            })),
+        );
+        setRowTaxRateHints(hints);
+
+        log(`Loaded row definitions for v${versionId}`, "ok");
+      });
+    },
+    [effectiveRdRulesetId, effectiveRdVer, runSafe, log],
+  );
+
+  const handleRdVersionSelect = (nextVersionId: string) => {
+    setRdVer(nextVersionId);
+    void rdLoad(nextVersionId, effectiveRdRulesetId);
+  };
+
+  const handleRdRulesetSelect = (nextRulesetId: string) => {
+    setRdRulesetId(nextRulesetId);
+    void rdLoad(effectiveRdVer, nextRulesetId);
+  };
+
+  useEffect(() => {
+    if (activeTab !== "rowdefs") return;
+    queueMicrotask(() => {
+      void rdLoad();
+    });
+  }, [activeTab, rdLoad]);
+
+  const toggleRowVisibleFieldCode = (fieldCode: string) => {
+    setRowForm((prev) => {
+      const selected = new Set(parseVisibleFieldCodes(prev.visibleFieldCodes));
+      if (selected.has(fieldCode)) {
+        selected.delete(fieldCode);
+      } else {
+        selected.add(fieldCode);
+      }
+      return {
+        ...prev,
+        visibleFieldCodes: stringifyVisibleFieldCodes(Array.from(selected)),
+      };
     });
   };
 
@@ -934,10 +1277,15 @@ export default function AdminAccountingClient() {
       taxType: String(r.taxType ?? ""),
       visibleFieldCodes: String(r.visibleFieldCodes ?? ""),
     });
+    setRowActionMenuId("");
+    setRowEditorMode("update");
   };
 
   const rdCreate = async () => {
-    const versionId = ensureDraftVersion(rdVer, "row definition create");
+    const versionId = ensureDraftVersion(
+      effectiveRdVer,
+      "row definition create",
+    );
     if (!versionId) return;
     await runSafe(async () => {
       const payload: Record<string, unknown> = {
@@ -958,12 +1306,17 @@ export default function AdminAccountingClient() {
         payload.visibleFieldCodes = rowForm.visibleFieldCodes;
       await createRowDefinition(versionId, payload as never);
       log("Created row definition", "ok");
+      setRowForm(emptyRowForm);
+      setRowEditorMode("create");
       await rdLoad();
     });
   };
 
   const rdUpdate = async () => {
-    const versionId = ensureDraftVersion(rdVer, "row definition update");
+    const versionId = ensureDraftVersion(
+      effectiveRdVer,
+      "row definition update",
+    );
     if (!versionId) return;
     const rowId = toNum(rowForm.rowDefId);
     if (!rowId) return;
@@ -985,48 +1338,117 @@ export default function AdminAccountingClient() {
     });
   };
 
-  const rdDelete = async () => {
-    const versionId = ensureDraftVersion(rdVer, "row definition delete");
+  const rdDelete = async (rawRowId?: string) => {
+    const versionId = ensureDraftVersion(
+      effectiveRdVer,
+      "row definition delete",
+    );
     if (!versionId) return;
-    const rowId = toNum(rowForm.rowDefId);
+    const rowId = toNum(rawRowId ?? rowForm.rowDefId);
     if (!rowId) return;
     await runSafe(async () => {
       await deleteRowDefinition(rowId);
       setRowForm(emptyRowForm);
+      setRowActionMenuId("");
+      setRowEditorMode("create");
       log(`Deleted row definition ${rowId}`, "ok");
       await rdLoad();
     });
   };
 
-  const entLoad = async () => {
-    await runSafe(async () => {
-      const data = await getMappableEntities();
-      setEntities(asArray(data));
-      log("Loaded entities", "ok");
-    });
-  };
+  const entApplyDetail = useCallback((entity: Record<string, unknown>) => {
+    const entityId = String(entity.entityId ?? "");
+    setEntEditId(entityId);
+    setEntCode(String(entity.entityCode ?? ""));
+    setEntName(String(entity.displayName ?? ""));
+    setEntCat(String(entity.category ?? "revenue"));
+    setEntDesc(String(entity.description ?? ""));
+    setEntIsActive(Boolean(entity.isActive) ? "true" : "false");
+    setSelectedEntityName(String(entity.entityCode ?? "-"));
 
-  const entSelect = async (entityId: number) => {
-    await runSafe(async () => {
-      setEfEntId(String(entityId));
-      const d = await getMappableEntityDetail(entityId);
-      setSelectedEntityName(String(d.entityCode ?? "-"));
-      setEntityFields(asArray(d.fields));
-      log(`Loaded fields for entity ${entityId}`, "ok");
-    });
-  };
+    setEntityFields(asArray(entity.fields));
+
+    setEfEditId("");
+    setEfEntId(entityId);
+    setEfCode("");
+    setEfName("");
+    setEfDtype("decimal");
+    setEfAggs('["sum","none"]');
+    setEfDesc("");
+    setEfIsActive("true");
+  }, []);
+
+  const entLoad = useCallback(
+    async (preferredEntityId?: number) => {
+      await runSafe(async () => {
+        const data = await getMappableEntities();
+        const list = asArray(data);
+        setEntities(list);
+
+        const firstEntityId = Number(list[0]?.entityId ?? 0);
+        const hasPreferred =
+          typeof preferredEntityId === "number" &&
+          list.some(
+            (entity) => Number(entity.entityId ?? 0) === preferredEntityId,
+          );
+        const targetEntityId = hasPreferred
+          ? preferredEntityId
+          : firstEntityId > 0
+            ? firstEntityId
+            : 0;
+
+        if (targetEntityId > 0) {
+          const detail = await getMappableEntityDetail(targetEntityId);
+          entApplyDetail(detail);
+        } else {
+          setSelectedEntityName("-");
+          setEntityFields([]);
+          setEntEditId("");
+          setEntCode("");
+          setEntName("");
+          setEntCat("revenue");
+          setEntDesc("");
+          setEntIsActive("true");
+          setEfEditId("");
+          setEfEntId("");
+          setEfCode("");
+          setEfName("");
+          setEfDtype("decimal");
+          setEfAggs('["sum","none"]');
+          setEfDesc("");
+          setEfIsActive("true");
+        }
+
+        log("Loaded entities", "ok");
+      });
+    },
+    [entApplyDetail, log, runSafe],
+  );
+
+  const entSelect = useCallback(
+    async (entityId: number) => {
+      if (!entityId) return;
+      await runSafe(async () => {
+        const detail = await getMappableEntityDetail(entityId);
+        entApplyDetail(detail);
+        log(`Loaded fields for entity ${entityId}`, "ok");
+      });
+    },
+    [entApplyDetail, log, runSafe],
+  );
 
   const entCreate = async () => {
     await runSafe(async () => {
       const payload: Record<string, unknown> = {
-        entityCode: entCode,
-        displayName: entName,
+        entityCode: entCode.trim(),
+        displayName: entName.trim(),
         category: entCat,
       };
-      if (entDesc.trim()) payload.description = entDesc;
-      await createMappableEntity(payload as never);
+      if (entDesc.trim()) payload.description = entDesc.trim();
+      const created = await createMappableEntity(payload as never);
+      const newId = Number(created.entityId ?? 0);
       log("Created entity", "ok");
-      await entLoad();
+      await entLoad(newId > 0 ? newId : undefined);
     });
   };
 
@@ -1035,25 +1457,26 @@ export default function AdminAccountingClient() {
     if (!id) return;
     await runSafe(async () => {
       const payload: Record<string, unknown> = {};
-      if (entName.trim()) payload.displayName = entName;
-      if (entDesc.trim()) payload.description = entDesc;
-      await updateMappableEntity(id, payload);
+      if (entName.trim()) payload.displayName = entName.trim();
+      if (entDesc.trim()) payload.description = entDesc.trim();
+      payload.isActive = entIsActive === "true";
+      await updateMappableEntity(id, payload as never);
       log(`Updated entity ${id}`, "ok");
-      await entLoad();
+      await entLoad(id);
     });
   };
 
   const efCreate = async () => {
-    const entityId = toNum(efEntId);
+    const entityId = toNum(currentFieldEntityId);
     if (!entityId) return;
     await runSafe(async () => {
       const payload: Record<string, unknown> = {
-        fieldCode: efCode,
-        displayName: efName,
+        fieldCode: efCode.trim(),
+        displayName: efName.trim(),
         dataType: efDtype,
         allowedAggregations: efAggs,
       };
-      if (efDesc.trim()) payload.description = efDesc;
+      if (efDesc.trim()) payload.description = efDesc.trim();
       await createMappableField(entityId, payload as never);
       log("Created field", "ok");
       await entSelect(entityId);
@@ -1062,19 +1485,27 @@ export default function AdminAccountingClient() {
 
   const efUpdate = async () => {
     const fieldId = toNum(efEditId);
-    const entityId = toNum(efEntId);
+    const entityId = toNum(currentFieldEntityId);
     if (!fieldId || !entityId) return;
     await runSafe(async () => {
       const payload: Record<string, unknown> = {};
-      if (efName.trim()) payload.displayName = efName;
-      if (efDesc.trim()) payload.description = efDesc;
+      if (efName.trim()) payload.displayName = efName.trim();
+      if (efDesc.trim()) payload.description = efDesc.trim();
       if (efDtype.trim()) payload.dataType = efDtype;
       if (efAggs.trim()) payload.allowedAggregations = efAggs;
+      payload.isActive = efIsActive === "true";
       await updateMappableField(fieldId, payload as never);
       log(`Updated field ${fieldId}`, "ok");
       await entSelect(entityId);
     });
   };
+
+  useEffect(() => {
+    if (activeTab !== "entities") return;
+    queueMicrotask(() => {
+      void entLoad();
+    });
+  }, [activeTab, entLoad]);
 
   const loadRef = async () => {
     await runSafe(async () => {
@@ -1461,9 +1892,13 @@ export default function AdminAccountingClient() {
           fmExplanation={fmExplanation}
           fmCloneCode={fmCloneCode}
           fmCloneSuffix={fmCloneSuffix}
-          fmJsonView={fmJsonView}
+          fmResultDataType={fmResultDataType}
+          fmRoundingMode={fmRoundingMode}
+          fmRoundingPrecision={fmRoundingPrecision}
           formulaOptions={formulaOptions}
+          formulaList={formulas}
           setFmId={setFmId}
+          setFmCode={setFmCode}
           setFmName={setFmName}
           setFmDesc={setFmDesc}
           setFmExprJson={setFmExprJson}
@@ -1471,17 +1906,22 @@ export default function AdminAccountingClient() {
           setFmIsActive={setFmIsActive}
           setFmCloneCode={setFmCloneCode}
           setFmCloneSuffix={setFmCloneSuffix}
-          onDetail={() => void fmDetail()}
+          setFmResultDataType={setFmResultDataType}
+          setFmRoundingMode={setFmRoundingMode}
+          setFmRoundingPrecision={setFmRoundingPrecision}
+          onDetail={(rawId) => void fmDetail(rawId)}
           onClone={() => void fmClone()}
-          onFormat={fmFormat}
-          onValidate={fmValidate}
+          onCreate={() => void fmCreate()}
+          onActivate={() => void fmActivate()}
+          onDeactivate={() => void fmDeactivate()}
           onUpdate={() => void fmUpdate()}
         />
       ) : null}
 
       {activeTab === "mappings" ? (
         <MappingTab
-          fldVer={fldVer}
+          fldVer={effectiveFldVer}
+          versionOptions={versionOptions}
           fieldMappings={fieldMappings}
           mappingForm={mappingForm}
           fieldTypeOptions={mappingFieldTypeOptions}
@@ -1490,13 +1930,12 @@ export default function AdminAccountingClient() {
           formulaOptions={mappingFormulaOptions}
           entityOptions={mappingEntityOptions}
           entityFieldOptions={mappingEntityFieldOptions}
-          setFldVer={setFldVer}
+          onVersionChange={handleFldVersionSelect}
           setMappingForm={setMappingForm}
-          onLoad={() => void fldLoad()}
           onPick={fldPick}
           onCreate={() => void fldCreate()}
           onUpdate={() => void fldUpdate()}
-          onDelete={() => void fldDelete()}
+          onDelete={(mappingId) => void fldDelete(mappingId)}
         />
       ) : null}
 
@@ -1507,20 +1946,34 @@ export default function AdminAccountingClient() {
               <CardTitle>Row Definitions</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              <div className="flex items-center gap-2">
-                <input
-                  value={rdVer}
-                  onChange={(e) => setRdVer(e.target.value)}
-                  placeholder="Template Version ID"
-                  className="w-40 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-                />
-                <Button
-                  size="sm"
-                  className="bg-[#23C4C1] text-white hover:bg-[#1ea8a6]"
-                  onClick={() => void rdLoad()}
+              <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                <select
+                  value={effectiveRdVer}
+                  onChange={(e) => handleRdVersionSelect(e.target.value)}
+                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
                 >
-                  Load
-                </Button>
+                  <option value="">Chọn Template Version</option>
+                  {versionOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={effectiveRdRulesetId}
+                  onChange={(e) => handleRdRulesetSelect(e.target.value)}
+                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                >
+                  {rowRulesetOptions.length === 0 ? (
+                    <option value="1">1 - Default Ruleset</option>
+                  ) : (
+                    rowRulesetOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))
+                  )}
+                </select>
               </div>
               <div className="max-h-130 overflow-auto rounded-xl border border-gray-200 bg-white">
                 <table className="w-full text-sm">
@@ -1533,6 +1986,7 @@ export default function AdminAccountingClient() {
                       <th className="px-3 py-2">Sort</th>
                       <th className="px-3 py-2">Formula</th>
                       <th className="px-3 py-2">Tax</th>
+                      <th className="px-3 py-2 text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1558,10 +2012,47 @@ export default function AdminAccountingClient() {
                           {String(r.sortOrder ?? "-")}
                         </td>
                         <td className="px-3 py-2">
-                          {String(r.formulaId ?? "-")}
+                          {r.formulaId
+                            ? `Số ${String(r.formulaId)} ( ${String(r.formulaCode)} )`
+                            : "-"}
                         </td>
                         <td className="px-3 py-2">
                           {String(r.taxType ?? "-")}
+                        </td>
+                        <td className="px-3 py-2 text-right">
+                          <div className="relative inline-block text-left">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const rowId = String(
+                                  r.rowDefId ?? `row-${index}`,
+                                );
+                                setRowActionMenuId((prev) =>
+                                  prev === rowId ? "" : rowId,
+                                );
+                              }}
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
+                              aria-label="Row actions"
+                            >
+                              <MoreVertical className="h-4 w-4" />
+                            </button>
+                            {rowActionMenuId ===
+                            String(r.rowDefId ?? `row-${index}`) ? (
+                              <div className="absolute right-0 top-9 z-10 w-28 rounded-md border border-gray-200 bg-white p-1 shadow-lg">
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    void rdDelete(String(r.rowDefId ?? ""));
+                                  }}
+                                  className="w-full rounded px-2 py-1.5 text-left text-xs text-red-600 hover:bg-red-50"
+                                >
+                                  Delete
+                                </button>
+                              </div>
+                            ) : null}
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -1573,15 +2064,31 @@ export default function AdminAccountingClient() {
 
           <Card className="rounded-xl border border-gray-200 bg-white shadow-sm">
             <CardHeader>
-              <CardTitle>Row Editor</CardTitle>
+              <div className="flex items-center justify-between gap-2">
+                <CardTitle>Row Editor</CardTitle>
+                <Button
+                  size="sm"
+                  variant="link"
+                  onClick={() => {
+                    setRowEditorMode("create");
+                    setRowForm(emptyRowForm);
+                    setRowActionMenuId("");
+                  }}
+                  className=" text-[#23C4C1] hover:text-[#1ea8a6]"
+                >
+                  Create
+                </Button>
+              </div>
             </CardHeader>
             <CardContent className="space-y-2">
-              <input
-                value={rowForm.rowDefId}
-                readOnly
-                placeholder="ID"
-                className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm"
-              />
+              {rowEditorMode === "update" ? (
+                <input
+                  value={rowForm.rowDefId}
+                  readOnly
+                  placeholder="ID"
+                  className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm"
+                />
+              ) : null}
               <input
                 value={rowForm.rowLabel}
                 onChange={(e) =>
@@ -1597,15 +2104,11 @@ export default function AdminAccountingClient() {
                 }
                 className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
               >
-                <option>data_placeholder</option>
-                <option>industry_header</option>
-                <option>subtotal</option>
-                <option>tax_line</option>
-                <option>grand_total</option>
-                <option>section_header</option>
-                <option>balance_row</option>
-                <option>opening_balance</option>
-                <option>closing_balance</option>
+                {rowTypeOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
               </select>
               <select
                 value={rowForm.position}
@@ -1614,9 +2117,11 @@ export default function AdminAccountingClient() {
                 }
                 className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
               >
-                <option>per_group</option>
-                <option>end_of_book</option>
-                <option>per_section</option>
+                {rowPositionOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
               </select>
               <input
                 value={rowForm.sortOrder}
@@ -1626,14 +2131,20 @@ export default function AdminAccountingClient() {
                 placeholder="Sort"
                 className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
               />
-              <input
+              <select
                 value={rowForm.formulaId}
                 onChange={(e) =>
                   setRowForm((p) => ({ ...p, formulaId: e.target.value }))
                 }
-                placeholder="Formula ID"
                 className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-              />
+              >
+                <option value="">Formula ID</option>
+                {rowFormulaOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
               <select
                 value={rowForm.sectionType}
                 onChange={(e) =>
@@ -1642,11 +2153,11 @@ export default function AdminAccountingClient() {
                 className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
               >
                 <option value="">Section Type</option>
-                <option>industry_group</option>
-                <option>revenue_section</option>
-                <option>cost_section</option>
-                <option>tax_section</option>
-                <option>summary_section</option>
+                {rowSectionTypeOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
               </select>
               <input
                 value={rowForm.sectionFilterValue}
@@ -1675,9 +2186,54 @@ export default function AdminAccountingClient() {
                 className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
               >
                 <option value="">Tax Type</option>
-                <option>vat</option>
-                <option>pit</option>
+                {rowTaxTypeOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
               </select>
+              {filteredRowTaxRateHints.length > 0 ? (
+                <div className="max-h-28 overflow-auto rounded-lg border border-sky-100 bg-sky-50 p-2 text-xs text-sky-700">
+                  {filteredRowTaxRateHints.map((item, index) => (
+                    <div
+                      key={`${item.businessTypeCode}-${item.taxType}-${index}`}
+                    >
+                      {item.businessTypeCode} - {item.businessTypeName}:{" "}
+                      {(item.taxRate * 100).toFixed(2)}%
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+              <div className="space-y-1">
+                <label className="block text-xs font-medium text-gray-600">
+                  Visible Fields (quick pick)
+                </label>
+                <div className="max-h-28 overflow-auto rounded-lg border border-gray-200 bg-gray-50 p-2">
+                  <div className="flex flex-wrap gap-1.5">
+                    {rowVisibleFieldOptions.map((option) => {
+                      const selected = parseVisibleFieldCodes(
+                        rowForm.visibleFieldCodes,
+                      ).includes(option.value);
+                      return (
+                        <button
+                          key={option.value}
+                          type="button"
+                          onClick={() =>
+                            toggleRowVisibleFieldCode(option.value)
+                          }
+                          className={`rounded-full border px-2 py-1 text-[11px] ${
+                            selected
+                              ? "border-[#23C4C1]/40 bg-[#23C4C1]/10 text-[#15918f]"
+                              : "border-gray-200 bg-white text-gray-600"
+                          }`}
+                        >
+                          {option.value}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
               <input
                 value={rowForm.visibleFieldCodes}
                 onChange={(e) =>
@@ -1689,30 +2245,29 @@ export default function AdminAccountingClient() {
                 placeholder="Visible Fields JSON"
                 className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
               />
-              <div className="grid grid-cols-2 gap-2 pt-2">
-                <Button
-                  size="sm"
-                  className="bg-[#23C4C1] text-white hover:bg-[#1ea8a6]"
-                  onClick={() => void rdCreate()}
-                >
-                  Create
-                </Button>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  onClick={() => void rdUpdate()}
-                >
-                  Update
-                </Button>
-                <Button
-                  size="sm"
-                  variant="destructive"
-                  className="col-span-2"
-                  onClick={() => void rdDelete()}
-                >
-                  Delete
-                </Button>
-              </div>
+              {rowEditorMode === "create" ? (
+                <div className="pt-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="w-full  text-[#23C4C1] hover:text-[#1ea8a6]"
+                    onClick={() => void rdCreate()}
+                  >
+                    Create
+                  </Button>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-2 pt-2">
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => void rdUpdate()}
+                    disabled={!rowForm.rowDefId}
+                  >
+                    Update
+                  </Button>
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
@@ -1720,11 +2275,6 @@ export default function AdminAccountingClient() {
 
       {activeTab === "entities" ? (
         <div className="space-y-6">
-          <div className="flex justify-end">
-            <Button variant="outline" onClick={() => void entLoad()}>
-              Load Entities
-            </Button>
-          </div>
           <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
             <Card className="rounded-xl border border-gray-200 bg-white shadow-sm">
               <CardHeader>
@@ -1733,32 +2283,70 @@ export default function AdminAccountingClient() {
               <CardContent>
                 <div className="max-h-80 overflow-auto rounded-xl border border-gray-200 bg-white">
                   <table className="w-full text-sm">
+                    <thead className="sticky top-0 z-10 border-b border-gray-200 bg-white/95 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600 backdrop-blur">
+                      <tr>
+                        <th className="px-3 py-2">ID</th>
+                        <th className="px-3 py-2">Code</th>
+                        <th className="px-3 py-2">Name</th>
+                        <th className="px-3 py-2">Category</th>
+                        <th className="px-3 py-2">Fields</th>
+                        <th className="px-3 py-2">Status</th>
+                      </tr>
+                    </thead>
                     <tbody>
-                      {entities.map((e, index) => (
-                        <tr
-                          key={String(e.entityId ?? `entity-${index}`)}
-                          className="cursor-pointer border-t hover:bg-gray-50/70"
-                          onClick={() =>
-                            void entSelect(Number(e.entityId ?? 0))
-                          }
-                        >
-                          <td className="px-3 py-2">
-                            {String(e.entityId ?? "-")}
-                          </td>
-                          <td className="px-3 py-2 font-mono text-xs">
-                            {String(e.entityCode ?? "-")}
-                          </td>
-                          <td className="px-3 py-2">
-                            {String(e.displayName ?? "-")}
-                          </td>
-                          <td className="px-3 py-2">
-                            {String(e.category ?? "-")}
-                          </td>
-                          <td className="px-3 py-2">
-                            {Boolean(e.isActive) ? "Yes" : "No"}
+                      {entities.length === 0 ? (
+                        <tr>
+                          <td className="px-3 py-3 text-gray-500" colSpan={6}>
+                            Chưa có entity.
                           </td>
                         </tr>
-                      ))}
+                      ) : (
+                        entities.map((e, index) => {
+                          const entityId = String(e.entityId ?? "");
+                          const isSelected = entityId === entEditId;
+                          return (
+                            <tr
+                              key={entityId || `entity-${index}`}
+                              className={`cursor-pointer border-t transition-colors ${
+                                isSelected
+                                  ? "bg-[#23C4C1]/15 text-teal-900 shadow-[inset_4px_0_0_0_#23C4C1]"
+                                  : "hover:bg-gray-50/70"
+                              }`}
+                              onClick={() =>
+                                void entSelect(Number(e.entityId ?? 0))
+                              }
+                            >
+                              <td className="px-3 py-2">
+                                {String(e.entityId ?? "-")}
+                              </td>
+                              <td className="px-3 py-2 font-mono text-xs">
+                                {String(e.entityCode ?? "-")}
+                              </td>
+                              <td className="px-3 py-2">
+                                {String(e.displayName ?? "-")}
+                              </td>
+                              <td className="px-3 py-2">
+                                {String(e.category ?? "-")}
+                              </td>
+                              <td className="px-3 py-2">
+                                {String(e.fieldCount ?? "-")}
+                              </td>
+                              <td className="px-3 py-2">
+                                <Badge
+                                  variant="secondary"
+                                  className={
+                                    Boolean(e.isActive)
+                                      ? "bg-emerald-50 text-emerald-700"
+                                      : "bg-red-50 text-red-700"
+                                  }
+                                >
+                                  {Boolean(e.isActive) ? "Active" : "Inactive"}
+                                </Badge>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
                     </tbody>
                   </table>
                 </div>
@@ -1772,35 +2360,77 @@ export default function AdminAccountingClient() {
               <CardContent>
                 <div className="max-h-80 overflow-auto rounded-xl border border-gray-200 bg-white">
                   <table className="w-full text-sm">
+                    <thead className="sticky top-0 z-10 border-b border-gray-200 bg-white/95 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600 backdrop-blur">
+                      <tr>
+                        <th className="px-3 py-2">ID</th>
+                        <th className="px-3 py-2">Code</th>
+                        <th className="px-3 py-2">Name</th>
+                        <th className="px-3 py-2">Type</th>
+                        <th className="px-3 py-2">Status</th>
+                      </tr>
+                    </thead>
                     <tbody>
-                      {entityFields.map((f, index) => (
-                        <tr
-                          key={String(f.fieldId ?? `field-${index}`)}
-                          className="cursor-pointer border-t hover:bg-gray-50/70"
-                          onClick={() => {
-                            setEfEditId(String(f.fieldId ?? ""));
-                            setEfEntId(String(f.entityId ?? ""));
-                            setEfCode(String(f.fieldCode ?? ""));
-                            setEfName(String(f.displayName ?? ""));
-                            setEfDtype(String(f.dataType ?? "decimal"));
-                            setEfAggs(String(f.allowedAggregations ?? ""));
-                            setEfDesc(String(f.description ?? ""));
-                          }}
-                        >
-                          <td className="px-3 py-2">
-                            {String(f.fieldId ?? "-")}
-                          </td>
-                          <td className="px-3 py-2 font-mono text-xs">
-                            {String(f.fieldCode ?? "-")}
-                          </td>
-                          <td className="px-3 py-2">
-                            {String(f.displayName ?? "-")}
-                          </td>
-                          <td className="px-3 py-2">
-                            {String(f.dataType ?? "-")}
+                      {entityFields.length === 0 ? (
+                        <tr>
+                          <td className="px-3 py-3 text-gray-500" colSpan={5}>
+                            Entity này chưa có field.
                           </td>
                         </tr>
-                      ))}
+                      ) : (
+                        entityFields.map((f, index) => {
+                          const fieldId = String(f.fieldId ?? "");
+                          const isSelected = fieldId === efEditId;
+                          return (
+                            <tr
+                              key={fieldId || `field-${index}`}
+                              className={`cursor-pointer border-t transition-colors ${
+                                isSelected
+                                  ? "bg-[#23C4C1]/15 text-teal-900 shadow-[inset_4px_0_0_0_#23C4C1]"
+                                  : "hover:bg-gray-50/70"
+                              }`}
+                              onClick={() => {
+                                setEfEditId(String(f.fieldId ?? ""));
+                                setEfEntId(String(f.entityId ?? entEditId));
+                                setEfCode(String(f.fieldCode ?? ""));
+                                setEfName(String(f.displayName ?? ""));
+                                setEfDtype(String(f.dataType ?? "decimal"));
+                                setEfAggs(
+                                  String(f.allowedAggregations ?? '["none"]'),
+                                );
+                                setEfDesc(String(f.description ?? ""));
+                                setEfIsActive(
+                                  Boolean(f.isActive) ? "true" : "false",
+                                );
+                              }}
+                            >
+                              <td className="px-3 py-2">
+                                {String(f.fieldId ?? "-")}
+                              </td>
+                              <td className="px-3 py-2 font-mono text-xs">
+                                {String(f.fieldCode ?? "-")}
+                              </td>
+                              <td className="px-3 py-2">
+                                {String(f.displayName ?? "-")}
+                              </td>
+                              <td className="px-3 py-2">
+                                {String(f.dataType ?? "-")}
+                              </td>
+                              <td className="px-3 py-2">
+                                <Badge
+                                  variant="secondary"
+                                  className={
+                                    Boolean(f.isActive)
+                                      ? "bg-emerald-50 text-emerald-700"
+                                      : "bg-red-50 text-red-700"
+                                  }
+                                >
+                                  {Boolean(f.isActive) ? "Active" : "Inactive"}
+                                </Badge>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
                     </tbody>
                   </table>
                 </div>
@@ -1810,120 +2440,300 @@ export default function AdminAccountingClient() {
 
           <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
             <Card className="rounded-xl border border-gray-200 bg-white shadow-sm">
-              <CardHeader>
-                <CardTitle>Entity Editor</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                <input
-                  value={entEditId}
-                  onChange={(e) => setEntEditId(e.target.value)}
-                  placeholder="Entity ID"
-                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-                />
-                <input
-                  value={entCode}
-                  onChange={(e) => setEntCode(e.target.value)}
-                  placeholder="Entity Code"
-                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-                />
-                <input
-                  value={entName}
-                  onChange={(e) => setEntName(e.target.value)}
-                  placeholder="Display Name"
-                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-                />
-                <select
-                  value={entCat}
-                  onChange={(e) => setEntCat(e.target.value)}
-                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+              <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div className="space-y-1">
+                  <CardTitle>Entity Editor</CardTitle>
+                  <p className="text-xs text-gray-500">
+                    {hasSelectedEntity
+                      ? `Đang chỉnh sửa entity #${entEditId}`
+                      : "Tạo mới entity"}
+                  </p>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    setEntEditId("");
+                    setEntCode("");
+                    setEntName("");
+                    setEntCat("revenue");
+                    setEntDesc("");
+                    setEntIsActive("true");
+                  }}
                 >
-                  <option>revenue</option>
-                  <option>cost</option>
-                  <option>tax</option>
-                  <option>asset</option>
-                </select>
-                <input
-                  value={entDesc}
-                  onChange={(e) => setEntDesc(e.target.value)}
-                  placeholder="Description"
-                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-                />
+                  New Entity
+                </Button>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="space-y-3 rounded-xl border border-gray-100 bg-gray-50/60 p-3">
+                  <div className="space-y-1">
+                    <label className="block text-xs font-medium text-gray-600">
+                      Entity ID
+                    </label>
+                    <input
+                      value={entEditId}
+                      readOnly
+                      placeholder="(auto)"
+                      className="w-full rounded-lg border border-gray-200 bg-gray-100 px-3 py-2 text-sm"
+                    />
+                  </div>
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                    <div className="space-y-1">
+                      <label className="block text-xs font-medium text-gray-600">
+                        Entity Code
+                      </label>
+                      <input
+                        value={entCode}
+                        onChange={(e) => setEntCode(e.target.value)}
+                        placeholder="orders"
+                        className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                        disabled={hasSelectedEntity}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="block text-xs font-medium text-gray-600">
+                        Display Name
+                      </label>
+                      <input
+                        value={entName}
+                        onChange={(e) => setEntName(e.target.value)}
+                        placeholder="Đơn hàng"
+                        className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                    <div className="space-y-1">
+                      <label className="block text-xs font-medium text-gray-600">
+                        Category
+                      </label>
+                      <select
+                        value={entCat}
+                        onChange={(e) => setEntCat(e.target.value)}
+                        className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                      >
+                        <option>revenue</option>
+                        <option>cost</option>
+                        <option>tax</option>
+                        <option>asset</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="block text-xs font-medium text-gray-600">
+                        Status
+                      </label>
+                      <select
+                        value={entIsActive}
+                        onChange={(e) => setEntIsActive(e.target.value)}
+                        className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                      >
+                        <option value="true">Active</option>
+                        <option value="false">Inactive</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="block text-xs font-medium text-gray-600">
+                      Description
+                    </label>
+                    <textarea
+                      value={entDesc}
+                      onChange={(e) => setEntDesc(e.target.value)}
+                      placeholder="Mô tả ngắn cho entity"
+                      rows={2}
+                      className="w-full resize-y rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                    />
+                  </div>
+                </div>
                 <div className="grid grid-cols-2 gap-2">
                   <Button
                     size="sm"
                     className="bg-[#23C4C1] text-white hover:bg-[#1ea8a6]"
                     onClick={() => void entCreate()}
+                    disabled={!entCode.trim() || !entName.trim()}
                   >
-                    Create
+                    Create Entity
                   </Button>
                   <Button
                     size="sm"
                     variant="secondary"
                     onClick={() => void entUpdate()}
+                    disabled={!hasSelectedEntity}
                   >
-                    Update
+                    Update Entity
                   </Button>
                 </div>
               </CardContent>
             </Card>
 
             <Card className="rounded-xl border border-gray-200 bg-white shadow-sm">
-              <CardHeader>
-                <CardTitle>Field Editor</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                <input
-                  value={efEditId}
-                  onChange={(e) => setEfEditId(e.target.value)}
-                  placeholder="Field ID"
-                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-                />
-                <input
-                  value={efEntId}
-                  onChange={(e) => setEfEntId(e.target.value)}
-                  placeholder="Entity ID"
-                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-                />
-                <input
-                  value={efCode}
-                  onChange={(e) => setEfCode(e.target.value)}
-                  placeholder="Field Code"
-                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-                />
-                <input
-                  value={efName}
-                  onChange={(e) => setEfName(e.target.value)}
-                  placeholder="Display Name"
-                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-                />
-                <select
-                  value={efDtype}
-                  onChange={(e) => setEfDtype(e.target.value)}
-                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+              <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div className="space-y-1">
+                  <CardTitle>Field Editor</CardTitle>
+                  <p className="text-xs text-gray-500">
+                    {hasSelectedField
+                      ? `Đang chỉnh sửa field #${efEditId}`
+                      : "Tạo mới field cho entity đang chọn"}
+                  </p>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    setEfEditId("");
+                    setEfEntId(currentFieldEntityId);
+                    setEfCode("");
+                    setEfName("");
+                    setEfDtype("decimal");
+                    setEfAggs('["sum","none"]');
+                    setEfDesc("");
+                    setEfIsActive("true");
+                  }}
+                  disabled={!currentFieldEntityId}
                 >
-                  <option>decimal</option>
-                  <option>string</option>
-                  <option>date</option>
-                  <option>long</option>
-                  <option>guid</option>
-                </select>
-                <input
-                  value={efAggs}
-                  onChange={(e) => setEfAggs(e.target.value)}
-                  placeholder="Allowed Aggregations JSON"
-                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-                />
-                <input
-                  value={efDesc}
-                  onChange={(e) => setEfDesc(e.target.value)}
-                  placeholder="Description"
-                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-                />
+                  New Field
+                </Button>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="space-y-3 rounded-xl border border-gray-100 bg-gray-50/60 p-3">
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                    <div className="space-y-1">
+                      <label className="block text-xs font-medium text-gray-600">
+                        Field ID
+                      </label>
+                      <input
+                        value={efEditId}
+                        readOnly
+                        placeholder="(auto)"
+                        className="w-full rounded-lg border border-gray-200 bg-gray-100 px-3 py-2 text-sm"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="block text-xs font-medium text-gray-600">
+                        Entity ID
+                      </label>
+                      <input
+                        value={currentFieldEntityId}
+                        readOnly
+                        placeholder="Chọn entity trước"
+                        className="w-full rounded-lg border border-gray-200 bg-gray-100 px-3 py-2 text-sm"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                    <div className="space-y-1">
+                      <label className="block text-xs font-medium text-gray-600">
+                        Field Code
+                      </label>
+                      <input
+                        value={efCode}
+                        onChange={(e) => setEfCode(e.target.value)}
+                        placeholder="TotalAmount"
+                        className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                        disabled={hasSelectedField}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="block text-xs font-medium text-gray-600">
+                        Display Name
+                      </label>
+                      <input
+                        value={efName}
+                        onChange={(e) => setEfName(e.target.value)}
+                        placeholder="Tổng tiền"
+                        className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                    <div className="space-y-1">
+                      <label className="block text-xs font-medium text-gray-600">
+                        Data Type
+                      </label>
+                      <select
+                        value={efDtype}
+                        onChange={(e) => setEfDtype(e.target.value)}
+                        className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                      >
+                        <option>decimal</option>
+                        <option>string</option>
+                        <option>text</option>
+                        <option>date</option>
+                        <option>long</option>
+                        <option>guid</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="block text-xs font-medium text-gray-600">
+                        Status
+                      </label>
+                      <select
+                        value={efIsActive}
+                        onChange={(e) => setEfIsActive(e.target.value)}
+                        className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                      >
+                        <option value="true">Active</option>
+                        <option value="false">Inactive</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="block text-xs font-medium text-gray-600">
+                      Allowed Aggregations
+                    </label>
+                    <div className="rounded-lg border border-gray-200 bg-gray-50 p-2">
+                      <div className="flex flex-wrap gap-1.5">
+                        {fieldAggregationOptions.map((aggregation) => {
+                          const selected =
+                            selectedFieldAggregations.includes(aggregation);
+                          return (
+                            <button
+                              key={aggregation}
+                              type="button"
+                              onClick={() =>
+                                toggleFieldAggregation(aggregation)
+                              }
+                              className={`rounded-full border px-2.5 py-1 text-xs transition ${
+                                selected
+                                  ? "border-[#23C4C1]/40 bg-[#23C4C1]/10 text-[#15918f]"
+                                  : "border-gray-200 bg-white text-gray-600 hover:bg-gray-100"
+                              }`}
+                            >
+                              {aggregation}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                    <div className="text-[11px] text-gray-500">
+                      Payload: {efAggs}
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="block text-xs font-medium text-gray-600">
+                      Description
+                    </label>
+                    <textarea
+                      value={efDesc}
+                      onChange={(e) => setEfDesc(e.target.value)}
+                      placeholder="Mô tả ngắn cho field"
+                      rows={2}
+                      className="w-full resize-y rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                    />
+                  </div>
+                </div>
                 <div className="grid grid-cols-2 gap-2">
                   <Button
                     size="sm"
                     className="bg-[#23C4C1] text-white hover:bg-[#1ea8a6]"
                     onClick={() => void efCreate()}
+                    disabled={
+                      !currentFieldEntityId || !efCode.trim() || !efName.trim()
+                    }
                   >
                     Create Field
                   </Button>
@@ -1931,6 +2741,7 @@ export default function AdminAccountingClient() {
                     size="sm"
                     variant="secondary"
                     onClick={() => void efUpdate()}
+                    disabled={!hasSelectedField || !currentFieldEntityId}
                   >
                     Update Field
                   </Button>

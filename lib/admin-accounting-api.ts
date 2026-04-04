@@ -54,6 +54,17 @@ export interface FormulaCloneRequest {
   nameSuffix?: string;
 }
 
+export interface FormulaCreateRequest {
+  code: string;
+  name: string;
+  description?: string;
+  formulaType: string;
+  expressionJson: string;
+  resultDataType?: string;
+  roundingMode?: string;
+  roundingPrecision?: number;
+}
+
 export interface FieldMappingCreateRequest {
   fieldCode: string;
   fieldLabel?: string;
@@ -138,6 +149,7 @@ export interface MappableEntityCreateRequest {
 export interface MappableEntityPatchRequest {
   displayName?: string;
   description?: string;
+  isActive?: boolean;
 }
 
 export interface MappableFieldCreateRequest {
@@ -153,6 +165,23 @@ export interface MappableFieldPatchRequest {
   description?: string;
   dataType?: string;
   allowedAggregations?: string;
+  isActive?: boolean;
+}
+
+export interface BusinessTypeTaxRateDto {
+  rateId: number;
+  taxType: string;
+  taxRate: number;
+  description?: string;
+}
+
+export interface BusinessTypeWithRatesDto {
+  businessTypeId: string;
+  code: string;
+  name: string;
+  description?: string;
+  status: string;
+  taxRates: BusinessTypeTaxRateDto[];
 }
 
 export async function getTemplateVersionDetail(
@@ -255,6 +284,15 @@ export async function cloneFormula(
   );
 }
 
+export async function createFormula(
+  payload: FormulaCreateRequest,
+): Promise<Record<string, unknown>> {
+  return request<Record<string, unknown>>("/api/admin/accounting/formulas", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
 export async function createFieldMapping(
   templateVersionId: number,
   payload: FieldMappingCreateRequest,
@@ -328,6 +366,14 @@ export async function getMappableEntities(
   const params = activeOnly ? "?active=true" : "";
   return request<Record<string, unknown>[]>(
     `/api/admin/accounting/mappable-entities${params}`,
+  );
+}
+
+export async function getBusinessTypesWithRates(
+  rulesetId: number,
+): Promise<BusinessTypeWithRatesDto[]> {
+  return request<BusinessTypeWithRatesDto[]>(
+    `/api/admin/accounting/business-types?rulesetId=${rulesetId}`,
   );
 }
 

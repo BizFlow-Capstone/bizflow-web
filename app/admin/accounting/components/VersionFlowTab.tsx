@@ -35,6 +35,7 @@ import {
 import {
   cloneFormula,
   getAccountingReference,
+  getBusinessTypesWithRates,
   getFormulaDetail,
   getMappableEntities,
   getMappableEntityDetail,
@@ -110,6 +111,13 @@ interface EntityDraftState {
   entityCode: string;
   displayName: string;
   description: string;
+}
+
+interface RowTaxRateHint {
+  taxType: string;
+  businessTypeCode: string;
+  businessTypeName: string;
+  taxRate: number;
 }
 
 const PRIMARY = "bg-[#23C4C1] text-white hover:bg-[#1ea8a6]";
@@ -507,6 +515,37 @@ export default function VersionTab(props: VersionTabProps) {
   const [mappingEntityFieldOptions, setMappingEntityFieldOptions] = useState<
     Array<{ value: string; label: string }>
   >([]);
+  const [rowTypeOptions, setRowTypeOptions] = useState<
+    Array<{ value: string; label: string }>
+  >(
+    Object.entries(ROW_TYPE_LABELS).map(([value, label]) => ({
+      value,
+      label,
+    })),
+  );
+  const [rowPositionOptions, setRowPositionOptions] = useState<
+    Array<{ value: string; label: string }>
+  >(
+    Object.entries(POSITION_LABELS).map(([value, label]) => ({
+      value,
+      label,
+    })),
+  );
+  const [rowSectionTypeOptions, setRowSectionTypeOptions] = useState<
+    Array<{ value: string; label: string }>
+  >(
+    Object.entries(SECTION_TYPE_LABELS).map(([value, label]) => ({
+      value,
+      label,
+    })),
+  );
+  const [rowTaxTypeOptions, setRowTaxTypeOptions] = useState<
+    Array<{ value: string; label: string }>
+  >([
+    { value: "VAT", label: "VAT" },
+    { value: "PIT_METHOD_1", label: "PIT_METHOD_1" },
+  ]);
+  const [rowTaxRateHints, setRowTaxRateHints] = useState<RowTaxRateHint[]>([]);
 
   const [linkedFormulas, setLinkedFormulas] = useState<
     Array<Record<string, unknown>>
@@ -551,6 +590,20 @@ export default function VersionTab(props: VersionTabProps) {
       ) ?? null,
     [linkedEntities, selectedEntityId],
   );
+
+  const rowVisibleFieldOptions = useMemo(() => {
+    return fieldMappings
+      .map((mapping) => {
+        const fieldCode = asString(mapping.fieldCode).trim();
+        if (!fieldCode) return null;
+        const fieldLabel = asString(mapping.fieldLabel).trim();
+        return {
+          value: fieldCode,
+          label: fieldLabel ? `${fieldCode} - ${fieldLabel}` : fieldCode,
+        };
+      })
+      .filter((option): option is { value: string; label: string } => !!option);
+  }, [fieldMappings]);
 
   const reviewColumns = useMemo(() => {
     return [...fieldMappings]
@@ -775,6 +828,12 @@ export default function VersionTab(props: VersionTabProps) {
     deriveEntityDraft(null),
   );
 
+  const selectedRowTaxRateHints = useMemo(() => {
+    const taxType = rowDraft.taxType.trim().toUpperCase();
+    if (!taxType) return rowTaxRateHints;
+    return rowTaxRateHints.filter((item) => item.taxType === taxType);
+  }, [rowDraft.taxType, rowTaxRateHints]);
+
   useEffect(() => {
     const nextMappingId = asNumber(fieldMappings[0]?.mappingId);
     const nextRowId = asNumber(rowDefinitions[0]?.rowDefId);
@@ -827,6 +886,7 @@ export default function VersionTab(props: VersionTabProps) {
       try {
         const versionId = toNullableNumber(selectedVersionId);
         if (!versionId) return;
+        const rulesetId = asNumber(result?.rulesetId) ?? 1;
 
         const [
           formulaResults,
@@ -834,6 +894,7 @@ export default function VersionTab(props: VersionTabProps) {
           versionFormulas,
           entities,
           reference,
+          businessTypeRates,
         ] = await Promise.all([
           Promise.all(
             linkedFormulaIds.map((formulaId) => getFormulaDetail(formulaId)),
@@ -846,6 +907,7 @@ export default function VersionTab(props: VersionTabProps) {
           getTemplateVersionFormulas(versionId),
           getMappableEntities(true),
           getAccountingReference(),
+          getBusinessTypesWithRates(rulesetId).catch(() => []),
         ]);
         if (disposed) return;
 
@@ -902,6 +964,47 @@ export default function VersionTab(props: VersionTabProps) {
             ...aggregationTypes,
           ]);
         }
+
+        const rowTypes = asOptionList(reference.rowTypes);
+        if (rowTypes.length > 0) setRowTypeOptions(rowTypes);
+
+        const positions = asOptionList(reference.positions);
+        if (positions.length > 0) setRowPositionOptions(positions);
+
+        const sectionTypes = asOptionList(reference.sectionTypes);
+        if (sectionTypes.length > 0) setRowSectionTypeOptions(sectionTypes);
+
+        const refTaxTypes = asOptionList(reference.taxTypes);
+        const taxTypesFromRates = businessTypeRates
+          .flatMap((item) => asArray(item.taxRates))
+          .map((rate) => asString(rate.taxType).trim().toUpperCase())
+          .filter(Boolean);
+        const mergedTaxTypes = Array.from(
+          new Set([
+            ...refTaxTypes.map((item) => item.value.toUpperCase()),
+            ...taxTypesFromRates,
+          ]),
+        ).map((value) => {
+          const refMatch = refTaxTypes.find(
+            (item) => item.value.toUpperCase() === value,
+          );
+          return {
+            value,
+            label: refMatch?.label || value,
+          };
+        });
+        if (mergedTaxTypes.length > 0) setRowTaxTypeOptions(mergedTaxTypes);
+
+        setRowTaxRateHints(
+          businessTypeRates.flatMap((businessType) =>
+            asArray(businessType.taxRates).map((rate) => ({
+              taxType: asString(rate.taxType).trim().toUpperCase(),
+              businessTypeCode: asString(businessType.code),
+              businessTypeName: asString(businessType.name),
+              taxRate: asNumber(rate.taxRate) ?? 0,
+            })),
+          ),
+        );
       } catch (error) {
         if (!disposed) {
           setWizardError(
@@ -1092,6 +1195,21 @@ export default function VersionTab(props: VersionTabProps) {
     } finally {
       setWizardBusy(false);
     }
+  }
+
+  function toggleRowVisibleFieldCode(fieldCode: string) {
+    setRowDraft((prev) => {
+      const selected = new Set(parseVisibleFieldCodes(prev.visibleFieldCodes));
+      if (selected.has(fieldCode)) {
+        selected.delete(fieldCode);
+      } else {
+        selected.add(fieldCode);
+      }
+      return {
+        ...prev,
+        visibleFieldCodes: JSON.stringify(Array.from(selected)),
+      };
+    });
   }
 
   async function handleSaveRow() {
@@ -1952,7 +2070,7 @@ export default function VersionTab(props: VersionTabProps) {
                       <label className="block text-xs font-medium text-gray-600">
                         Loại dòng
                       </label>
-                      <input
+                      <select
                         value={rowDraft.rowType}
                         onChange={(e) =>
                           setRowDraft((prev) => ({
@@ -1961,7 +2079,13 @@ export default function VersionTab(props: VersionTabProps) {
                           }))
                         }
                         className="w-full rounded-lg border px-3 py-2 text-sm"
-                      />
+                      >
+                        {rowTypeOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
                     </div>
                     <div className="space-y-1">
                       <label className="block text-xs font-medium text-gray-600">
@@ -1983,7 +2107,7 @@ export default function VersionTab(props: VersionTabProps) {
                         <label className="block text-xs font-medium text-gray-600">
                           Position
                         </label>
-                        <input
+                        <select
                           value={rowDraft.position}
                           onChange={(e) =>
                             setRowDraft((prev) => ({
@@ -1992,7 +2116,13 @@ export default function VersionTab(props: VersionTabProps) {
                             }))
                           }
                           className="w-full rounded-lg border px-3 py-2 text-sm"
-                        />
+                        >
+                          {rowPositionOptions.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
                       </div>
                       <div className="space-y-1">
                         <label className="block text-xs font-medium text-gray-600">
@@ -2014,7 +2144,7 @@ export default function VersionTab(props: VersionTabProps) {
                       <label className="block text-xs font-medium text-gray-600">
                         Formula ID
                       </label>
-                      <input
+                      <select
                         value={rowDraft.formulaId}
                         onChange={(e) =>
                           setRowDraft((prev) => ({
@@ -2023,13 +2153,20 @@ export default function VersionTab(props: VersionTabProps) {
                           }))
                         }
                         className="w-full rounded-lg border px-3 py-2 text-sm"
-                      />
+                      >
+                        <option value="">Chọn formula</option>
+                        {mappingFormulaOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
                     </div>
                     <div className="space-y-1">
                       <label className="block text-xs font-medium text-gray-600">
                         Section type
                       </label>
-                      <input
+                      <select
                         value={rowDraft.sectionType}
                         onChange={(e) =>
                           setRowDraft((prev) => ({
@@ -2038,7 +2175,14 @@ export default function VersionTab(props: VersionTabProps) {
                           }))
                         }
                         className="w-full rounded-lg border px-3 py-2 text-sm"
-                      />
+                      >
+                        <option value="">Không chọn section</option>
+                        {rowSectionTypeOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
                     </div>
                     <div className="space-y-1">
                       <label className="block text-xs font-medium text-gray-600">
@@ -2074,7 +2218,7 @@ export default function VersionTab(props: VersionTabProps) {
                       <label className="block text-xs font-medium text-gray-600">
                         Tax type
                       </label>
-                      <input
+                      <select
                         value={rowDraft.taxType}
                         onChange={(e) =>
                           setRowDraft((prev) => ({
@@ -2083,7 +2227,56 @@ export default function VersionTab(props: VersionTabProps) {
                           }))
                         }
                         className="w-full rounded-lg border px-3 py-2 text-sm"
-                      />
+                      >
+                        <option value="">Không chọn tax type</option>
+                        {rowTaxTypeOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    {selectedRowTaxRateHints.length > 0 ? (
+                      <div className="max-h-28 overflow-auto rounded-lg border border-sky-100 bg-sky-50 p-2 text-xs text-sky-700">
+                        {selectedRowTaxRateHints.map((item, index) => (
+                          <div
+                            key={`${item.businessTypeCode}-${item.taxType}-${index}`}
+                          >
+                            {item.businessTypeCode} - {item.businessTypeName}:{" "}
+                            {(item.taxRate * 100).toFixed(2)}%
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                    <div className="space-y-1">
+                      <label className="block text-xs font-medium text-gray-600">
+                        Visible field codes (quick pick)
+                      </label>
+                      <div className="max-h-28 overflow-auto rounded-lg border border-gray-200 bg-gray-50 p-2">
+                        <div className="flex flex-wrap gap-1.5">
+                          {rowVisibleFieldOptions.map((option) => {
+                            const selected = parseVisibleFieldCodes(
+                              rowDraft.visibleFieldCodes,
+                            ).includes(option.value);
+                            return (
+                              <button
+                                key={option.value}
+                                type="button"
+                                onClick={() =>
+                                  toggleRowVisibleFieldCode(option.value)
+                                }
+                                className={`rounded-full border px-2 py-1 text-[11px] ${
+                                  selected
+                                    ? "border-[#23C4C1]/40 bg-[#23C4C1]/10 text-[#15918f]"
+                                    : "border-gray-200 bg-white text-gray-600"
+                                }`}
+                              >
+                                {option.value}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
                     </div>
                     <div className="space-y-1">
                       <label className="block text-xs font-medium text-gray-600">
