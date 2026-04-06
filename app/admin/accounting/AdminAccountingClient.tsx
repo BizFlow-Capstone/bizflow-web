@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  AlertCircle,
   ArrowRight,
   BookOpen,
   Boxes,
@@ -21,6 +20,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { toast } from "sonner";
 import {
   activateTemplateVersion,
   cloneFormula,
@@ -43,7 +43,6 @@ import {
   getMappableEntityDetail,
   getRowDefinitions,
   getTemplateVersionDetail,
-  getTemplateVersionFormulas,
   getTemplateVersionFullStructure,
   runAccountingCompare,
   runAccountingPreview,
@@ -59,14 +58,17 @@ import {
 } from "@/lib/admin-accounting-api";
 import type { BusinessTypeWithRatesDto } from "@/lib/admin-accounting-api";
 import type {
+  AccountingBookRow,
   AccountingBusinessTypeSummary,
   AccountingFormulaSummary,
   AccountingOverviewResponse,
+  AccountingTemplateColumnSummary,
   AccountingTemplateSummary,
 } from "@/lib/types/adminAccounting";
 import VersionFlowTab from "./components/VersionFlowTab";
 import FormulaTab from "./components/FormulaTab";
 import MappingTab from "./components/MappingTab";
+import BookTemplatePreview from "@/components/accounting/BookTemplatePreview";
 import type { MappingFormState } from "./components/types";
 
 type AccountingTabKey =
@@ -289,6 +291,24 @@ function asOptionList(value: unknown): Array<{ value: string; label: string }> {
     .filter((option): option is { value: string; label: string } => !!option);
 }
 
+function buildFormulaSelectOptions(
+  formulas: AccountingFormulaSummary[],
+): Array<{ value: string; label: string }> {
+  return formulas
+    .map((formula) => {
+      const formulaId = String(formula.formulaId ?? "").trim();
+      if (!formulaId) return null;
+      const formulaCode = String(formula.code ?? "").trim();
+      const formulaName = String(formula.name ?? "").trim();
+      return {
+        value: formulaId,
+        label:
+          `${formulaId} - ${formulaCode} ${formulaName ? `(${formulaName})` : ""}`.trim(),
+      };
+    })
+    .filter((option): option is { value: string; label: string } => !!option);
+}
+
 function parseVisibleFieldCodes(raw: string): string[] {
   if (!raw.trim()) return [];
   try {
@@ -298,8 +318,79 @@ function parseVisibleFieldCodes(raw: string): string[] {
       .map((item) => (typeof item === "string" ? item.trim() : ""))
       .filter(Boolean);
   } catch {
-    return [];
+    return raw
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean);
   }
+}
+
+function pickFirstRowValue(
+  row: Record<string, unknown>,
+  fieldCodes: Array<string | undefined>,
+): unknown {
+  for (const fieldCode of fieldCodes) {
+    if (!fieldCode) continue;
+    const value = row[fieldCode];
+    if (value !== undefined && value !== null && value !== "") return value;
+  }
+  return null;
+}
+
+function resolveRowAmountValue(row: Record<string, unknown>): unknown {
+  const visibleCodes = parseVisibleFieldCodes(
+    String(row.visibleFieldCodes ?? ""),
+  );
+  const preferredValue = pickFirstRowValue(row, [
+    ...visibleCodes.filter((code) => {
+      const normalized = code.toLowerCase();
+      return normalized !== "dien_giai" && normalized !== "description";
+    }),
+    "so_tien",
+    "amount",
+    "revenue",
+    "value",
+  ]);
+
+  if (preferredValue !== null) return preferredValue;
+
+  const ignoredKeys = new Set([
+    "stt",
+    "lineType",
+    "line_type",
+    "rowType",
+    "row_type",
+    "rowLabel",
+    "row_label",
+    "dien_giai",
+    "description",
+    "so_hieu",
+    "chung_tu_so_hieu",
+    "ngay_thang",
+    "chung_tu_ngay_thang",
+    "date",
+    "businessTypeId",
+    "business_type_id",
+  ]);
+
+  const numericFallback = Object.entries(row).find(([key, value]) => {
+    if (ignoredKeys.has(key)) return false;
+    return typeof value === "number" && Number.isFinite(value);
+  });
+
+  return numericFallback?.[1] ?? null;
+}
+
+function formatAmountValue(value: unknown): string {
+  if (value == null || value === "") return "-";
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value.toLocaleString("vi-VN");
+  }
+
+  const parsed = Number(value);
+  if (Number.isFinite(parsed)) return parsed.toLocaleString("vi-VN");
+
+  return String(value);
 }
 
 function stringifyVisibleFieldCodes(values: string[]): string {
@@ -329,8 +420,111 @@ function stringifyAllowedAggregations(values: string[]): string {
   return JSON.stringify(Array.from(new Set(values.filter(Boolean))));
 }
 
+function derivePreviewColumnsFromRows(
+  rows: Array<Record<string, unknown>>,
+): AccountingTemplateColumnSummary[] {
+  if (rows.length === 0) return [];
+
+  const ignoredKeys = new Set([
+    "lineType",
+    "line_type",
+    "rowType",
+    "row_type",
+    "rowLabel",
+    "row_label",
+    "visibleFieldCodes",
+  ]);
+
+  const labelMap: Record<string, string> = {
+    so_hieu: "Số hiệu chứng từ",
+    chung_tu_so_hieu: "Số hiệu chứng từ",
+    ngay_thang: "Ngày, tháng",
+    chung_tu_ngay_thang: "Ngày, tháng",
+    date: "Ngày, tháng",
+    dien_giai: "Diễn giải",
+    description: "Diễn giải",
+    so_tien: "Số tiền",
+    amount: "Số tiền",
+    revenue: "Số tiền",
+    value: "Giá trị",
+    businessTypeId: "Business Type ID",
+  };
+
+  const preferredOrder = [
+    "so_hieu",
+    "chung_tu_so_hieu",
+    "ngay_thang",
+    "chung_tu_ngay_thang",
+    "date",
+    "dien_giai",
+    "description",
+    "so_tien",
+    "amount",
+    "revenue",
+    "value",
+  ];
+
+  const keySet = new Set<string>();
+  rows.slice(0, 50).forEach((row) => {
+    Object.keys(row).forEach((key) => {
+      if (!ignoredKeys.has(key)) keySet.add(key);
+    });
+  });
+
+  const keys = Array.from(keySet).sort((left, right) => {
+    const leftIndex = preferredOrder.indexOf(left);
+    const rightIndex = preferredOrder.indexOf(right);
+    if (leftIndex !== -1 && rightIndex !== -1) return leftIndex - rightIndex;
+    if (leftIndex !== -1) return -1;
+    if (rightIndex !== -1) return 1;
+    return left.localeCompare(right);
+  });
+
+  return keys.map((fieldCode) => {
+    const sampleValues = rows
+      .map((row) => row[fieldCode])
+      .filter((value) => value !== undefined && value !== null && value !== "")
+      .slice(0, 12);
+
+    const hasNumericSample = sampleValues.some((value) => {
+      if (typeof value === "number" && Number.isFinite(value)) return true;
+      const parsed = Number(value);
+      return (
+        typeof value === "string" &&
+        value.trim() !== "" &&
+        Number.isFinite(parsed)
+      );
+    });
+
+    const looksLikeDate =
+      fieldCode.toLowerCase().includes("date") ||
+      fieldCode.toLowerCase().includes("ngay");
+
+    const fieldType = looksLikeDate
+      ? "date"
+      : hasNumericSample
+        ? "decimal"
+        : "text";
+
+    return {
+      fieldCode,
+      label: labelMap[fieldCode] || fieldCode,
+      fieldType,
+      exportColumn: "",
+    };
+  });
+}
+
 function isAccountingTabKey(value: string | null): value is AccountingTabKey {
   return Boolean(value) && tabs.some((tab) => tab.key === value);
+}
+
+function shouldToastSuccessLog(message: string): boolean {
+  const trimmed = message.trim();
+  if (!trimmed) return false;
+  if (trimmed.startsWith("Loaded ")) return false;
+  if (trimmed.startsWith("No ")) return false;
+  return true;
 }
 
 export default function AdminAccountingClient() {
@@ -340,7 +534,7 @@ export default function AdminAccountingClient() {
   const [overview, setOverview] = useState<AccountingOverviewResponse | null>(
     null,
   );
-  const [error, setError] = useState("");
+  const [, setError] = useState("");
   const [logs, setLogs] = useState<LogEntry[]>([]);
 
   const [tvId, setTvId] = useState("");
@@ -505,6 +699,10 @@ export default function AdminAccountingClient() {
     string,
     unknown
   > | null>(null);
+  const [previewFullStructure, setPreviewFullStructure] = useState<Record<
+    string,
+    unknown
+  > | null>(null);
 
   const [trFId, setTrFId] = useState("");
   const [trLoc, setTrLoc] = useState("6");
@@ -570,6 +768,76 @@ export default function AdminAccountingClient() {
     const rows = asRecord(root?.rows);
     return asArray(rows?.items);
   }, [previewResult]);
+
+  const previewSummaryMeta = useMemo(() => {
+    const root = asRecord(previewResult);
+    return asRecord(root?.summary);
+  }, [previewResult]);
+
+  const previewTemplateIdentity = useMemo(() => {
+    const structure = asRecord(previewFullStructure);
+    return {
+      templateCode: String(structure?.templateCode ?? "").trim(),
+      templateName: String(structure?.templateName ?? "").trim(),
+      versionLabel: String(structure?.versionLabel ?? "").trim(),
+      templateVersionId: Number(structure?.templateVersionId ?? 0),
+    };
+  }, [previewFullStructure]);
+
+  const previewTemplateColumns = useMemo<
+    AccountingTemplateColumnSummary[]
+  >(() => {
+    const structure = asRecord(previewFullStructure);
+    const fieldMappings = asArray(structure?.fieldMappings)
+      .map((mapping) => ({
+        fieldCode: String(mapping.fieldCode ?? "").trim(),
+        label: String(mapping.fieldLabel ?? mapping.fieldCode ?? "").trim(),
+        fieldType: String(mapping.fieldType ?? "text").trim() || "text",
+        exportColumn: String(mapping.exportColumn ?? "").trim(),
+        sortOrder: Number(mapping.sortOrder ?? 0),
+      }))
+      .filter((mapping) => mapping.fieldCode.length > 0)
+      .sort((left, right) => left.sortOrder - right.sortOrder);
+
+    return fieldMappings.map((mapping) => ({
+      fieldCode: mapping.fieldCode,
+      label: mapping.label,
+      fieldType: mapping.fieldType,
+      exportColumn: mapping.exportColumn,
+    }));
+  }, [previewFullStructure]);
+
+  const previewTemplateRows = useMemo<AccountingBookRow[]>(() => {
+    return previewRowItems.map((row) => ({
+      ...row,
+      rowType: row.rowType ?? row.lineType ?? "data",
+    }));
+  }, [previewRowItems]);
+
+  const previewTemplateRowDefinitions = useMemo(() => {
+    const structure = asRecord(previewFullStructure);
+    return asArray(structure?.rowDefinitions);
+  }, [previewFullStructure]);
+
+  const previewRenderableColumns = useMemo<
+    AccountingTemplateColumnSummary[]
+  >(() => {
+    if (previewTemplateColumns.length > 0) return previewTemplateColumns;
+    return derivePreviewColumnsFromRows(previewRowItems);
+  }, [previewTemplateColumns, previewRowItems]);
+
+  const previewRenderIdentity = useMemo(() => {
+    const fallbackVersionId = Number(pvVer || 0);
+    return {
+      templateCode: previewTemplateIdentity.templateCode || "unknown",
+      templateName: previewTemplateIdentity.templateName || "Mẫu sổ tổng quát",
+      versionLabel:
+        previewTemplateIdentity.versionLabel ||
+        (fallbackVersionId > 0 ? `v${fallbackVersionId}` : ""),
+      templateVersionId:
+        previewTemplateIdentity.templateVersionId || fallbackVersionId,
+    };
+  }, [previewTemplateIdentity, pvVer]);
 
   const compareActive = useMemo(() => {
     const root = asRecord(compareResult);
@@ -810,23 +1078,6 @@ export default function AdminAccountingClient() {
   const activeTab: AccountingTabKey = isAccountingTabKey(tabParam)
     ? tabParam
     : "overview";
-  const deepLinkState = useMemo(() => {
-    if (isAccountingTabKey(tabParam)) {
-      return {
-        confirmed: true,
-        message: `Deep-link query applied: tab=${tabParam}`,
-      };
-    }
-
-    if (tabParam) {
-      return {
-        confirmed: false,
-        message: `Ignored invalid deep-link query: tab=${tabParam}`,
-      };
-    }
-
-    return { confirmed: false, message: "" };
-  }, [tabParam]);
 
   const navigateToTab = useCallback(
     (tab: AccountingTabKey) => {
@@ -844,6 +1095,15 @@ export default function AdminAccountingClient() {
         100,
       ),
     );
+
+    if (type === "error") {
+      toast.error(message);
+      return;
+    }
+
+    if (type === "ok" && shouldToastSuccessLog(message)) {
+      toast.success(message);
+    }
   }, []);
 
   const runSafe = useCallback(
@@ -1239,7 +1499,14 @@ export default function AdminAccountingClient() {
     if (!id) return;
     await runSafe(async () => {
       await deleteTemplateVersion(id);
-      setTvResult({ message: "Deleted" });
+      // Clear current selection to avoid fetching detail/full-structure for a deleted version.
+      setTvId("");
+      setFldVer("");
+      setRdVer("");
+      setTvLabel("");
+      setTvEffective("");
+      setTvNotes("");
+      setTvResult(null);
       log(`Deleted version ${id}`, "ok");
       await loadOverview();
     });
@@ -1319,13 +1586,18 @@ export default function AdminAccountingClient() {
     });
   };
 
-  const fmClone = async () => {
+  const fmClone = async (payloadInput?: {
+    newCode?: string;
+    nameSuffix?: string;
+  }) => {
     const id = toNum(fmId);
     if (!id) return;
     await runSafe(async () => {
       const payload: Record<string, string> = {};
-      if (fmCloneCode.trim()) payload.newCode = fmCloneCode;
-      if (fmCloneSuffix.trim()) payload.nameSuffix = fmCloneSuffix;
+      const nextCode = (payloadInput?.newCode ?? fmCloneCode).trim();
+      const nextSuffix = (payloadInput?.nameSuffix ?? fmCloneSuffix).trim();
+      if (nextCode) payload.newCode = nextCode;
+      if (nextSuffix) payload.nameSuffix = nextSuffix;
       const d = await cloneFormula(id, payload);
       const newId = Number(d.formulaId ?? 0);
       if (newId > 0) {
@@ -1366,27 +1638,16 @@ export default function AdminAccountingClient() {
       const versionId = toNum(rawVersionId ?? effectiveFldVer);
       if (!versionId) return;
       await runSafe(async () => {
-        const [d, formulasForVersion, activeEntities, reference] =
-          await Promise.all([
-            getTemplateVersionDetail(versionId),
-            getTemplateVersionFormulas(versionId),
-            getMappableEntities(true),
-            getAccountingReference(),
-          ]);
+        const [d, overviewData, activeEntities, reference] = await Promise.all([
+          getTemplateVersionDetail(versionId),
+          getAccountingOverview(),
+          getMappableEntities(true),
+          getAccountingReference(),
+        ]);
 
         setFieldMappings(asArray(d.fieldMappings));
-
         setMappingFormulaOptions(
-          formulasForVersion.map((formula) => {
-            const formulaId = String(formula.formulaId ?? "");
-            const formulaCode = String(formula.code ?? "");
-            const formulaName = String(formula.name ?? "");
-            return {
-              value: formulaId,
-              label:
-                `${formulaId} - ${formulaCode} ${formulaName ? `(${formulaName})` : ""}`.trim(),
-            };
-          }),
+          buildFormulaSelectOptions(overviewData.formulas ?? []),
         );
 
         setMappingEntityOptions(
@@ -1622,33 +1883,20 @@ export default function AdminAccountingClient() {
       if (!versionId) return;
       const rulesetId = toNum(rawRulesetId ?? effectiveRdRulesetId) ?? 1;
       await runSafe(async () => {
-        const [rows, detail, formulasForVersion, reference, businessTypeRates] =
+        const [rows, detail, overviewData, reference, businessTypeRates] =
           await Promise.all([
             getRowDefinitions(versionId),
             getTemplateVersionDetail(versionId),
-            getTemplateVersionFormulas(versionId),
+            getAccountingOverview(),
             getAccountingReference(),
             getBusinessTypesWithRates(rulesetId),
           ]);
 
         setRowDefs(asArray(rows));
 
-        const formulaOptions = formulasForVersion
-          .map((formula) => {
-            const formulaId = String(formula.formulaId ?? "").trim();
-            if (!formulaId) return null;
-            const formulaCode = String(formula.code ?? "").trim();
-            const formulaName = String(formula.name ?? "").trim();
-            return {
-              value: formulaId,
-              label:
-                `${formulaId} - ${formulaCode} ${formulaName ? `(${formulaName})` : ""}`.trim(),
-            };
-          })
-          .filter(
-            (option): option is { value: string; label: string } => !!option,
-          );
-        setRowFormulaOptions(formulaOptions);
+        setRowFormulaOptions(
+          buildFormulaSelectOptions(overviewData.formulas ?? []),
+        );
 
         const visibleOptions = asArray(detail.fieldMappings)
           .map((mapping) => {
@@ -1951,7 +2199,9 @@ export default function AdminAccountingClient() {
     if (!id) return;
     await runSafe(async () => {
       const payload: Record<string, unknown> = {};
+      if (entCode.trim()) payload.entityCode = entCode.trim();
       if (entName.trim()) payload.displayName = entName.trim();
+      if (entCat.trim()) payload.category = entCat.trim();
       if (entDesc.trim()) payload.description = entDesc.trim();
       payload.isActive = entIsActive === "true";
       await updateMappableEntity(id, payload as never);
@@ -1983,6 +2233,7 @@ export default function AdminAccountingClient() {
     if (!fieldId || !entityId) return;
     await runSafe(async () => {
       const payload: Record<string, unknown> = {};
+      if (efCode.trim()) payload.fieldCode = efCode.trim();
       if (efName.trim()) payload.displayName = efName.trim();
       if (efDesc.trim()) payload.description = efDesc.trim();
       if (efDtype.trim()) payload.dataType = efDtype;
@@ -2078,8 +2329,30 @@ export default function AdminAccountingClient() {
           : [],
         batchSize: Number(pvBatch || 10),
       };
-      const d = await runAccountingPreview(payload);
+
+      setPreviewFullStructure(null);
+
+      const [d, reference] = await Promise.all([
+        runAccountingPreview(payload),
+        getAccountingReference(),
+      ]);
       setPreviewResult(d);
+      setRefData(reference);
+
+      if (payload.templateVersionId > 0) {
+        try {
+          const fullStructure = await getTemplateVersionFullStructure(
+            payload.templateVersionId,
+          );
+          setPreviewFullStructure(fullStructure);
+        } catch {
+          log(
+            "Preview data loaded nhưng không tải được full structure để dựng mẫu sổ.",
+            "error",
+          );
+        }
+      }
+
       log("Preview finished", "ok");
     });
   };
@@ -2105,35 +2378,6 @@ export default function AdminAccountingClient() {
 
   return (
     <main className="space-y-6" aria-labelledby="admin-accounting-title">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          {deepLinkState.message ? (
-            <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-gray-600">
-              <Badge
-                variant="secondary"
-                className={
-                  deepLinkState.confirmed
-                    ? "bg-emerald-50 text-emerald-700"
-                    : "bg-amber-50 text-amber-700"
-                }
-              >
-                {deepLinkState.confirmed ? "Deep-link OK" : "Deep-link check"}
-              </Badge>
-              <span>{deepLinkState.message}</span>
-            </div>
-          ) : null}
-        </div>
-      </div>
-
-      {error ? (
-        <Card className="border border-red-200 bg-red-50 shadow-sm">
-          <CardContent className="flex items-center gap-2 p-4 text-sm text-red-700">
-            <AlertCircle className="h-4 w-4" />
-            {error}
-          </CardContent>
-        </Card>
-      ) : null}
-
       <Card className="rounded-xl border border-gray-200 bg-white shadow-sm">
         <CardContent className="p-3">
           <nav aria-label="Admin accounting sections" className="space-y-3">
@@ -2686,7 +2930,7 @@ export default function AdminAccountingClient() {
           setFmRoundingMode={setFmRoundingMode}
           setFmRoundingPrecision={setFmRoundingPrecision}
           onDetail={(rawId) => void fmDetail(rawId)}
-          onClone={() => void fmClone()}
+          onClone={(payload) => void fmClone(payload)}
           onCreate={() => void fmCreate()}
           onActivate={() => void fmActivate()}
           onDeactivate={() => void fmDeactivate()}
@@ -2846,128 +3090,189 @@ export default function AdminAccountingClient() {
                   size="sm"
                   variant="link"
                   onClick={() => {
-                    setRowEditorMode("create");
-                    setRowForm(emptyRowForm);
+                    if (rowEditorMode === "update") {
+                      setRowEditorMode("create");
+                      setRowForm(emptyRowForm);
+                      setRowActionMenuId("");
+                      return;
+                    }
+
+                    setRowEditorMode("update");
                     setRowActionMenuId("");
+                    if (!rowForm.rowDefId && rowDefs.length > 0) {
+                      rdPick(rowDefs[0]);
+                    }
                   }}
                   className=" text-[#23C4C1] hover:text-[#1ea8a6]"
                 >
-                  Create
+                  {rowEditorMode === "create" ? "Update" : "Create"}
                 </Button>
               </div>
             </CardHeader>
-            <CardContent className="space-y-2">
+            <CardContent className="space-y-3">
               {rowEditorMode === "update" ? (
-                <input
-                  value={rowForm.rowDefId}
-                  readOnly
-                  placeholder="ID"
-                  className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm"
-                />
+                <div className="space-y-1">
+                  <label className="block text-xs font-medium text-gray-600">
+                    Row ID
+                  </label>
+                  <input
+                    value={rowForm.rowDefId}
+                    readOnly
+                    placeholder="ID"
+                    className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm"
+                  />
+                </div>
               ) : null}
-              <input
-                value={rowForm.rowLabel}
-                onChange={(e) =>
-                  setRowForm((p) => ({ ...p, rowLabel: e.target.value }))
-                }
-                placeholder="Row Label"
-                className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-              />
-              <select
-                value={rowForm.rowType}
-                onChange={(e) =>
-                  setRowForm((p) => ({ ...p, rowType: e.target.value }))
-                }
-                className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-              >
-                {rowTypeOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-              <select
-                value={rowForm.position}
-                onChange={(e) =>
-                  setRowForm((p) => ({ ...p, position: e.target.value }))
-                }
-                className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-              >
-                {rowPositionOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-              <input
-                value={rowForm.sortOrder}
-                onChange={(e) =>
-                  setRowForm((p) => ({ ...p, sortOrder: e.target.value }))
-                }
-                placeholder="Sort"
-                className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-              />
-              <select
-                value={rowForm.formulaId}
-                onChange={(e) =>
-                  setRowForm((p) => ({ ...p, formulaId: e.target.value }))
-                }
-                className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-              >
-                <option value="">Formula ID</option>
-                {rowFormulaOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-              <select
-                value={rowForm.sectionType}
-                onChange={(e) =>
-                  setRowForm((p) => ({ ...p, sectionType: e.target.value }))
-                }
-                className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-              >
-                <option value="">Section Type</option>
-                {rowSectionTypeOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-              <input
-                value={rowForm.sectionFilterValue}
-                onChange={(e) =>
-                  setRowForm((p) => ({
-                    ...p,
-                    sectionFilterValue: e.target.value,
-                  }))
-                }
-                placeholder="Section Filter"
-                className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-              />
-              <input
-                value={rowForm.groupByField}
-                onChange={(e) =>
-                  setRowForm((p) => ({ ...p, groupByField: e.target.value }))
-                }
-                placeholder="GroupBy Field"
-                className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-              />
-              <select
-                value={rowForm.taxType}
-                onChange={(e) =>
-                  setRowForm((p) => ({ ...p, taxType: e.target.value }))
-                }
-                className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-              >
-                <option value="">Tax Type</option>
-                {rowTaxTypeOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
+              <div className="space-y-1">
+                <label className="block text-xs font-medium text-gray-600">
+                  Loại dòng
+                </label>
+                <select
+                  value={rowForm.rowType}
+                  onChange={(e) =>
+                    setRowForm((p) => ({ ...p, rowType: e.target.value }))
+                  }
+                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                >
+                  {rowTypeOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-1">
+                <label className="block text-xs font-medium text-gray-600">
+                  Nhãn dòng
+                </label>
+                <input
+                  value={rowForm.rowLabel}
+                  onChange={(e) =>
+                    setRowForm((p) => ({ ...p, rowLabel: e.target.value }))
+                  }
+                  placeholder="Row Label"
+                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <label className="block text-xs font-medium text-gray-600">
+                    Position
+                  </label>
+                  <select
+                    value={rowForm.position}
+                    onChange={(e) =>
+                      setRowForm((p) => ({ ...p, position: e.target.value }))
+                    }
+                    className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                  >
+                    {rowPositionOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="block text-xs font-medium text-gray-600">
+                    Thứ tự
+                  </label>
+                  <input
+                    value={rowForm.sortOrder}
+                    onChange={(e) =>
+                      setRowForm((p) => ({ ...p, sortOrder: e.target.value }))
+                    }
+                    placeholder="Sort"
+                    className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                  />
+                </div>
+              </div>
+              <div className="space-y-1">
+                <label className="block text-xs font-medium text-gray-600">
+                  Formula ID
+                </label>
+                <select
+                  value={rowForm.formulaId}
+                  onChange={(e) =>
+                    setRowForm((p) => ({ ...p, formulaId: e.target.value }))
+                  }
+                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                >
+                  <option value="">Chọn formula</option>
+                  {rowFormulaOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-1">
+                <label className="block text-xs font-medium text-gray-600">
+                  Section type
+                </label>
+                <select
+                  value={rowForm.sectionType}
+                  onChange={(e) =>
+                    setRowForm((p) => ({ ...p, sectionType: e.target.value }))
+                  }
+                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                >
+                  <option value="">Không chọn section</option>
+                  {rowSectionTypeOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-1">
+                <label className="block text-xs font-medium text-gray-600">
+                  Section filter value
+                </label>
+                <input
+                  value={rowForm.sectionFilterValue}
+                  onChange={(e) =>
+                    setRowForm((p) => ({
+                      ...p,
+                      sectionFilterValue: e.target.value,
+                    }))
+                  }
+                  placeholder="Section Filter"
+                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="block text-xs font-medium text-gray-600">
+                  Group by field
+                </label>
+                <input
+                  value={rowForm.groupByField}
+                  onChange={(e) =>
+                    setRowForm((p) => ({ ...p, groupByField: e.target.value }))
+                  }
+                  placeholder="GroupBy Field"
+                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="block text-xs font-medium text-gray-600">
+                  Tax type
+                </label>
+                <select
+                  value={rowForm.taxType}
+                  onChange={(e) =>
+                    setRowForm((p) => ({ ...p, taxType: e.target.value }))
+                  }
+                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                >
+                  <option value="">Không chọn tax type</option>
+                  {rowTaxTypeOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
               {filteredRowTaxRateHints.length > 0 ? (
                 <div className="max-h-28 overflow-auto rounded-lg border border-sky-100 bg-sky-50 p-2 text-xs text-sky-700">
                   {filteredRowTaxRateHints.map((item, index) => (
@@ -2982,7 +3287,7 @@ export default function AdminAccountingClient() {
               ) : null}
               <div className="space-y-1">
                 <label className="block text-xs font-medium text-gray-600">
-                  Visible Fields (quick pick)
+                  Visible field codes (quick pick)
                 </label>
                 <div className="max-h-28 overflow-auto rounded-lg border border-gray-200 bg-gray-50 p-2">
                   <div className="flex flex-wrap gap-1.5">
@@ -3010,33 +3315,37 @@ export default function AdminAccountingClient() {
                   </div>
                 </div>
               </div>
-              <input
-                value={rowForm.visibleFieldCodes}
-                onChange={(e) =>
-                  setRowForm((p) => ({
-                    ...p,
-                    visibleFieldCodes: e.target.value,
-                  }))
-                }
-                placeholder="Visible Fields JSON"
-                className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-              />
+              <div className="space-y-1">
+                <label className="block text-xs font-medium text-gray-600">
+                  Visible field codes
+                </label>
+                <input
+                  value={rowForm.visibleFieldCodes}
+                  onChange={(e) =>
+                    setRowForm((p) => ({
+                      ...p,
+                      visibleFieldCodes: e.target.value,
+                    }))
+                  }
+                  placeholder="Visible field codes"
+                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                />
+              </div>
               {rowEditorMode === "create" ? (
                 <div className="pt-2">
                   <Button
                     size="sm"
-                    variant="outline"
-                    className="w-full  text-[#23C4C1] hover:text-[#1ea8a6]"
+                    className="w-full bg-[#23C4C1] text-white hover:bg-[#1ea8a6]"
                     onClick={() => void rdCreate()}
                   >
                     Create
                   </Button>
                 </div>
               ) : (
-                <div className="grid grid-cols-2 gap-2 pt-2">
+                <div className="pt-2">
                   <Button
                     size="sm"
-                    variant="secondary"
+                    className="w-full bg-[#23C4C1] text-white hover:bg-[#1ea8a6]"
                     onClick={() => void rdUpdate()}
                     disabled={!rowForm.rowDefId}
                   >
@@ -3141,6 +3450,7 @@ export default function AdminAccountingClient() {
                         <th className="px-3 py-2">ID</th>
                         <th className="px-3 py-2">Code</th>
                         <th className="px-3 py-2">Name</th>
+                        <th className="px-3 py-2">Description</th>
                         <th className="px-3 py-2">Type</th>
                         <th className="px-3 py-2">Status</th>
                       </tr>
@@ -3148,7 +3458,7 @@ export default function AdminAccountingClient() {
                     <tbody>
                       {entityFields.length === 0 ? (
                         <tr>
-                          <td className="px-3 py-3 text-gray-500" colSpan={5}>
+                          <td className="px-3 py-3 text-gray-500" colSpan={6}>
                             Entity này chưa có field.
                           </td>
                         </tr>
@@ -3187,6 +3497,9 @@ export default function AdminAccountingClient() {
                               </td>
                               <td className="px-3 py-2">
                                 {String(f.displayName ?? "-")}
+                              </td>
+                              <td className="max-w-[280px] px-3 py-2 text-gray-600">
+                                {String(f.description ?? "-")}
                               </td>
                               <td className="px-3 py-2">
                                 {String(f.dataType ?? "-")}
@@ -3263,7 +3576,6 @@ export default function AdminAccountingClient() {
                         onChange={(e) => setEntCode(e.target.value)}
                         placeholder="orders"
                         className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-                        disabled={hasSelectedEntity}
                       />
                     </div>
                     <div className="space-y-1">
@@ -3407,7 +3719,6 @@ export default function AdminAccountingClient() {
                         onChange={(e) => setEfCode(e.target.value)}
                         placeholder="TotalAmount"
                         className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-                        disabled={hasSelectedField}
                       />
                     </div>
                     <div className="space-y-1">
@@ -3888,11 +4199,9 @@ export default function AdminAccountingClient() {
                                   {String(row.dien_giai ?? "-")}
                                 </td>
                                 <td className="border border-gray-200 px-3 py-2">
-                                  {row.so_tien == null
-                                    ? "-"
-                                    : Number(row.so_tien).toLocaleString(
-                                        "vi-VN",
-                                      )}
+                                  {formatAmountValue(
+                                    resolveRowAmountValue(row),
+                                  )}
                                 </td>
                                 <td className="border border-gray-200 px-3 py-2 font-mono text-xs text-gray-600">
                                   {String(row.businessTypeId ?? "-")}
@@ -3970,11 +4279,9 @@ export default function AdminAccountingClient() {
                                   {String(row.dien_giai ?? "-")}
                                 </td>
                                 <td className="border border-gray-200 px-3 py-2">
-                                  {row.so_tien == null
-                                    ? "-"
-                                    : Number(row.so_tien).toLocaleString(
-                                        "vi-VN",
-                                      )}
+                                  {formatAmountValue(
+                                    resolveRowAmountValue(row),
+                                  )}
                                 </td>
                                 <td className="border border-gray-200 px-3 py-2 font-mono text-xs text-gray-600">
                                   {String(row.businessTypeId ?? "-")}
@@ -4182,6 +4489,52 @@ export default function AdminAccountingClient() {
               </div>
             ) : (
               <div className="space-y-4">
+                <div className="rounded-xl border border-gray-200 bg-white p-4">
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                    <h3 className="text-sm font-semibold text-gray-800">
+                      Mẫu sổ (Preview Data + Full Structure nếu có)
+                    </h3>
+                    <span className="text-xs text-gray-500">
+                      Version: {previewRenderIdentity.templateVersionId || "-"}
+                    </span>
+                  </div>
+
+                  {previewTemplateRows.length === 0 ? (
+                    <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 px-4 py-6 text-sm text-gray-500">
+                      Preview không có dòng dữ liệu để dựng mẫu sổ.
+                    </div>
+                  ) : previewRenderableColumns.length === 0 ? (
+                    <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 px-4 py-6 text-sm text-gray-500">
+                      Không suy luận được cột để dựng mẫu sổ từ preview data.
+                    </div>
+                  ) : (
+                    <>
+                      {!previewFullStructure ? (
+                        <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                          Chưa tải được full structure. Đang dùng auto columns
+                          từ preview data để render UI.
+                        </div>
+                      ) : null}
+                      {previewTemplateColumns.length === 0 ? (
+                        <div className="mb-3 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-700">
+                          Full structure không có field mappings. Đang dùng auto
+                          columns từ preview data.
+                        </div>
+                      ) : null}
+                      <BookTemplatePreview
+                        templateCode={previewRenderIdentity.templateCode}
+                        templateName={previewRenderIdentity.templateName}
+                        versionLabel={previewRenderIdentity.versionLabel}
+                        columns={previewRenderableColumns}
+                        rows={previewTemplateRows}
+                        rowDefinitions={previewTemplateRowDefinitions}
+                        referenceData={refData}
+                        summaryMeta={previewSummaryMeta}
+                      />
+                    </>
+                  )}
+                </div>
+
                 <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
                   <table className="w-full min-w-180 border-collapse text-sm">
                     <thead>

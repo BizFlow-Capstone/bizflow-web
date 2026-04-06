@@ -3,9 +3,12 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
-  getMappableEntities,
-  getMappableEntityDetail,
-} from "@/lib/admin-accounting-api";
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import type { AccountingFormulaSummary } from "@/lib/types/adminAccounting";
 import type { FormulaOption } from "./types";
 
@@ -23,6 +26,18 @@ interface VariableItem {
   label: string;
   group: string;
   dataType: string;
+}
+
+function formulaTypeToVariableDataType(formulaType: string): string {
+  const normalized = formulaType.trim().toLowerCase();
+  if (!normalized) return "double";
+  if (normalized.includes("string") || normalized.includes("text")) {
+    return "string";
+  }
+  if (normalized.includes("int") || normalized.includes("long")) {
+    return "integer";
+  }
+  return "double";
 }
 
 interface FormulaTabProps {
@@ -56,7 +71,7 @@ interface FormulaTabProps {
   setFmRoundingMode: (value: string) => void;
   setFmRoundingPrecision: (value: string) => void;
   onDetail: (rawId?: string) => void;
-  onClone: () => void;
+  onClone: (payload?: { newCode?: string; nameSuffix?: string }) => void;
   onUpdate: () => void;
   onActivate: () => void;
   onDeactivate: () => void;
@@ -64,7 +79,14 @@ interface FormulaTabProps {
 }
 
 const primaryBtnClass = "bg-[#2563eb] text-white hover:bg-[#1d4ed8]";
-const secondaryBtnClass = "bg-[#0ea5a4] text-white hover:bg-[#0b8b8a]";
+
+const DB_FORMULA_TYPES = [
+  "AGGREGATE",
+  "CELL_REF",
+  "TAX_RATE",
+  "WEIGHTED_AVG",
+  "EXTERNAL_LOOKUP",
+] as const;
 
 function tokenId(): string {
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -73,14 +95,6 @@ function tokenId(): string {
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   return value as Record<string, unknown>;
-}
-
-function asArray(value: unknown): Array<Record<string, unknown>> {
-  if (!Array.isArray(value)) return [];
-  return value.filter(
-    (item): item is Record<string, unknown> =>
-      !!item && typeof item === "object",
-  );
 }
 
 function asNumber(value: unknown): number | null {
@@ -255,7 +269,6 @@ export default function FormulaTab(props: FormulaTabProps) {
   const [formulaSearch, setFormulaSearch] = useState("");
   const [variableSearch, setVariableSearch] = useState("");
   const [variableTypeFilter, setVariableTypeFilter] = useState("all");
-  const [variables, setVariables] = useState<VariableItem[]>([]);
   const [builderTokens, setBuilderTokens] = useState<FormulaToken[]>([]);
   const [builderError, setBuilderError] = useState("");
   const [builderHint, setBuilderHint] = useState("");
@@ -263,50 +276,89 @@ export default function FormulaTab(props: FormulaTabProps) {
     {},
   );
   const [draggingTokenId, setDraggingTokenId] = useState<string | null>(null);
+  const [cloneDialogOpen, setCloneDialogOpen] = useState(false);
+  const [cloneDraftCode, setCloneDraftCode] = useState("");
+  const [cloneDraftSuffix, setCloneDraftSuffix] = useState(" (draft)");
   const tokenDragHandledRef = useRef(false);
+  const lastSelectedFormulaIdRef = useRef("");
 
-  useEffect(() => {
-    let disposed = false;
+  const isCreateMode = !props.fmId.trim();
+  const isActiveFormula =
+    props.fmIsActive === "true" ||
+    props.fmActive.trim().toLowerCase() === "active";
 
-    async function loadVariables() {
-      try {
-        const entities = await getMappableEntities(true);
-        const details = await Promise.all(
-          entities
-            .map((entity) => asNumber(entity.entityId))
-            .filter((id): id is number => id !== null)
-            .map((entityId) => getMappableEntityDetail(entityId)),
-        );
+  function resetCreateFormulaForm() {
+    props.setFmId("");
+    props.setFmCode("");
+    props.setFmName("");
+    props.setFmDesc("");
+    props.setFmFType("");
+    props.setFmExprJson("{}");
+    props.setFmIsActive("false");
+    props.setFmResultDataType("decimal");
+    props.setFmRoundingMode("");
+    props.setFmRoundingPrecision("2");
+  }
 
-        if (disposed) return;
-
-        const variableMap = new Map<string, VariableItem>();
-        details.forEach((detail) => {
-          const group = String(detail.entityCode ?? "Entity");
-          asArray(detail.fields).forEach((field) => {
-            const code = String(field.fieldCode ?? "").trim();
-            if (!code || variableMap.has(code)) return;
-            variableMap.set(code, {
-              code,
-              label: String(field.displayName ?? code),
-              group,
-              dataType: String(field.dataType ?? "unknown").toLowerCase(),
-            });
-          });
-        });
-
-        setVariables(Array.from(variableMap.values()));
-      } catch {
-        if (!disposed) setVariables([]);
-      }
+  function switchFormulaMode() {
+    if (!isCreateMode) {
+      resetCreateFormulaForm();
+      return;
     }
 
-    void loadVariables();
+    const restoreId =
+      lastSelectedFormulaIdRef.current || props.formulaOptions[0]?.value || "";
+    if (!restoreId) return;
+    props.setFmId(restoreId);
+    props.onDetail(restoreId);
+  }
 
-    return () => {
-      disposed = true;
-    };
-  }, []);
+  function openCloneDialog() {
+    setCloneDraftCode(props.fmCloneCode);
+    setCloneDraftSuffix(props.fmCloneSuffix || " (draft)");
+    setCloneDialogOpen(true);
+  }
+
+  function cloneWithOptionalPayload(skipInputs: boolean) {
+    setCloneDialogOpen(false);
+    if (skipInputs) {
+      props.onClone();
+      return;
+    }
+
+    props.setFmCloneCode(cloneDraftCode);
+    props.setFmCloneSuffix(cloneDraftSuffix);
+    props.onClone({
+      newCode: cloneDraftCode,
+      nameSuffix: cloneDraftSuffix,
+    });
+  }
+
+  useEffect(() => {
+    if (props.fmId.trim()) {
+      lastSelectedFormulaIdRef.current = props.fmId.trim();
+    }
+  }, [props.fmId]);
+
+  const variables = useMemo<VariableItem[]>(() => {
+    const map = new Map<string, VariableItem>();
+
+    props.formulaList.forEach((formula) => {
+      const code = String(formula.code ?? "").trim();
+      if (!code || map.has(code)) return;
+
+      const name = String(formula.name ?? "").trim();
+      const formulaType = String(formula.formulaType ?? "").trim();
+      map.set(code, {
+        code,
+        label: name ? `${code} - ${name}` : code,
+        group: "Formula",
+        dataType: formulaTypeToVariableDataType(formulaType),
+      });
+    });
+
+    return Array.from(map.values());
+  }, [props.formulaList]);
 
   useEffect(() => {
     const expr = props.fmExprJson.trim();
@@ -405,6 +457,17 @@ export default function FormulaTab(props: FormulaTabProps) {
       );
     });
   }, [formulaSearch, props.formulaList]);
+
+  const formulaTypeOptions = useMemo(() => {
+    const current = props.fmFType.trim();
+    if (
+      !current ||
+      DB_FORMULA_TYPES.includes(current as (typeof DB_FORMULA_TYPES)[number])
+    ) {
+      return DB_FORMULA_TYPES;
+    }
+    return [current, ...DB_FORMULA_TYPES];
+  }, [props.fmFType]);
 
   const tokenExpression = useMemo(() => {
     return builderTokens
@@ -707,7 +770,17 @@ export default function FormulaTab(props: FormulaTabProps) {
         <div className="space-y-6">
           <Card className="rounded-xl border border-gray-200 bg-white shadow-sm">
             <CardHeader>
-              <CardTitle>Cấu hình công thức</CardTitle>
+              <div className="flex items-center justify-between gap-2">
+                <CardTitle>Cấu hình công thức</CardTitle>
+                <Button
+                  size="sm"
+                  variant="link"
+                  onClick={switchFormulaMode}
+                  className="text-[#2563eb] hover:text-[#1d4ed8]"
+                >
+                  {isCreateMode ? "Update" : "Tạo mới"}
+                </Button>
+              </div>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
@@ -728,7 +801,11 @@ export default function FormulaTab(props: FormulaTabProps) {
                   </label>
                   <select
                     value={props.fmId}
-                    onChange={(e) => props.setFmId(e.target.value)}
+                    onChange={(e) => {
+                      const nextId = e.target.value;
+                      props.setFmId(nextId);
+                      if (nextId) props.onDetail(nextId);
+                    }}
                     className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
                   >
                     <option value="">Chọn công thức</option>
@@ -754,12 +831,18 @@ export default function FormulaTab(props: FormulaTabProps) {
                   <label className="mb-1 block text-xs font-medium text-gray-600">
                     Loại công thức
                   </label>
-                  <input
+                  <select
                     value={props.fmFType}
                     onChange={(e) => props.setFmFType(e.target.value)}
-                    placeholder="AGGREGATE | COMPOSITE | ..."
                     className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
-                  />
+                  >
+                    <option value="">Chọn FormulaType</option>
+                    {formulaTypeOptions.map((type) => (
+                      <option key={type} value={type}>
+                        {type}
+                      </option>
+                    ))}
+                  </select>
                 </div>
                 <div className="md:col-span-2">
                   <label className="mb-1 block text-xs font-medium text-gray-600">
@@ -823,68 +906,112 @@ export default function FormulaTab(props: FormulaTabProps) {
                     Trạng thái hiện tại
                   </label>
                   <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm">
-                    {props.fmActive} · {props.fmType}
+                    {isCreateMode
+                      ? "- - -"
+                      : `${props.fmActive} · ${props.fmType}`}
                   </div>
                 </div>
               </div>
 
               <div className="rounded-lg border border-cyan-100 bg-cyan-50 px-3 py-2 text-sm text-cyan-900">
-                {props.fmExplanation || "Không có giải thích từ backend."}
+                {isCreateMode
+                  ? "Không có giải thích từ backend."
+                  : props.fmExplanation || "Không có giải thích từ backend."}
               </div>
 
               <div className="flex flex-wrap gap-2">
                 <Button
                   size="sm"
-                  variant="outline"
-                  onClick={() => props.onDetail(props.fmId)}
-                >
-                  Tải chi tiết
-                </Button>
-                <Button
-                  size="sm"
                   className={primaryBtnClass}
-                  onClick={props.onCreate}
+                  onClick={isCreateMode ? props.onCreate : props.onUpdate}
                 >
-                  Tạo mới
+                  {isCreateMode ? "Tạo mới" : "Update"}
                 </Button>
                 <Button
                   size="sm"
-                  className={secondaryBtnClass}
-                  onClick={props.onUpdate}
+                  variant="outline"
+                  onClick={openCloneDialog}
+                  disabled={isCreateMode}
                 >
-                  Lưu cấu hình
-                </Button>
-                <Button size="sm" variant="outline" onClick={props.onClone}>
                   Clone
                 </Button>
-                <Button size="sm" variant="outline" onClick={props.onActivate}>
-                  Activate
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={props.onDeactivate}
-                >
-                  Deactivate
-                </Button>
-              </div>
-
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                <input
-                  value={props.fmCloneCode}
-                  onChange={(e) => props.setFmCloneCode(e.target.value)}
-                  placeholder="Clone code"
-                  className="rounded-lg border border-gray-200 px-3 py-2 text-sm"
-                />
-                <input
-                  value={props.fmCloneSuffix}
-                  onChange={(e) => props.setFmCloneSuffix(e.target.value)}
-                  placeholder="Name suffix"
-                  className="rounded-lg border border-gray-200 px-3 py-2 text-sm"
-                />
+                {isActiveFormula ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={props.onDeactivate}
+                    disabled={isCreateMode}
+                  >
+                    Deactivate
+                  </Button>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={props.onActivate}
+                    disabled={isCreateMode}
+                  >
+                    Activate
+                  </Button>
+                )}
               </div>
             </CardContent>
           </Card>
+
+          <Dialog open={cloneDialogOpen} onOpenChange={setCloneDialogOpen}>
+            <DialogContent className="sm:max-w-lg">
+              <DialogHeader>
+                <DialogTitle>Clone công thức</DialogTitle>
+              </DialogHeader>
+
+              <div className="space-y-3">
+                {/* <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+                  <pre className="overflow-x-auto text-xs text-gray-700">
+{`{
+  "newCode": "string",
+  "nameSuffix": "string"
+}`}
+                  </pre>
+                </div> */}
+
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-gray-600">
+                    Mã Công Thức
+                  </label>
+                  <input
+                    value={cloneDraftCode}
+                    onChange={(e) => setCloneDraftCode(e.target.value)}
+                    placeholder="TAX_TNCN_01_COPY"
+                    className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-gray-600">
+                    Tên Công Thức
+                  </label>
+                  <input
+                    value={cloneDraftSuffix}
+                    onChange={(e) => setCloneDraftSuffix(e.target.value)}
+                    placeholder="Cộng Quý"
+                    className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+                  />
+                </div>
+              </div>
+
+              <DialogFooter>
+                <Button
+                  variant="outline"
+                  onClick={() => cloneWithOptionalPayload(true)}
+                >
+                  Bỏ qua
+                </Button>
+                <Button onClick={() => cloneWithOptionalPayload(false)}>
+                  Clone
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
 
           <Card className="rounded-xl border border-gray-200 bg-white shadow-sm">
             <CardHeader>

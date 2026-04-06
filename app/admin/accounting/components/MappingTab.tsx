@@ -25,8 +25,25 @@ interface MappingTabProps {
 
 const primaryBtnClass = "bg-[#23C4C1] text-white hover:bg-[#1ea8a6]";
 
+const emptyMappingForm: MappingFormState = {
+  mappingId: "",
+  fieldCode: "",
+  fieldLabel: "",
+  fieldType: "decimal",
+  sourceType: "query",
+  sourceEntityId: "",
+  sourceFieldId: "",
+  filterJson: "",
+  aggregationType: "",
+  formulaId: "",
+  formulaExpression: "",
+  sortOrder: "0",
+  isRequired: "false",
+};
+
 export default function MappingTab(props: MappingTabProps) {
   const [mappingActionMenuId, setMappingActionMenuId] = useState("");
+  const isUpdateMode = Boolean(props.mappingForm.mappingId.trim());
 
   return (
     <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
@@ -154,219 +171,299 @@ export default function MappingTab(props: MappingTabProps) {
 
       <Card className="rounded-xl border border-gray-200 bg-white shadow-sm">
         <CardHeader>
-          <CardTitle>Mapping Editor</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-2">
-          <input
-            value={props.mappingForm.mappingId}
-            readOnly
-            placeholder="ID"
-            className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm"
-          />
-          <input
-            value={props.mappingForm.fieldCode}
-            onChange={(e) =>
-              props.setMappingForm({
-                ...props.mappingForm,
-                fieldCode: e.target.value,
-              })
-            }
-            placeholder="Field Code"
-            className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-          />
-          <input
-            value={props.mappingForm.fieldLabel}
-            onChange={(e) =>
-              props.setMappingForm({
-                ...props.mappingForm,
-                fieldLabel: e.target.value,
-              })
-            }
-            placeholder="Field Label"
-            className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-          />
-          <select
-            value={props.mappingForm.fieldType}
-            onChange={(e) =>
-              props.setMappingForm({
-                ...props.mappingForm,
-                fieldType: e.target.value,
-              })
-            }
-            className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-          >
-            {props.fieldTypeOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-            {!props.fieldTypeOptions.some(
-              (option) => option.value === props.mappingForm.fieldType,
-            ) && props.mappingForm.fieldType ? (
-              <option value={props.mappingForm.fieldType}>
-                {props.mappingForm.fieldType}
-              </option>
-            ) : null}
-          </select>
-          <select
-            value={props.mappingForm.sourceType}
-            onChange={(e) =>
-              props.setMappingForm({
-                ...props.mappingForm,
-                sourceType: e.target.value,
-              })
-            }
-            className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-          >
-            {props.sourceTypeOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-            {!props.sourceTypeOptions.some(
-              (option) => option.value === props.mappingForm.sourceType,
-            ) && props.mappingForm.sourceType ? (
-              <option value={props.mappingForm.sourceType}>
-                {props.mappingForm.sourceType}
-              </option>
-            ) : null}
-          </select>
-          <select
-            value={props.mappingForm.sourceEntityId}
-            onChange={(e) =>
-              props.setMappingForm({
-                ...props.mappingForm,
-                sourceEntityId: e.target.value,
-                sourceFieldId: "",
-              })
-            }
-            className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-          >
-            <option value="">Source Entity</option>
-            {props.entityOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-          <select
-            value={props.mappingForm.sourceFieldId}
-            onChange={(e) =>
-              props.setMappingForm({
-                ...props.mappingForm,
-                sourceFieldId: e.target.value,
-              })
-            }
-            className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-            disabled={!props.mappingForm.sourceEntityId}
-          >
-            <option value="">Source Field</option>
-            {props.entityFieldOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-          <input
-            value={props.mappingForm.filterJson}
-            onChange={(e) =>
-              props.setMappingForm({
-                ...props.mappingForm,
-                filterJson: e.target.value,
-              })
-            }
-            placeholder="Filter JSON"
-            className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-          />
-          <select
-            value={props.mappingForm.aggregationType}
-            onChange={(e) =>
-              props.setMappingForm({
-                ...props.mappingForm,
-                aggregationType: e.target.value,
-              })
-            }
-            className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-          >
-            <option value="">Aggregation</option>
-            {props.aggregationOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-          <select
-            value={props.mappingForm.formulaId}
-            onChange={(e) =>
-              props.setMappingForm({
-                ...props.mappingForm,
-                formulaId: e.target.value,
-              })
-            }
-            className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-          >
-            <option value="">Formula</option>
-            {props.formulaOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-          <input
-            value={props.mappingForm.formulaExpression}
-            onChange={(e) =>
-              props.setMappingForm({
-                ...props.mappingForm,
-                formulaExpression: e.target.value,
-              })
-            }
-            placeholder="Formula Expression"
-            className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-          />
-          <input
-            value={props.mappingForm.sortOrder}
-            onChange={(e) =>
-              props.setMappingForm({
-                ...props.mappingForm,
-                sortOrder: e.target.value,
-              })
-            }
-            placeholder="Sort"
-            className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-          />
-          <select
-            value={props.mappingForm.isRequired}
-            onChange={(e) =>
-              props.setMappingForm({
-                ...props.mappingForm,
-                isRequired: e.target.value,
-              })
-            }
-            className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-          >
-            <option value="false">Required: No</option>
-            <option value="true">Required: Yes</option>
-          </select>
-          <div className="grid grid-cols-2 gap-2 pt-2">
+          <div className="flex items-center justify-between gap-2">
+            <CardTitle>Mapping Editor</CardTitle>
             <Button
               size="sm"
-              className={primaryBtnClass}
-              onClick={props.onCreate}
+              variant="link"
+              onClick={() => {
+                if (isUpdateMode) {
+                  props.setMappingForm(emptyMappingForm);
+                  setMappingActionMenuId("");
+                  return;
+                }
+
+                const firstMapping = props.fieldMappings[0];
+                if (firstMapping) {
+                  props.onPick(firstMapping);
+                }
+                setMappingActionMenuId("");
+              }}
+              className=" text-[#23C4C1] hover:text-[#1ea8a6]"
             >
-              Create
-            </Button>
-            <Button size="sm" variant="secondary" onClick={props.onUpdate}>
-              Update
-            </Button>
-            <Button
-              size="sm"
-              variant="destructive"
-              className="col-span-2"
-              onClick={() => props.onDelete(props.mappingForm.mappingId)}
-            >
-              Delete
+              {isUpdateMode ? "Create" : "Update"}
             </Button>
           </div>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="space-y-1">
+            <label className="block text-xs font-medium text-gray-600">
+              ID
+            </label>
+            <input
+              value={props.mappingForm.mappingId}
+              readOnly
+              placeholder="ID"
+              className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm"
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="block text-xs font-medium text-gray-600">
+              Mã cột
+            </label>
+            <input
+              value={props.mappingForm.fieldCode}
+              onChange={(e) =>
+                props.setMappingForm({
+                  ...props.mappingForm,
+                  fieldCode: e.target.value,
+                })
+              }
+              readOnly={Boolean(props.mappingForm.mappingId)}
+              placeholder="Field Code"
+              className={`w-full rounded-lg border border-gray-200 px-3 py-2 text-sm ${
+                props.mappingForm.mappingId ? "bg-gray-50" : "bg-white"
+              }`}
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="block text-xs font-medium text-gray-600">
+              Nhãn hiển thị
+            </label>
+            <input
+              value={props.mappingForm.fieldLabel}
+              onChange={(e) =>
+                props.setMappingForm({
+                  ...props.mappingForm,
+                  fieldLabel: e.target.value,
+                })
+              }
+              placeholder="Field Label"
+              className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="block text-xs font-medium text-gray-600">
+              Kiểu dữ liệu
+            </label>
+            <select
+              value={props.mappingForm.fieldType}
+              onChange={(e) =>
+                props.setMappingForm({
+                  ...props.mappingForm,
+                  fieldType: e.target.value,
+                })
+              }
+              className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+            >
+              <option value="">Chọn kiểu dữ liệu</option>
+              {props.fieldTypeOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+              {!props.fieldTypeOptions.some(
+                (option) => option.value === props.mappingForm.fieldType,
+              ) && props.mappingForm.fieldType ? (
+                <option value={props.mappingForm.fieldType}>
+                  {props.mappingForm.fieldType}
+                </option>
+              ) : null}
+            </select>
+          </div>
+          <div className="space-y-1">
+            <label className="block text-xs font-medium text-gray-600">
+              Nguồn dữ liệu
+            </label>
+            <select
+              value={props.mappingForm.sourceType}
+              onChange={(e) =>
+                props.setMappingForm({
+                  ...props.mappingForm,
+                  sourceType: e.target.value,
+                })
+              }
+              className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+            >
+              <option value="">Chọn nguồn dữ liệu</option>
+              {props.sourceTypeOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+              {!props.sourceTypeOptions.some(
+                (option) => option.value === props.mappingForm.sourceType,
+              ) && props.mappingForm.sourceType ? (
+                <option value={props.mappingForm.sourceType}>
+                  {props.mappingForm.sourceType}
+                </option>
+              ) : null}
+            </select>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-1">
+              <label className="block text-xs font-medium text-gray-600">
+                Entity ID
+              </label>
+              <select
+                value={props.mappingForm.sourceEntityId}
+                onChange={(e) =>
+                  props.setMappingForm({
+                    ...props.mappingForm,
+                    sourceEntityId: e.target.value,
+                    sourceFieldId: "",
+                  })
+                }
+                className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+              >
+                <option value="">Chọn entity</option>
+                {props.entityOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1">
+              <label className="block text-xs font-medium text-gray-600">
+                Field ID
+              </label>
+              <select
+                value={props.mappingForm.sourceFieldId}
+                onChange={(e) =>
+                  props.setMappingForm({
+                    ...props.mappingForm,
+                    sourceFieldId: e.target.value,
+                  })
+                }
+                className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                disabled={!props.mappingForm.sourceEntityId}
+              >
+                <option value="">Chọn field</option>
+                {props.entityFieldOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div className="space-y-1">
+            <label className="block text-xs font-medium text-gray-600">
+              Formula ID
+            </label>
+            <select
+              value={props.mappingForm.formulaId}
+              onChange={(e) =>
+                props.setMappingForm({
+                  ...props.mappingForm,
+                  formulaId: e.target.value,
+                })
+              }
+              className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+            >
+              <option value="">Chọn formula</option>
+              {props.formulaOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="space-y-1">
+            <label className="block text-xs font-medium text-gray-600">
+              Kiểu tổng hợp
+            </label>
+            <select
+              value={props.mappingForm.aggregationType}
+              onChange={(e) =>
+                props.setMappingForm({
+                  ...props.mappingForm,
+                  aggregationType: e.target.value,
+                })
+              }
+              className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+            >
+              <option value="">Chọn kiểu tổng hợp</option>
+              {props.aggregationOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="space-y-1">
+            <label className="block text-xs font-medium text-gray-600">
+              Formula expression
+            </label>
+            <input
+              value={props.mappingForm.formulaExpression}
+              onChange={(e) =>
+                props.setMappingForm({
+                  ...props.mappingForm,
+                  formulaExpression: e.target.value,
+                })
+              }
+              placeholder="Formula Expression"
+              className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="block text-xs font-medium text-gray-600">
+              Thứ tự sắp xếp
+            </label>
+            <input
+              value={props.mappingForm.sortOrder}
+              onChange={(e) =>
+                props.setMappingForm({
+                  ...props.mappingForm,
+                  sortOrder: e.target.value,
+                })
+              }
+              placeholder="Sort"
+              className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="block text-xs font-medium text-gray-600">
+              Bắt buộc
+            </label>
+            <select
+              value={props.mappingForm.isRequired}
+              onChange={(e) =>
+                props.setMappingForm({
+                  ...props.mappingForm,
+                  isRequired: e.target.value,
+                })
+              }
+              className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+            >
+              <option value="false">Required: No</option>
+              <option value="true">Required: Yes</option>
+            </select>
+          </div>
+          {!isUpdateMode ? (
+            <div className="pt-2">
+              <Button
+                size="sm"
+                className={`w-full ${primaryBtnClass}`}
+                onClick={props.onCreate}
+              >
+                Create
+              </Button>
+            </div>
+          ) : (
+            <div className="pt-2">
+              <Button
+                size="sm"
+                className={`w-full ${primaryBtnClass}`}
+                onClick={props.onUpdate}
+                disabled={!props.mappingForm.mappingId}
+              >
+                Update
+              </Button>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

@@ -9,7 +9,7 @@ type ApiEnvelope<T> = {
 };
 
 const API_BASE_URL = (
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:5139"
+  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8080"
 ).replace(/\/$/, "");
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
@@ -158,7 +158,9 @@ export interface MappableEntityCreateRequest {
 }
 
 export interface MappableEntityPatchRequest {
+  entityCode?: string;
   displayName?: string;
+  category?: string;
   description?: string;
   isActive?: boolean;
 }
@@ -172,6 +174,7 @@ export interface MappableFieldCreateRequest {
 }
 
 export interface MappableFieldPatchRequest {
+  fieldCode?: string;
   displayName?: string;
   description?: string;
   dataType?: string;

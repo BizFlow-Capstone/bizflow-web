@@ -1,6 +1,13 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  FormEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   FileText,
   Megaphone,
@@ -51,6 +58,7 @@ import type {
 } from "@/lib/types/adminNotification";
 import {
   getTemplates,
+  getTemplateByEventCode,
   getActionCatalog,
   upsertTemplate,
   toggleTemplate,
@@ -69,6 +77,7 @@ function formatDate(value?: string | null) {
 function statusConfig(status: string) {
   switch (status) {
     case "SENT":
+    case "COMPLETED":
       return {
         label: "Đã gửi",
         variant: "secondary" as const,
@@ -76,18 +85,12 @@ function statusConfig(status: string) {
         icon: CheckCircle2,
       };
     case "PENDING":
+    case "PROCESSING":
       return {
         label: "Chờ gửi",
         variant: "secondary" as const,
         className: "bg-amber-50 text-amber-700 hover:bg-amber-50",
         icon: Clock,
-      };
-    case "PROCESSING":
-      return {
-        label: "Đang xử lý",
-        variant: "secondary" as const,
-        className: "bg-blue-50 text-blue-700 hover:bg-blue-50",
-        icon: Loader2,
       };
     default:
       return {
@@ -102,6 +105,33 @@ function statusConfig(status: string) {
 function normalizeActionType(value?: string | null) {
   const normalized = (value ?? "").trim().toUpperCase();
   return normalized === "NAVIGATE_TO_SCREEN" ? "NAVIGATE" : normalized;
+}
+
+function isNavigateAction(value?: string | null) {
+  return normalizeActionType(value) === "NAVIGATE";
+}
+
+function findTargetByScreenOrAlias(
+  actionCatalog: NotificationActionCatalog | null,
+  value?: string | null,
+) {
+  const normalized = (value ?? "").trim().toLowerCase();
+  if (!normalized || !actionCatalog) return undefined;
+  return actionCatalog.targets.find(
+    (target) =>
+      target.targetScreen.toLowerCase() === normalized ||
+      target.aliases.some((alias) => alias.toLowerCase() === normalized),
+  );
+}
+
+function buildRoutePayloadFromTarget(
+  target?: NotificationActionCatalog["targets"][number],
+) {
+  if (!target) return "";
+  if (target.payloadExampleJson?.trim()) return target.payloadExampleJson;
+  const preferredRoute = target.webRoute?.trim() || target.mobileRoute?.trim();
+  if (!preferredRoute) return "";
+  return JSON.stringify({ route: preferredRoute });
 }
 
 // ── Defaults ──────────────────────────────────────────────────────────────────
@@ -122,6 +152,9 @@ const emptyCampaignForm: CreateDispatchRequest = {
   priority: "NORMAL",
   title: "",
   content: "",
+  actionType: "",
+  targetScreen: "",
+  actionPayloadJson: "",
   sendToAllUsers: true,
   scheduledAt: "",
 };
@@ -131,15 +164,22 @@ const emptyCampaignForm: CreateDispatchRequest = {
 export default function AdminNotificationsClient() {
   // ── Data ──
   const [templates, setTemplates] = useState<NotificationTemplate[]>([]);
-  const [catalog, setCatalog] = useState<NotificationActionCatalog | null>(null);
-  const [dispatches, setDispatches] = useState<PaginatedResponse<NotificationDispatch> | null>(null);
-  const [failedDispatches, setFailedDispatches] = useState<PaginatedResponse<NotificationDispatch> | null>(null);
+  const [catalog, setCatalog] = useState<NotificationActionCatalog | null>(
+    null,
+  );
+  const [dispatches, setDispatches] =
+    useState<PaginatedResponse<NotificationDispatch> | null>(null);
+  const [failedDispatches, setFailedDispatches] =
+    useState<PaginatedResponse<NotificationDispatch> | null>(null);
 
   // ── Template editing ──
-  const [selectedTemplate, setSelectedTemplate] = useState<NotificationTemplate | null>(null);
+  const [selectedTemplate, setSelectedTemplate] =
+    useState<NotificationTemplate | null>(null);
   const [templateForm, setTemplateForm] = useState(emptyTemplateForm);
   const [newEventCode, setNewEventCode] = useState("");
-  const [activeTemplateField, setActiveTemplateField] = useState<"title" | "content">("content");
+  const [activeTemplateField, setActiveTemplateField] = useState<
+    "title" | "content"
+  >("content");
   const titleInputRef = useRef<HTMLInputElement | null>(null);
   const contentTextareaRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -150,6 +190,7 @@ export default function AdminNotificationsClient() {
   const [searchTemplate, setSearchTemplate] = useState("");
   const [activeTab, setActiveTab] = useState("templates");
   const [loading, setLoading] = useState(false);
+  const [loadingTemplateDetail, setLoadingTemplateDetail] = useState(false);
   const [message, setMessage] = useState("");
   const [messageType, setMessageType] = useState<"ok" | "error">("ok");
 
@@ -166,14 +207,12 @@ export default function AdminNotificationsClient() {
   );
 
   const selectedTarget = useMemo(() => {
-    const normalized = templateForm.defaultTargetScreen.trim().toLowerCase();
-    if (!normalized || !catalog) return undefined;
-    return catalog.targets.find(
-      (target) =>
-        target.targetScreen.toLowerCase() === normalized ||
-        target.aliases.some((alias) => alias.toLowerCase() === normalized),
-    );
+    return findTargetByScreenOrAlias(catalog, templateForm.defaultTargetScreen);
   }, [catalog, templateForm.defaultTargetScreen]);
+
+  const selectedCampaignTarget = useMemo(() => {
+    return findTargetByScreenOrAlias(catalog, campaignForm.targetScreen);
+  }, [campaignForm.targetScreen, catalog]);
 
   // ── Load helpers ──────────────────────────────────────────────────────────────
 
@@ -236,7 +275,9 @@ export default function AdminNotificationsClient() {
       notificationType: selectedTemplate.notificationType ?? "",
       titleTemplate: selectedTemplate.titleTemplate ?? "",
       contentTemplate: selectedTemplate.contentTemplate ?? "",
-      defaultActionType: normalizeActionType(selectedTemplate.defaultActionType),
+      defaultActionType: normalizeActionType(
+        selectedTemplate.defaultActionType,
+      ),
       defaultTargetScreen: selectedTemplate.defaultTargetScreen ?? "",
       defaultActionPayloadJson: selectedTemplate.defaultActionPayloadJson ?? "",
       isActive: selectedTemplate.isActive,
@@ -268,7 +309,10 @@ export default function AdminNotificationsClient() {
     try {
       setLoading(true);
       setMessage("");
-      await toggleTemplate(selectedTemplate.eventCode, !selectedTemplate.isActive);
+      await toggleTemplate(
+        selectedTemplate.eventCode,
+        !selectedTemplate.isActive,
+      );
       await loadTemplates();
       setMessage(
         `Đã ${!selectedTemplate.isActive ? "bật" : "tắt"} template "${selectedTemplate.eventCode}".`,
@@ -313,16 +357,89 @@ export default function AdminNotificationsClient() {
     }
   }
 
+  async function onSelectTemplate(template: NotificationTemplate) {
+    setSelectedTemplate(template);
+    try {
+      setLoadingTemplateDetail(true);
+      const detail = await getTemplateByEventCode(template.eventCode);
+      setSelectedTemplate(detail);
+    } catch (err) {
+      setMessage((err as Error).message);
+      setMessageType("error");
+    } finally {
+      setLoadingTemplateDetail(false);
+    }
+  }
+
+  async function onCampaignTemplateChange(value: string) {
+    const eventCode = value === "__none__" ? "" : value;
+    setCampaignForm((prev) => ({ ...prev, eventCode }));
+
+    if (!eventCode) {
+      return;
+    }
+
+    try {
+      let activeCatalog = catalog;
+      if (!activeCatalog) {
+        activeCatalog = await getActionCatalog();
+        setCatalog(activeCatalog);
+      }
+
+      const detail = await getTemplateByEventCode(eventCode);
+      const normalizedActionType = normalizeActionType(
+        detail.defaultActionType,
+      );
+      const resolvedTarget = findTargetByScreenOrAlias(
+        activeCatalog,
+        detail.defaultTargetScreen,
+      );
+      const resolvedTargetScreen =
+        resolvedTarget?.targetScreen ?? detail.defaultTargetScreen ?? "";
+      const shouldMapRoute = normalizedActionType === "NAVIGATE";
+      const resolvedPayload = shouldMapRoute
+        ? detail.defaultActionPayloadJson?.trim() ||
+          buildRoutePayloadFromTarget(resolvedTarget)
+        : "";
+
+      setCampaignForm((prev) => ({
+        ...prev,
+        eventCode,
+        notificationType: detail.notificationType || prev.notificationType,
+        title: detail.titleTemplate || prev.title,
+        content: detail.contentTemplate || prev.content,
+        actionType: normalizedActionType,
+        targetScreen: shouldMapRoute ? resolvedTargetScreen : "",
+        actionPayloadJson: resolvedPayload,
+      }));
+    } catch (err) {
+      setMessage((err as Error).message);
+      setMessageType("error");
+    }
+  }
+
   async function onCreateCampaign(event: FormEvent) {
     event.preventDefault();
     try {
       setLoading(true);
       setMessage("");
+      const normalizedActionType = normalizeActionType(campaignForm.actionType);
       const payload: CreateDispatchRequest = {
         ...campaignForm,
-        eventCode: campaignForm.eventCode || undefined,
-        scheduledAt: campaignForm.scheduledAt || undefined,
+        eventCode: campaignForm.eventCode?.trim() || undefined,
+        notificationType: campaignForm.notificationType?.trim() || undefined,
+        priority: campaignForm.priority?.trim() || undefined,
+        title: campaignForm.title?.trim() || undefined,
+        content: campaignForm.content?.trim() || undefined,
+        actionType: normalizedActionType || undefined,
+        targetScreen: campaignForm.targetScreen?.trim() || undefined,
+        actionPayloadJson: campaignForm.actionPayloadJson?.trim() || undefined,
+        scheduledAt: campaignForm.scheduledAt?.trim() || undefined,
       };
+      if (!payload.actionType) {
+        payload.targetScreen = undefined;
+        payload.actionPayloadJson = undefined;
+      }
       await createDispatch(payload);
       setMessage("Đã tạo chiến dịch thành công.");
       setMessageType("ok");
@@ -355,7 +472,9 @@ export default function AdminNotificationsClient() {
 
   function insertTokenToField(token: string) {
     const isTitle = activeTemplateField === "title";
-    const targetElement = isTitle ? titleInputRef.current : contentTextareaRef.current;
+    const targetElement = isTitle
+      ? titleInputRef.current
+      : contentTextareaRef.current;
 
     if (!targetElement) {
       setTemplateForm((prev) => ({
@@ -366,13 +485,17 @@ export default function AdminNotificationsClient() {
       return;
     }
 
-    const cursorStart = targetElement.selectionStart ?? targetElement.value.length;
+    const cursorStart =
+      targetElement.selectionStart ?? targetElement.value.length;
     const cursorEnd = targetElement.selectionEnd ?? targetElement.value.length;
 
     setTemplateForm((prev) => {
       const currentValue = isTitle ? prev.titleTemplate : prev.contentTemplate;
       const nextValue = `${currentValue.slice(0, cursorStart)}${token}${currentValue.slice(cursorEnd)}`;
-      return { ...prev, [isTitle ? "titleTemplate" : "contentTemplate"]: nextValue };
+      return {
+        ...prev,
+        [isTitle ? "titleTemplate" : "contentTemplate"]: nextValue,
+      };
     });
 
     setTimeout(() => {
@@ -489,7 +612,9 @@ export default function AdminNotificationsClient() {
               onClick={loadTemplates}
               title="Làm mới"
             >
-              <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+              <RefreshCw
+                className={`w-4 h-4 ${loading ? "animate-spin" : ""}`}
+              />
             </Button>
           </div>
 
@@ -501,32 +626,33 @@ export default function AdminNotificationsClient() {
                   Danh Sách ({filteredTemplates.length})
                 </CardTitle>
               </CardHeader>
-            <div className="flex items-center gap-2 justify-between">
-              <Input
-                placeholder="NEW_EVENT_CODE"
-                className="ml-6"
-                value={newEventCode}
-                onChange={(e) => setNewEventCode(e.target.value)}
-              />
-              <Button
-                variant="outline"
-                className="gap-1.5 mr-6"
-                disabled={loading}
-                onClick={onCreateNewTemplate}
-              >
-                <Plus className="w-4 h-4" />
-                Tạo Mới
-              </Button>
-            </div>
+              <div className="flex items-center gap-2 justify-between">
+                <Input
+                  placeholder="NEW_EVENT_CODE"
+                  className="ml-6"
+                  value={newEventCode}
+                  onChange={(e) => setNewEventCode(e.target.value)}
+                />
+                <Button
+                  variant="outline"
+                  className="gap-1.5 mr-6"
+                  disabled={loading}
+                  onClick={onCreateNewTemplate}
+                >
+                  <Plus className="w-4 h-4" />
+                  Tạo Mới
+                </Button>
+              </div>
               <CardContent className="space-y-1 max-h-[520px] overflow-y-auto">
-                
                 {loading && templates.length === 0 && (
-                  <p className="text-sm text-gray-400 text-center py-8">Đang tải...</p>
+                  <p className="text-sm text-gray-400 text-center py-8">
+                    Đang tải...
+                  </p>
                 )}
                 {filteredTemplates.map((tpl) => (
                   <button
                     key={tpl.eventCode}
-                    onClick={() => setSelectedTemplate(tpl)}
+                    onClick={() => void onSelectTemplate(tpl)}
                     className={`w-full text-left p-3 rounded-lg transition-all ${
                       selectedTemplate?.eventCode === tpl.eventCode
                         ? "bg-teal-50 border border-teal-200 shadow-sm"
@@ -543,7 +669,9 @@ export default function AdminNotificationsClient() {
                         <ToggleLeft className="w-4 h-4 text-gray-300 shrink-0" />
                       )}
                     </div>
-                    <p className="text-xs text-gray-400 mt-0.5">{tpl.notificationType}</p>
+                    <p className="text-xs text-gray-400 mt-0.5">
+                      {tpl.notificationType}
+                    </p>
                   </button>
                 ))}
               </CardContent>
@@ -560,7 +688,9 @@ export default function AdminNotificationsClient() {
                 {!selectedTemplate ? (
                   <div className="flex flex-col items-center justify-center py-16 text-gray-400">
                     <FileText className="w-10 h-10 mb-3" />
-                    <p className="text-sm">Chọn template bên trái để xem / chỉnh sửa</p>
+                    <p className="text-sm">
+                      Chọn template bên trái để xem / chỉnh sửa
+                    </p>
                   </div>
                 ) : (
                   <form className="space-y-4" onSubmit={onSaveTemplate}>
@@ -571,18 +701,32 @@ export default function AdminNotificationsClient() {
                         </p>
                         <p className="text-xs text-gray-400 mt-0.5">
                           Cập nhật:{" "}
-                          {formatDate(selectedTemplate.updatedAt ?? selectedTemplate.createdAt)}
+                          {formatDate(
+                            selectedTemplate.updatedAt ??
+                              selectedTemplate.createdAt,
+                          )}
                         </p>
+                        {loadingTemplateDetail && (
+                          <p className="text-xs text-gray-400 mt-0.5">
+                            Đang tải chi tiết template...
+                          </p>
+                        )}
                       </div>
                       <div className="flex items-center gap-2">
-                        <Label htmlFor="tpl-active" className="text-sm text-gray-500">
+                        <Label
+                          htmlFor="tpl-active"
+                          className="text-sm text-gray-500"
+                        >
                           {templateForm.isActive ? "Đang bật" : "Đã tắt"}
                         </Label>
                         <Switch
                           id="tpl-active"
                           checked={templateForm.isActive}
                           onCheckedChange={(checked) =>
-                            setTemplateForm((prev) => ({ ...prev, isActive: checked }))
+                            setTemplateForm((prev) => ({
+                              ...prev,
+                              isActive: checked,
+                            }))
                           }
                         />
                       </div>
@@ -590,7 +734,9 @@ export default function AdminNotificationsClient() {
 
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-1.5">
-                        <Label className="text-xs text-gray-500">Notification Type</Label>
+                        <Label className="text-xs text-gray-500">
+                          Notification Type
+                        </Label>
                         <Input
                           value={templateForm.notificationType}
                           onChange={(e) =>
@@ -602,18 +748,26 @@ export default function AdminNotificationsClient() {
                         />
                       </div>
                       <div className="space-y-1.5">
-                        <Label className="text-xs text-gray-500">Default Action Type</Label>
+                        <Label className="text-xs text-gray-500">
+                          Default Action Type
+                        </Label>
                         <Select
                           value={templateForm.defaultActionType || "__none__"}
                           onValueChange={(val) => {
                             const actualVal = val === "__none__" ? "" : val;
+                            const nextActionType =
+                              normalizeActionType(actualVal);
+                            const canNavigate =
+                              isNavigateAction(nextActionType);
                             setTemplateForm((prev) => ({
                               ...prev,
-                              defaultActionType: normalizeActionType(actualVal),
-                              defaultTargetScreen:
-                                actualVal === "" ? "" : prev.defaultTargetScreen,
-                              defaultActionPayloadJson:
-                                actualVal === "" ? "" : prev.defaultActionPayloadJson,
+                              defaultActionType: nextActionType,
+                              defaultTargetScreen: canNavigate
+                                ? prev.defaultTargetScreen
+                                : "",
+                              defaultActionPayloadJson: canNavigate
+                                ? prev.defaultActionPayloadJson
+                                : "",
                             }));
                           }}
                         >
@@ -635,7 +789,9 @@ export default function AdminNotificationsClient() {
                     </div>
 
                     <div className="space-y-1.5">
-                      <Label className="text-xs text-gray-500">Title Template</Label>
+                      <Label className="text-xs text-gray-500">
+                        Title Template
+                      </Label>
                       <Input
                         ref={titleInputRef}
                         value={templateForm.titleTemplate}
@@ -650,7 +806,9 @@ export default function AdminNotificationsClient() {
                     </div>
 
                     <div className="space-y-1.5">
-                      <Label className="text-xs text-gray-500">Content Template</Label>
+                      <Label className="text-xs text-gray-500">
+                        Content Template
+                      </Label>
                       <Textarea
                         ref={contentTextareaRef}
                         value={templateForm.contentTemplate}
@@ -666,39 +824,43 @@ export default function AdminNotificationsClient() {
                     </div>
 
                     {/* Placeholder chips */}
-                    {catalog?.placeholders && catalog.placeholders.length > 0 && (
-                      <div className="rounded-lg border border-gray-100 p-3 bg-gray-50 space-y-2">
-                        <div className="flex items-center justify-between">
-                          <p className="text-xs font-medium text-gray-600">
-                            Template Placeholders
-                          </p>
-                          <span className="text-xs text-gray-400">
-                            Chèn vào:{" "}
-                            {activeTemplateField === "title" ? "Title" : "Content"}
-                          </span>
+                    {catalog?.placeholders &&
+                      catalog.placeholders.length > 0 && (
+                        <div className="rounded-lg border border-gray-100 p-3 bg-gray-50 space-y-2">
+                          <div className="flex items-center justify-between">
+                            <p className="text-xs font-medium text-gray-600">
+                              Template Placeholders
+                            </p>
+                            <span className="text-xs text-gray-400">
+                              Chèn vào:{" "}
+                              {activeTemplateField === "title"
+                                ? "Title"
+                                : "Content"}
+                            </span>
+                          </div>
+                          <div className="flex flex-wrap gap-1.5">
+                            {catalog.placeholders.map((item) => (
+                              <button
+                                key={item.key}
+                                type="button"
+                                title={`${item.description} (VD: ${item.exampleValue})`}
+                                onClick={() => insertTokenToField(item.token)}
+                                className="inline-flex items-center px-2 py-1 rounded-md bg-white border border-gray-200 text-xs font-mono text-teal-700 hover:border-teal-300 hover:bg-teal-50 transition-colors"
+                              >
+                                {item.token}
+                              </button>
+                            ))}
+                          </div>
                         </div>
-                        <div className="flex flex-wrap gap-1.5">
-                          {catalog.placeholders.map((item) => (
-                            <button
-                              key={item.key}
-                              type="button"
-                              title={`${item.description} (VD: ${item.exampleValue})`}
-                              onClick={() => insertTokenToField(item.token)}
-                              className="inline-flex items-center px-2 py-1 rounded-md bg-white border border-gray-200 text-xs font-mono text-teal-700 hover:border-teal-300 hover:bg-teal-50 transition-colors"
-                            >
-                              {item.token}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
+                      )}
 
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-1.5">
-                        <Label className="text-xs text-gray-500">Target Screen</Label>
+                        <Label className="text-xs text-gray-500">
+                          Target Screen
+                        </Label>
                         <Select
                           value={templateForm.defaultTargetScreen || "__none__"}
-                          disabled={!templateForm.defaultActionType}
                           onValueChange={(val) => {
                             const actualVal = val === "__none__" ? "" : val;
                             const target = catalog?.targets.find(
@@ -706,11 +868,19 @@ export default function AdminNotificationsClient() {
                             );
                             setTemplateForm((prev) => ({
                               ...prev,
+                              defaultActionType: actualVal
+                                ? "NAVIGATE"
+                                : isNavigateAction(prev.defaultActionType)
+                                  ? ""
+                                  : normalizeActionType(prev.defaultActionType),
                               defaultTargetScreen: actualVal,
                               defaultActionPayloadJson:
-                                prev.defaultActionPayloadJson.trim().length > 0
-                                  ? prev.defaultActionPayloadJson
-                                  : (target?.payloadExampleJson ?? ""),
+                                actualVal === ""
+                                  ? ""
+                                  : prev.defaultActionPayloadJson.trim()
+                                        .length > 0
+                                    ? prev.defaultActionPayloadJson
+                                    : (target?.payloadExampleJson ?? ""),
                             }));
                           }}
                         >
@@ -728,7 +898,9 @@ export default function AdminNotificationsClient() {
                         </Select>
                       </div>
                       <div className="space-y-1.5">
-                        <Label className="text-xs text-gray-500">Action Payload JSON</Label>
+                        <Label className="text-xs text-gray-500">
+                          Action Payload JSON
+                        </Label>
                         <Input
                           value={templateForm.defaultActionPayloadJson}
                           className="font-mono text-xs"
@@ -779,7 +951,9 @@ export default function AdminNotificationsClient() {
                         disabled={loading}
                         onClick={onToggleTemplate}
                       >
-                        {selectedTemplate.isActive ? "Tắt Template" : "Bật Template"}
+                        {selectedTemplate.isActive
+                          ? "Tắt Template"
+                          : "Bật Template"}
                       </Button>
                     </div>
                   </form>
@@ -798,8 +972,8 @@ export default function AdminNotificationsClient() {
               </CardHeader>
               <CardContent>
                 <p className="text-xs text-gray-500 mb-3">
-                  Các event dưới đây được hệ thống tự bắn từ chức năng nghiệp vụ.
-                  Chỉ cần tạo template đúng Event Code là tự chạy.
+                  Các event dưới đây được hệ thống tự bắn từ chức năng nghiệp
+                  vụ. Chỉ cần tạo template đúng Event Code là tự chạy.
                 </p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2">
                   {catalog.triggers.map((trigger) => (
@@ -826,26 +1000,29 @@ export default function AdminNotificationsClient() {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <Card className="lg:col-span-1 border-0 shadow-sm">
               <CardHeader className="pb-3">
-                <CardTitle className="text-base font-semibold">Tạo Chiến Dịch</CardTitle>
+                <CardTitle className="text-base font-semibold">
+                  Tạo Chiến Dịch
+                </CardTitle>
               </CardHeader>
               <CardContent>
                 <form className="space-y-4" onSubmit={onCreateCampaign}>
                   <div className="space-y-1.5">
-                    <Label className="text-xs text-gray-500">Template (tuỳ chọn)</Label>
+                    <Label className="text-xs text-gray-500">
+                      Template (tuỳ chọn)
+                    </Label>
                     <Select
                       value={campaignForm.eventCode || "__none__"}
                       onValueChange={(val) =>
-                        setCampaignForm((prev) => ({
-                          ...prev,
-                          eventCode: val === "__none__" ? "" : val,
-                        }))
+                        void onCampaignTemplateChange(val)
                       }
                     >
                       <SelectTrigger>
                         <SelectValue placeholder="Chọn template..." />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="__none__">(không dùng template)</SelectItem>
+                        <SelectItem value="__none__">
+                          (không dùng template)
+                        </SelectItem>
                         {templates.map((t) => (
                           <SelectItem key={t.eventCode} value={t.eventCode}>
                             {t.eventCode}
@@ -873,7 +1050,9 @@ export default function AdminNotificationsClient() {
                         <SelectContent>
                           <SelectItem value="PROMOTION">PROMOTION</SelectItem>
                           <SelectItem value="SYSTEM">SYSTEM</SelectItem>
-                          <SelectItem value="SYSTEM_ALERT">SYSTEM_ALERT</SelectItem>
+                          <SelectItem value="SYSTEM_ALERT">
+                            SYSTEM_ALERT
+                          </SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
@@ -882,7 +1061,10 @@ export default function AdminNotificationsClient() {
                       <Select
                         value={campaignForm.priority}
                         onValueChange={(val) =>
-                          setCampaignForm((prev) => ({ ...prev, priority: val }))
+                          setCampaignForm((prev) => ({
+                            ...prev,
+                            priority: val,
+                          }))
                         }
                       >
                         <SelectTrigger>
@@ -902,7 +1084,10 @@ export default function AdminNotificationsClient() {
                       placeholder="Nhập tiêu đề thông báo..."
                       value={campaignForm.title}
                       onChange={(e) =>
-                        setCampaignForm((prev) => ({ ...prev, title: e.target.value }))
+                        setCampaignForm((prev) => ({
+                          ...prev,
+                          title: e.target.value,
+                        }))
                       }
                     />
                   </div>
@@ -923,7 +1108,9 @@ export default function AdminNotificationsClient() {
                   </div>
 
                   <div className="space-y-1.5">
-                    <Label className="text-xs text-gray-500">Lịch gửi (tuỳ chọn)</Label>
+                    <Label className="text-xs text-gray-500">
+                      Lịch gửi (tuỳ chọn)
+                    </Label>
                     <Input
                       type="datetime-local"
                       value={campaignForm.scheduledAt}
@@ -937,6 +1124,116 @@ export default function AdminNotificationsClient() {
                     <p className="text-[11px] text-gray-400">
                       Bỏ trống để gửi ngay lập tức
                     </p>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-gray-500">
+                        Action Type
+                      </Label>
+                      <Select
+                        value={campaignForm.actionType || "__none__"}
+                        onValueChange={(val) => {
+                          const actualVal = val === "__none__" ? "" : val;
+                          const nextActionType = normalizeActionType(actualVal);
+                          const canNavigate = isNavigateAction(nextActionType);
+                          setCampaignForm((prev) => ({
+                            ...prev,
+                            actionType: nextActionType,
+                            targetScreen: canNavigate ? prev.targetScreen : "",
+                            actionPayloadJson: canNavigate
+                              ? prev.actionPayloadJson
+                              : "",
+                          }));
+                        }}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="(none)" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__none__">(none)</SelectItem>
+                          {(catalog?.actionTypes ?? [])
+                            .filter((a) => a.code !== "NAVIGATE_TO_SCREEN")
+                            .map((a) => (
+                              <SelectItem key={a.code} value={a.code}>
+                                {a.code} - {a.displayName}
+                              </SelectItem>
+                            ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-gray-500">
+                        Target Screen
+                      </Label>
+                      <Select
+                        value={campaignForm.targetScreen || "__none__"}
+                        onValueChange={(val) => {
+                          const actualVal = val === "__none__" ? "" : val;
+                          const target = catalog?.targets.find(
+                            (t) => t.targetScreen === actualVal,
+                          );
+                          setCampaignForm((prev) => ({
+                            ...prev,
+                            actionType: actualVal
+                              ? "NAVIGATE"
+                              : isNavigateAction(prev.actionType)
+                                ? ""
+                                : normalizeActionType(prev.actionType),
+                            targetScreen: actualVal,
+                            actionPayloadJson:
+                              actualVal === ""
+                                ? ""
+                                : prev.actionPayloadJson?.trim().length
+                                  ? prev.actionPayloadJson
+                                  : (target?.payloadExampleJson ?? ""),
+                          }));
+                        }}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="(none)" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__none__">(none)</SelectItem>
+                          {(catalog?.targets ?? []).map((t) => (
+                            <SelectItem key={t.code} value={t.targetScreen}>
+                              {t.targetScreen}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-gray-500">
+                      Action Payload JSON
+                    </Label>
+                    <Input
+                      value={campaignForm.actionPayloadJson ?? ""}
+                      className="font-mono text-xs"
+                      onChange={(e) =>
+                        setCampaignForm((prev) => ({
+                          ...prev,
+                          actionPayloadJson: e.target.value,
+                        }))
+                      }
+                    />
+                    {selectedCampaignTarget && (
+                      <button
+                        type="button"
+                        className="text-[11px] text-teal-600 hover:underline"
+                        onClick={() =>
+                          setCampaignForm((prev) => ({
+                            ...prev,
+                            actionPayloadJson:
+                              selectedCampaignTarget.payloadExampleJson,
+                          }))
+                        }
+                      >
+                        Dùng payload mẫu ↑
+                      </button>
+                    )}
                   </div>
 
                   <div className="flex items-center gap-2 pt-1">
@@ -1042,7 +1339,10 @@ export default function AdminNotificationsClient() {
                               {formatDate(d.sentAt)}
                             </TableCell>
                             <TableCell className="text-right">
-                              <Badge variant={sc.variant} className={sc.className}>
+                              <Badge
+                                variant={sc.variant}
+                                className={sc.className}
+                              >
                                 <StatusIcon className="w-3 h-3 mr-1" />
                                 {sc.label}
                               </Badge>
@@ -1062,7 +1362,8 @@ export default function AdminNotificationsClient() {
         <TabsContent value="delivery-logs" className="mt-4 space-y-4">
           <div className="flex items-center justify-between">
             <p className="text-sm text-gray-500">
-              Các dispatch bị lỗi. Bấm <strong>Process Due</strong> để trigger retry.
+              Các dispatch bị lỗi. Bấm <strong>Process Due</strong> để trigger
+              retry.
             </p>
             <div className="flex gap-2">
               <Button
@@ -1115,7 +1416,9 @@ export default function AdminNotificationsClient() {
                         className="text-center py-12 text-gray-400"
                       >
                         <CheckCircle2 className="w-8 h-8 mx-auto mb-2 text-emerald-300" />
-                        <p className="text-sm">Không có dispatch nào bị lỗi 🎉</p>
+                        <p className="text-sm">
+                          Không có dispatch nào bị lỗi 🎉
+                        </p>
                       </TableCell>
                     </TableRow>
                   ) : (

@@ -47,7 +47,12 @@ export interface NotificationActionCatalog {
   }>;
 }
 
-export type DispatchStatus = "PENDING" | "PROCESSING" | "SENT" | "FAILED";
+export type DispatchStatus =
+  | "PENDING"
+  | "PROCESSING"
+  | "SENT"
+  | "COMPLETED"
+  | "FAILED";
 
 export interface NotificationDispatch {
   notificationDispatchId: number;
