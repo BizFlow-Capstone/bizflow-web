@@ -45,6 +45,10 @@ import {
   updateMappableEntity,
   updateRowDefinition,
 } from "@/lib/admin-accounting-api";
+import type {
+  CreateTemplateRequest,
+  CreateTemplateVersionRequest,
+} from "@/lib/admin-accounting-api";
 import BookTemplatePreview from "../../../../components/accounting/BookTemplatePreview";
 import type { VersionOption } from "./types";
 
@@ -55,12 +59,20 @@ interface VersionTabProps {
   tvNotes: string;
   tvResult: unknown;
   versionOptions: VersionOption[];
+  templateOptions: VersionOption[];
   setTvId: (value: string) => void;
   setTvLabel: (value: string) => void;
   setTvEffective: (value: string) => void;
   setTvNotes: (value: string) => void;
   onDetail: (rawId?: string) => Promise<void> | void;
   onFull: (rawId?: string) => Promise<void> | void;
+  onCreateTemplate: (
+    payload: CreateTemplateRequest,
+  ) => Promise<number | null> | number | null;
+  onCreateVersion: (
+    templateId: number,
+    payload: CreateTemplateVersionRequest,
+  ) => Promise<number | null> | number | null;
   onClone: () => Promise<void> | void;
   onActivate: () => Promise<void> | void;
   onDeactivate: () => Promise<void> | void;
@@ -266,6 +278,19 @@ function toNullableNumber(value: string): number | undefined {
   if (!value.trim()) return undefined;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function parseCsvStrings(value: string): string[] {
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function parseGroupNumbers(value: string): number[] {
+  return parseCsvStrings(value)
+    .map((item) => Number(item))
+    .filter((item) => Number.isInteger(item) && item > 0);
 }
 
 function deriveMappingDraft(
@@ -589,6 +614,27 @@ export default function VersionTab(props: VersionTabProps) {
   const [wizardError, setWizardError] = useState("");
   const [previewLoadedForVersionId, setPreviewLoadedForVersionId] =
     useState("");
+  const [createTemplateModalOpen, setCreateTemplateModalOpen] = useState(false);
+  const [createVersionModalOpen, setCreateVersionModalOpen] = useState(false);
+  const [createTemplateBusy, setCreateTemplateBusy] = useState(false);
+  const [createVersionBusy, setCreateVersionBusy] = useState(false);
+  const [createTemplateError, setCreateTemplateError] = useState("");
+  const [createVersionError, setCreateVersionError] = useState("");
+  const [createTemplateForm, setCreateTemplateForm] = useState({
+    templateCode: "",
+    name: "",
+    description: "",
+    applicableGroups: "1",
+    applicableMethods: "method_1",
+    dataSourceType: "revenues",
+    initialVersionLabel: "v1-draft",
+  });
+  const [createVersionForm, setCreateVersionForm] = useState({
+    templateId: "",
+    versionLabel: "",
+    effectiveFrom: "",
+    changeNotes: "",
+  });
   const [mappingFieldTypeOptions, setMappingFieldTypeOptions] = useState<
     Array<{ value: string; label: string }>
   >([
@@ -755,6 +801,17 @@ export default function VersionTab(props: VersionTabProps) {
     if (!taxType) return rowTaxRateHints;
     return rowTaxRateHints.filter((item) => item.taxType === taxType);
   }, [rowDraft.taxType, rowTaxRateHints]);
+
+  useEffect(() => {
+    if (createVersionForm.templateId) return;
+    const firstTemplateId = props.templateOptions[0]?.value;
+    if (!firstTemplateId) return;
+
+    setCreateVersionForm((prev) => ({
+      ...prev,
+      templateId: firstTemplateId,
+    }));
+  }, [createVersionForm.templateId, props.templateOptions]);
 
   useEffect(() => {
     const nextMappingId = asNumber(fieldMappings[0]?.mappingId);
@@ -1188,6 +1245,106 @@ export default function VersionTab(props: VersionTabProps) {
     wizardStep,
   ]);
 
+  async function handleCreateTemplate() {
+    setCreateTemplateBusy(true);
+    setCreateTemplateError("");
+
+    try {
+      const templateCode = createTemplateForm.templateCode.trim();
+      const name = createTemplateForm.name.trim();
+      if (!templateCode) {
+        throw new Error("Template Code không được để trống.");
+      }
+      if (!name) {
+        throw new Error("Template Name không được để trống.");
+      }
+
+      const applicableGroups = parseGroupNumbers(
+        createTemplateForm.applicableGroups,
+      );
+      if (applicableGroups.length === 0) {
+        throw new Error("Applicable Groups phải có ít nhất 1 số nguyên dương.");
+      }
+
+      const applicableMethods = parseCsvStrings(
+        createTemplateForm.applicableMethods,
+      );
+
+      const payload: CreateTemplateRequest = {
+        templateCode,
+        name,
+        description: createTemplateForm.description.trim() || undefined,
+        applicableGroups,
+        applicableMethods:
+          applicableMethods.length > 0 ? applicableMethods : undefined,
+        dataSourceType:
+          createTemplateForm.dataSourceType as CreateTemplateRequest["dataSourceType"],
+        initialVersionLabel:
+          createTemplateForm.initialVersionLabel.trim() || undefined,
+      };
+
+      const createdVersionId = await props.onCreateTemplate(payload);
+      if (createdVersionId) {
+        setCreateTemplateForm((prev) => ({
+          ...prev,
+          templateCode: "",
+          name: "",
+          description: "",
+          initialVersionLabel: "v1-draft",
+        }));
+      }
+      setCreateTemplateModalOpen(false);
+    } catch (error) {
+      setCreateTemplateError(
+        error instanceof Error ? error.message : "Không tạo được template.",
+      );
+    } finally {
+      setCreateTemplateBusy(false);
+    }
+  }
+
+  async function handleCreateVersion() {
+    setCreateVersionBusy(true);
+    setCreateVersionError("");
+
+    try {
+      const templateId = Number(createVersionForm.templateId);
+      if (!Number.isInteger(templateId) || templateId <= 0) {
+        throw new Error("Vui lòng chọn Template để tạo version.");
+      }
+
+      const versionLabel = createVersionForm.versionLabel.trim();
+      if (!versionLabel) {
+        throw new Error("Version Label không được để trống.");
+      }
+
+      const payload: CreateTemplateVersionRequest = {
+        versionLabel,
+        effectiveFrom: createVersionForm.effectiveFrom.trim() || undefined,
+        changeNotes: createVersionForm.changeNotes.trim() || undefined,
+      };
+
+      const createdVersionId = await props.onCreateVersion(templateId, payload);
+      if (createdVersionId) {
+        setCreateVersionForm((prev) => ({
+          ...prev,
+          versionLabel: "",
+          effectiveFrom: "",
+          changeNotes: "",
+        }));
+      }
+      setCreateVersionModalOpen(false);
+    } catch (error) {
+      setCreateVersionError(
+        error instanceof Error
+          ? error.message
+          : "Không tạo được draft version.",
+      );
+    } finally {
+      setCreateVersionBusy(false);
+    }
+  }
+
   async function handleCloneAndOpenFlow() {
     setWizardBusy(true);
     setWizardError("");
@@ -1449,9 +1606,304 @@ export default function VersionTab(props: VersionTabProps) {
                 </option>
               ))}
             </select>
+
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                setCreateTemplateError("");
+                setCreateTemplateModalOpen(true);
+              }}
+            >
+              <Save className="mr-1.5 h-3.5 w-3.5" />
+              Tạo template mới
+            </Button>
+            <Button
+              size="sm"
+              className={PRIMARY}
+              onClick={() => {
+                setCreateVersionError("");
+                setCreateVersionModalOpen(true);
+              }}
+            >
+              <Save className="mr-1.5 h-3.5 w-3.5" />
+              Tạo draft version
+            </Button>
           </div>
         </CardContent>
       </Card>
+
+      <Dialog
+        open={createTemplateModalOpen}
+        onOpenChange={(open) => {
+          setCreateTemplateModalOpen(open);
+          if (!open) setCreateTemplateError("");
+        }}
+      >
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Tạo template mới</DialogTitle>
+            <DialogDescription>
+              Tạo accounting template và draft version đầu tiên.
+            </DialogDescription>
+          </DialogHeader>
+
+          {createTemplateError ? (
+            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              {createTemplateError}
+            </div>
+          ) : null}
+
+          <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-gray-600">
+                Template code (VD: S1A)
+              </label>
+              <input
+                value={createTemplateForm.templateCode}
+                onChange={(e) =>
+                  setCreateTemplateForm((prev) => ({
+                    ...prev,
+                    templateCode: e.target.value,
+                  }))
+                }
+                className="w-full rounded-lg border bg-white px-3 py-2 text-sm"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-gray-600">
+                Template name
+              </label>
+              <input
+                value={createTemplateForm.name}
+                onChange={(e) =>
+                  setCreateTemplateForm((prev) => ({
+                    ...prev,
+                    name: e.target.value,
+                  }))
+                }
+                className="w-full rounded-lg border bg-white px-3 py-2 text-sm"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-gray-600">
+                Applicable groups (VD: 1,2)
+              </label>
+              <input
+                value={createTemplateForm.applicableGroups}
+                onChange={(e) =>
+                  setCreateTemplateForm((prev) => ({
+                    ...prev,
+                    applicableGroups: e.target.value,
+                  }))
+                }
+                className="w-full rounded-lg border bg-white px-3 py-2 text-sm"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-gray-600">
+                Applicable methods (VD: method_1)
+              </label>
+              <input
+                value={createTemplateForm.applicableMethods}
+                onChange={(e) =>
+                  setCreateTemplateForm((prev) => ({
+                    ...prev,
+                    applicableMethods: e.target.value,
+                  }))
+                }
+                className="w-full rounded-lg border bg-white px-3 py-2 text-sm"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-gray-600">
+                Data source type
+              </label>
+              <select
+                value={createTemplateForm.dataSourceType}
+                onChange={(e) =>
+                  setCreateTemplateForm((prev) => ({
+                    ...prev,
+                    dataSourceType: e.target.value,
+                  }))
+                }
+                className="w-full rounded-lg border bg-white px-3 py-2 text-sm"
+              >
+                <option value="revenues">revenues</option>
+                <option value="revenue_cost">revenue_cost</option>
+                <option value="gl_entries">gl_entries</option>
+                <option value="stock_movements">stock_movements</option>
+              </select>
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-gray-600">
+                Initial version label
+              </label>
+              <input
+                value={createTemplateForm.initialVersionLabel}
+                onChange={(e) =>
+                  setCreateTemplateForm((prev) => ({
+                    ...prev,
+                    initialVersionLabel: e.target.value,
+                  }))
+                }
+                className="w-full rounded-lg border bg-white px-3 py-2 text-sm"
+              />
+            </div>
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-gray-600">
+              Description
+            </label>
+            <textarea
+              value={createTemplateForm.description}
+              onChange={(e) =>
+                setCreateTemplateForm((prev) => ({
+                  ...prev,
+                  description: e.target.value,
+                }))
+              }
+              rows={3}
+              className="w-full rounded-lg border bg-white px-3 py-2 text-sm"
+            />
+          </div>
+
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setCreateTemplateModalOpen(false)}
+            >
+              Hủy
+            </Button>
+            <Button
+              type="button"
+              className={PRIMARY}
+              onClick={() => void handleCreateTemplate()}
+              disabled={createTemplateBusy}
+            >
+              <Save className="mr-1.5 h-3.5 w-3.5" />
+              {createTemplateBusy ? "Đang tạo..." : "Tạo template"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={createVersionModalOpen}
+        onOpenChange={(open) => {
+          setCreateVersionModalOpen(open);
+          if (!open) setCreateVersionError("");
+        }}
+      >
+        <DialogContent className="sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Tạo draft version mới</DialogTitle>
+            <DialogDescription>
+              Tạo blank draft cho một template đã có.
+            </DialogDescription>
+          </DialogHeader>
+
+          {createVersionError ? (
+            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              {createVersionError}
+            </div>
+          ) : null}
+
+          <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-gray-600">
+                Template
+              </label>
+              <select
+                value={createVersionForm.templateId}
+                onChange={(e) =>
+                  setCreateVersionForm((prev) => ({
+                    ...prev,
+                    templateId: e.target.value,
+                  }))
+                }
+                className="w-full rounded-lg border bg-white px-3 py-2 text-sm"
+              >
+                <option value="">Chọn template</option>
+                {props.templateOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-gray-600">
+                Version label (VD: v2-draft)
+              </label>
+              <input
+                value={createVersionForm.versionLabel}
+                onChange={(e) =>
+                  setCreateVersionForm((prev) => ({
+                    ...prev,
+                    versionLabel: e.target.value,
+                  }))
+                }
+                className="w-full rounded-lg border bg-white px-3 py-2 text-sm"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-gray-600">
+                Effective from
+              </label>
+              <input
+                type="date"
+                value={createVersionForm.effectiveFrom}
+                onChange={(e) =>
+                  setCreateVersionForm((prev) => ({
+                    ...prev,
+                    effectiveFrom: e.target.value,
+                  }))
+                }
+                className="w-full rounded-lg border bg-white px-3 py-2 text-sm"
+              />
+            </div>
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-gray-600">
+              Change notes
+            </label>
+            <textarea
+              value={createVersionForm.changeNotes}
+              onChange={(e) =>
+                setCreateVersionForm((prev) => ({
+                  ...prev,
+                  changeNotes: e.target.value,
+                }))
+              }
+              rows={3}
+              className="w-full rounded-lg border bg-white px-3 py-2 text-sm"
+            />
+          </div>
+
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setCreateVersionModalOpen(false)}
+            >
+              Hủy
+            </Button>
+            <Button
+              type="button"
+              className={PRIMARY}
+              onClick={() => void handleCreateVersion()}
+              disabled={createVersionBusy}
+            >
+              <Save className="mr-1.5 h-3.5 w-3.5" />
+              {createVersionBusy ? "Đang tạo..." : "Tạo draft version"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {!hasResult ? (
         <Card>

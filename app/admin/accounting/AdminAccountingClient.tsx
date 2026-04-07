@@ -25,6 +25,8 @@ import {
   activateTemplateVersion,
   cloneFormula,
   cloneTemplateVersion,
+  createTemplate,
+  createTemplateVersion,
   createFormula,
   createFieldMapping,
   createMappableEntity,
@@ -56,7 +58,11 @@ import {
   updateRowDefinition,
   updateTemplateVersion,
 } from "@/lib/admin-accounting-api";
-import type { BusinessTypeWithRatesDto } from "@/lib/admin-accounting-api";
+import type {
+  BusinessTypeWithRatesDto,
+  CreateTemplateRequest,
+  CreateTemplateVersionRequest,
+} from "@/lib/admin-accounting-api";
 import type {
   AccountingBookRow,
   AccountingBusinessTypeSummary,
@@ -1177,6 +1183,13 @@ export default function AdminAccountingClient() {
     return options;
   }, [templates]);
 
+  const templateOptions = useMemo(() => {
+    return templates.map((template: AccountingTemplateSummary) => ({
+      value: String(template.templateId),
+      label: `${template.templateCode} - ${template.name}`,
+    }));
+  }, [templates]);
+
   const effectiveFldVer = fldVer || versionOptions[0]?.value || "";
 
   const rowRulesetOptions = useMemo(() => {
@@ -1410,6 +1423,20 @@ export default function AdminAccountingClient() {
     });
   }, [activeTab, btLoad]);
 
+  const getFirstCreatedVersionId = (
+    templateData: Record<string, unknown>,
+  ): number | null => {
+    const versions = asArray(templateData.versions);
+    for (const version of versions) {
+      const versionId = Number(version.templateVersionId ?? 0);
+      if (versionId > 0) {
+        return versionId;
+      }
+    }
+
+    return null;
+  };
+
   const tvDetail = async (rawId?: string) => {
     const id = toNum(rawId ?? tvId);
     if (!id) return;
@@ -1456,6 +1483,61 @@ export default function AdminAccountingClient() {
       log(`Cloned version ${id}`, "ok");
       await loadOverview();
     });
+  };
+
+  const tvCreateTemplate = async (payload: CreateTemplateRequest) => {
+    let createdVersionId: number | null = null;
+
+    await runSafe(async () => {
+      const createdTemplate = await createTemplate(payload);
+      const firstVersionId = getFirstCreatedVersionId(createdTemplate);
+
+      if (firstVersionId) {
+        setTvId(String(firstVersionId));
+        setFldVer(String(firstVersionId));
+        setRdVer(String(firstVersionId));
+        await tvDetail(String(firstVersionId));
+        createdVersionId = firstVersionId;
+      } else {
+        setTvResult(createdTemplate);
+      }
+
+      const createdCode = String(createdTemplate.templateCode ?? "").trim();
+      log(
+        `Created template ${createdCode || payload.templateCode.toUpperCase()}`,
+        "ok",
+      );
+      await loadOverview();
+    });
+
+    return createdVersionId;
+  };
+
+  const tvCreateVersion = async (
+    templateId: number,
+    payload: CreateTemplateVersionRequest,
+  ) => {
+    let createdVersionId: number | null = null;
+
+    await runSafe(async () => {
+      const createdVersion = await createTemplateVersion(templateId, payload);
+      const newVersionId = Number(createdVersion.templateVersionId ?? 0);
+
+      if (newVersionId > 0) {
+        setTvId(String(newVersionId));
+        setFldVer(String(newVersionId));
+        setRdVer(String(newVersionId));
+        await tvDetail(String(newVersionId));
+        createdVersionId = newVersionId;
+      } else {
+        setTvResult(createdVersion);
+      }
+
+      log(`Created draft version for template ${templateId}`, "ok");
+      await loadOverview();
+    });
+
+    return createdVersionId;
   };
 
   const tvUpdate = async () => {
@@ -2884,12 +2966,17 @@ export default function AdminAccountingClient() {
           tvNotes={tvNotes}
           tvResult={tvResult}
           versionOptions={versionOptions}
+          templateOptions={templateOptions}
           setTvId={setTvId}
           setTvLabel={setTvLabel}
           setTvEffective={setTvEffective}
           setTvNotes={setTvNotes}
           onDetail={(rawId) => void tvDetail(rawId)}
           onFull={(rawId) => void tvFull(rawId)}
+          onCreateTemplate={(payload) => tvCreateTemplate(payload)}
+          onCreateVersion={(templateId, payload) =>
+            tvCreateVersion(templateId, payload)
+          }
           onClone={() => tvClone()}
           onActivate={() => tvActivate()}
           onDeactivate={() => tvDeactivate()}

@@ -1,23 +1,25 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   Search,
   Filter,
   MoreHorizontal,
-  UserCheck,
-  UserX,
   Mail,
   Phone,
-  MapPin,
   Calendar,
-  Eye,
   Shield,
+  Loader2,
+  AlertTriangle,
+  RefreshCcw,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -39,113 +41,23 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { toast } from "sonner";
+import {
+  useAdminUsers,
+  useRevokeAdminUserRefreshTokens,
+} from "@/hooks/useAdminUsers";
+import type { AdminManagedUser } from "@/lib/types/adminUserManagement";
 
-// ── Mock Data ──────────────────────────────────────────────────────────────────
-
-interface MockUser {
-  id: string;
-  fullName: string;
-  email: string;
-  phone: string;
-  role: "User" | "Admin" | "Consultant";
-  isActive: boolean;
-  locationsCount: number;
-  createdAt: string;
-  lastLogin: string;
-}
-
-const mockUsers: MockUser[] = [
-  {
-    id: "u-001",
-    fullName: "Nguyễn Văn An",
-    email: "nguyenvanan@gmail.com",
-    phone: "0912345678",
-    role: "User",
-    isActive: true,
-    locationsCount: 2,
-    createdAt: "2026-01-15T08:00:00Z",
-    lastLogin: "2026-03-28T07:30:00Z",
-  },
-  {
-    id: "u-002",
-    fullName: "Trần Thị Bích",
-    email: "tranthibich@gmail.com",
-    phone: "0987654321",
-    role: "User",
-    isActive: true,
-    locationsCount: 1,
-    createdAt: "2026-02-01T08:00:00Z",
-    lastLogin: "2026-03-27T14:20:00Z",
-  },
-  {
-    id: "u-003",
-    fullName: "Lê Minh Thiện",
-    email: "thien.admin@bizflow.vn",
-    phone: "0363053659",
-    role: "Admin",
-    isActive: true,
-    locationsCount: 0,
-    createdAt: "2025-12-01T08:00:00Z",
-    lastLogin: "2026-03-28T09:00:00Z",
-  },
-  {
-    id: "u-004",
-    fullName: "Phạm Quốc Dũng",
-    email: "dungpq@example.com",
-    phone: "0901234567",
-    role: "User",
-    isActive: false,
-    locationsCount: 1,
-    createdAt: "2026-01-20T08:00:00Z",
-    lastLogin: "2026-02-15T10:00:00Z",
-  },
-  {
-    id: "u-005",
-    fullName: "Vũ Hoàng Hiếu Ngân",
-    email: "ngan.consultant@bizflow.vn",
-    phone: "0966288741",
-    role: "Consultant",
-    isActive: true,
-    locationsCount: 0,
-    createdAt: "2025-12-15T08:00:00Z",
-    lastLogin: "2026-03-28T08:15:00Z",
-  },
-  {
-    id: "u-006",
-    fullName: "Hoàng Mai Linh",
-    email: "linhhoang@shop.vn",
-    phone: "0932111222",
-    role: "User",
-    isActive: true,
-    locationsCount: 3,
-    createdAt: "2026-02-10T08:00:00Z",
-    lastLogin: "2026-03-28T06:45:00Z",
-  },
-  {
-    id: "u-007",
-    fullName: "Đặng Văn Tùng",
-    email: "tungdv@yahoo.com",
-    phone: "0978333444",
-    role: "User",
-    isActive: true,
-    locationsCount: 1,
-    createdAt: "2026-03-01T08:00:00Z",
-    lastLogin: "2026-03-26T15:00:00Z",
-  },
-  {
-    id: "u-008",
-    fullName: "Bùi Thanh Hà",
-    email: "hathanhbui@gmail.com",
-    phone: "0845667788",
-    role: "User",
-    isActive: false,
-    locationsCount: 0,
-    createdAt: "2026-03-10T08:00:00Z",
-    lastLogin: "2026-03-12T09:00:00Z",
-  },
-];
-
-function formatDate(value: string) {
+function formatDate(value: string | null | undefined) {
+  if (!value) return "--";
   return new Date(value).toLocaleDateString("vi-VN", {
     day: "2-digit",
     month: "2-digit",
@@ -153,78 +65,140 @@ function formatDate(value: string) {
   });
 }
 
+function formatDateTime(value: string | null | undefined) {
+  if (!value) return "--";
+  return new Date(value).toLocaleDateString("vi-VN", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 function roleColor(role: string) {
-  switch (role) {
-    case "Admin":
+  switch (role.toLowerCase()) {
+    case "admin":
       return "bg-violet-50 text-violet-700 hover:bg-violet-50";
-    case "Consultant":
+    case "consultant":
       return "bg-amber-50 text-amber-700 hover:bg-amber-50";
     default:
       return "bg-gray-50 text-gray-600 hover:bg-gray-50";
   }
 }
 
-// ────────────────────────────────────────────────────────────────────────────────
-
 export default function AdminAccountsClient() {
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("ALL");
   const [statusFilter, setStatusFilter] = useState("ALL");
+  const [pageNumber, setPageNumber] = useState(1);
+  const [mountedAt] = useState(() => Date.now());
+  const [revokeDialogUser, setRevokeDialogUser] =
+    useState<AdminManagedUser | null>(null);
 
-  const filtered = mockUsers.filter((u) => {
-    if (
-      search &&
-      !u.fullName.toLowerCase().includes(search.toLowerCase()) &&
-      !u.email.toLowerCase().includes(search.toLowerCase()) &&
-      !u.phone.includes(search)
-    )
-      return false;
-    if (roleFilter !== "ALL" && u.role !== roleFilter) return false;
-    if (statusFilter === "ACTIVE" && !u.isActive) return false;
-    if (statusFilter === "INACTIVE" && u.isActive) return false;
-    return true;
-  });
+  const pageSize = 10;
+
+  const handleSearchChange = (value: string) => {
+    setSearch(value);
+    setPageNumber(1);
+  };
+
+  const handleRoleFilterChange = (value: string) => {
+    setRoleFilter(value);
+    setPageNumber(1);
+  };
+
+  const handleStatusFilterChange = (value: string) => {
+    setStatusFilter(value);
+    setPageNumber(1);
+  };
+
+  const queryParams = useMemo(
+    () => ({
+      pageNumber,
+      pageSize,
+      search: search.trim() || undefined,
+      role: roleFilter === "ALL" ? undefined : roleFilter,
+      isActive:
+        statusFilter === "ACTIVE"
+          ? true
+          : statusFilter === "INACTIVE"
+            ? false
+            : undefined,
+    }),
+    [pageNumber, pageSize, roleFilter, search, statusFilter],
+  );
+
+  const usersQuery = useAdminUsers(queryParams);
+  const revokeTokensMutation = useRevokeAdminUserRefreshTokens();
+
+  const users = usersQuery.data?.items ?? [];
+  const activeCount = users.filter((user) => user.isActive).length;
+  const inactiveCount = users.length - activeCount;
+  const sevenDaysAgo = mountedAt - 7 * 24 * 60 * 60 * 1000;
+  const recentLoginCount = users.filter((user) => {
+    if (!user.lastLoginAt) return false;
+    const loginTime = new Date(user.lastLoginAt).getTime();
+    return loginTime >= sevenDaysAgo;
+  }).length;
+
+  const totalCount = usersQuery.data?.totalCount ?? 0;
+  const totalPages = usersQuery.data?.totalPages ?? 1;
+
+  const handleRevokeTokens = () => {
+    if (!revokeDialogUser) return;
+
+    revokeTokensMutation.mutate(revokeDialogUser.accountId, {
+      onSuccess: () => {
+        toast.success("Đã thu hồi toàn bộ phiên đăng nhập của người dùng.");
+        setRevokeDialogUser(null);
+      },
+      onError: (error) => {
+        toast.error(
+          error instanceof Error
+            ? error.message
+            : "Không thể thu hồi phiên đăng nhập.",
+        );
+      },
+    });
+  };
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">
-          Quản Lý Người Dùng
-        </h1>
+      {/* <div>
+        <h1 className="text-2xl font-bold text-gray-900">Quản Lý Người Dùng</h1>
         <p className="text-sm text-gray-500 mt-1">
           Xem, tìm kiếm và quản lý tài khoản người dùng trên nền tảng.
         </p>
-      </div>
+      </div> */}
 
-      {/* Summary cards */}
       <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
         {[
           {
-            label: "Tổng tài khoản",
-            value: mockUsers.length,
+            label: "Tài khoản trang này",
+            value: users.length,
             icon: Shield,
             color: "text-blue-600",
             bg: "bg-blue-50",
           },
           {
             label: "Đang hoạt động",
-            value: mockUsers.filter((u) => u.isActive).length,
-            icon: UserCheck,
+            value: activeCount,
+            icon: Shield,
             color: "text-emerald-600",
             bg: "bg-emerald-50",
           },
           {
             label: "Đã vô hiệu",
-            value: mockUsers.filter((u) => !u.isActive).length,
-            icon: UserX,
+            value: inactiveCount,
+            icon: AlertTriangle,
             color: "text-red-600",
             bg: "bg-red-50",
           },
           {
-            label: "Địa điểm KD",
-            value: mockUsers.reduce((s, u) => s + u.locationsCount, 0),
-            icon: MapPin,
+            label: "Login trong 7 ngày",
+            value: recentLoginCount,
+            icon: Calendar,
             color: "text-violet-600",
             bg: "bg-violet-50",
           },
@@ -237,9 +211,7 @@ export default function AdminAccountsClient() {
                   <Icon className={`w-5 h-5 ${s.color}`} />
                 </div>
                 <div>
-                  <p className="text-xs font-medium text-gray-500">
-                    {s.label}
-                  </p>
+                  <p className="text-xs font-medium text-gray-500">{s.label}</p>
                   <p className={`text-xl font-bold ${s.color}`}>{s.value}</p>
                 </div>
               </CardContent>
@@ -248,51 +220,72 @@ export default function AdminAccountsClient() {
         })}
       </div>
 
-      {/* Filters */}
       <Card className="border-0 shadow-sm">
         <CardContent className="p-4">
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="relative flex-1 min-w-[200px]">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-              <Input
-                placeholder="Tìm theo tên, email hoặc SĐT..."
-                className="pl-9"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="users-search">Từ khóa</Label>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <Input
+                  id="users-search"
+                  className="pl-9"
+                  value={search}
+                  onChange={(e) => handleSearchChange(e.target.value)}
+                />
+              </div>
             </div>
-            <Select value={roleFilter} onValueChange={setRoleFilter}>
-              <SelectTrigger className="w-[140px]">
-                <Filter className="w-3.5 h-3.5 mr-1.5 text-gray-400" />
-                <SelectValue placeholder="Role" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="ALL">Tất cả role</SelectItem>
-                <SelectItem value="User">User</SelectItem>
-                <SelectItem value="Admin">Admin</SelectItem>
-                <SelectItem value="Consultant">Consultant</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-[150px]">
-                <SelectValue placeholder="Trạng thái" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="ALL">Tất cả</SelectItem>
-                <SelectItem value="ACTIVE">Hoạt động</SelectItem>
-                <SelectItem value="INACTIVE">Vô hiệu</SelectItem>
-              </SelectContent>
-            </Select>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="users-role-filter">Role</Label>
+              <Select value={roleFilter} onValueChange={handleRoleFilterChange}>
+                <SelectTrigger id="users-role-filter" className="w-full">
+                  <Filter className="w-3.5 h-3.5 mr-1.5 text-gray-400" />
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">Tất cả role</SelectItem>
+                  <SelectItem value="User">User</SelectItem>
+                  <SelectItem value="Owner">Owner</SelectItem>
+                  <SelectItem value="Consultant">Consultant</SelectItem>
+                  <SelectItem value="Staff">Staff</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="users-status-filter">Trạng thái</Label>
+              <Select
+                value={statusFilter}
+                onValueChange={handleStatusFilterChange}
+              >
+                <SelectTrigger id="users-status-filter" className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">Tất cả</SelectItem>
+                  <SelectItem value="ACTIVE">Hoạt động</SelectItem>
+                  <SelectItem value="INACTIVE">Vô hiệu</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
         </CardContent>
       </Card>
 
-      {/* Users Table */}
       <Card className="border-0 shadow-sm">
         <CardHeader className="pb-2">
-          <CardTitle className="text-base font-semibold">
-            Danh Sách Người Dùng ({filtered.length})
-          </CardTitle>
+          <div className="flex items-center justify-between gap-2">
+            <CardTitle className="text-base font-semibold">
+              Danh Sách Người Dùng ({totalCount})
+            </CardTitle>
+            {usersQuery.isFetching ? (
+              <div className="flex items-center gap-1.5 text-xs text-gray-500">
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                Đang cập nhật dữ liệu
+              </div>
+            ) : null}
+          </div>
         </CardHeader>
         <CardContent className="p-0">
           <Table>
@@ -301,7 +294,6 @@ export default function AdminAccountsClient() {
                 <TableHead>Người dùng</TableHead>
                 <TableHead>SĐT</TableHead>
                 <TableHead>Role</TableHead>
-                <TableHead>Địa điểm KD</TableHead>
                 <TableHead>Ngày tạo</TableHead>
                 <TableHead>Login cuối</TableHead>
                 <TableHead>Trạng thái</TableHead>
@@ -309,101 +301,233 @@ export default function AdminAccountsClient() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filtered.map((user) => (
-                <TableRow key={user.id}>
-                  <TableCell>
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-teal-400 to-cyan-500 flex items-center justify-center text-white text-xs font-bold">
-                        {user.fullName.charAt(0)}
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium text-gray-800">
-                          {user.fullName}
-                        </p>
-                        <p className="text-xs text-gray-400 flex items-center gap-1">
-                          <Mail className="w-3 h-3" />
-                          {user.email}
-                        </p>
-                      </div>
+              {usersQuery.isLoading ? (
+                <TableRow>
+                  <TableCell colSpan={7}>
+                    <div className="flex items-center justify-center py-10 text-gray-500 text-sm gap-2">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Đang tải danh sách người dùng
                     </div>
                   </TableCell>
-                  <TableCell className="text-sm text-gray-600">
-                    <span className="flex items-center gap-1">
-                      <Phone className="w-3 h-3 text-gray-400" />
-                      {user.phone}
-                    </span>
-                  </TableCell>
-                  <TableCell>
-                    <Badge
-                      variant="secondary"
-                      className={roleColor(user.role)}
-                    >
-                      {user.role}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-sm text-gray-600">
-                    {user.locationsCount}
-                  </TableCell>
-                  <TableCell className="text-xs text-gray-500">
-                    <span className="flex items-center gap-1">
-                      <Calendar className="w-3 h-3" />
-                      {formatDate(user.createdAt)}
-                    </span>
-                  </TableCell>
-                  <TableCell className="text-xs text-gray-500">
-                    {formatDate(user.lastLogin)}
-                  </TableCell>
-                  <TableCell>
-                    {user.isActive ? (
-                      <Badge
-                        variant="secondary"
-                        className="bg-emerald-50 text-emerald-700 hover:bg-emerald-50"
+                </TableRow>
+              ) : null}
+
+              {usersQuery.isError ? (
+                <TableRow>
+                  <TableCell colSpan={7}>
+                    <div className="flex flex-col items-center justify-center py-10 gap-3">
+                      <p className="text-sm text-red-600">
+                        {usersQuery.error instanceof Error
+                          ? usersQuery.error.message
+                          : "Không thể tải danh sách người dùng."}
+                      </p>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => usersQuery.refetch()}
                       >
-                        Hoạt động
-                      </Badge>
-                    ) : (
-                      <Badge
-                        variant="secondary"
-                        className="bg-gray-100 text-gray-500 hover:bg-gray-100"
-                      >
-                        Vô hiệu
-                      </Badge>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                          <MoreHorizontal className="w-4 h-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem className="gap-2">
-                          <Eye className="w-4 h-4" />
-                          Xem chi tiết
-                        </DropdownMenuItem>
-                        <DropdownMenuItem className="gap-2">
-                          {user.isActive ? (
-                            <>
-                              <UserX className="w-4 h-4" />
-                              Vô hiệu hoá
-                            </>
-                          ) : (
-                            <>
-                              <UserCheck className="w-4 h-4" />
-                              Kích hoạt
-                            </>
-                          )}
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+                        <RefreshCcw className="w-3.5 h-3.5 mr-2" />
+                        Tải lại
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
-              ))}
+              ) : null}
+
+              {!usersQuery.isLoading &&
+              !usersQuery.isError &&
+              users.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={7}>
+                    <div className="py-10 text-center text-sm text-gray-500">
+                      Không có người dùng phù hợp với bộ lọc.
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ) : null}
+
+              {!usersQuery.isLoading &&
+                !usersQuery.isError &&
+                users.map((user) => (
+                  <TableRow key={user.accountId}>
+                    <TableCell>
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full bg-linear-to-br from-teal-400 to-cyan-500 flex items-center justify-center text-white text-xs font-bold">
+                          {(user.fullName || "?").charAt(0).toUpperCase()}
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium text-gray-800">
+                            {user.fullName || "Người dùng chưa cập nhật tên"}
+                          </p>
+                          <p className="text-xs text-gray-400 flex items-center gap-1">
+                            <Mail className="w-3 h-3" />
+                            {user.email || "--"}
+                          </p>
+                        </div>
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-sm text-gray-600">
+                      <span className="flex items-center gap-1">
+                        <Phone className="w-3 h-3 text-gray-400" />
+                        {user.phone || "--"}
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      <Badge
+                        variant="secondary"
+                        className={roleColor(user.role)}
+                      >
+                        {user.role}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-xs text-gray-500">
+                      <span className="flex items-center gap-1">
+                        <Calendar className="w-3 h-3" />
+                        {formatDate(user.createdAt)}
+                      </span>
+                    </TableCell>
+                    <TableCell className="text-xs text-gray-500">
+                      {formatDateTime(user.lastLoginAt)}
+                    </TableCell>
+                    <TableCell>
+                      {user.isActive ? (
+                        <Badge
+                          variant="secondary"
+                          className="bg-emerald-50 text-emerald-700 hover:bg-emerald-50"
+                        >
+                          Hoạt động
+                        </Badge>
+                      ) : (
+                        <Badge
+                          variant="secondary"
+                          className="bg-gray-100 text-gray-500 hover:bg-gray-100"
+                        >
+                          Vô hiệu
+                        </Badge>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 p-0"
+                          >
+                            <MoreHorizontal className="w-4 h-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem
+                            className="gap-2"
+                            onClick={() => setRevokeDialogUser(user)}
+                          >
+                            <Shield className="w-4 h-4" />
+                            Thu hồi phiên đăng nhập
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </TableCell>
+                  </TableRow>
+                ))}
             </TableBody>
           </Table>
+
+          <div className="flex items-center justify-between px-4 py-3 border-t">
+            <p className="text-sm text-gray-500">
+              Trang {pageNumber} / {totalPages}
+            </p>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={pageNumber <= 1 || usersQuery.isFetching}
+                onClick={() => setPageNumber((prev) => Math.max(1, prev - 1))}
+              >
+                <ChevronLeft className="w-4 h-4 mr-1" />
+                Trước
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={pageNumber >= totalPages || usersQuery.isFetching}
+                onClick={() =>
+                  setPageNumber((prev) => Math.min(totalPages, prev + 1))
+                }
+              >
+                Sau
+                <ChevronRight className="w-4 h-4 ml-1" />
+              </Button>
+            </div>
+          </div>
         </CardContent>
       </Card>
+
+      <Dialog
+        open={revokeDialogUser != null}
+        onOpenChange={(open) => {
+          if (!open) setRevokeDialogUser(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Thu hồi tất cả phiên đăng nhập</DialogTitle>
+            <DialogDescription>
+              Người dùng sẽ bị đăng xuất khỏi mọi thiết bị sau khi thu hồi
+              refresh token.
+            </DialogDescription>
+          </DialogHeader>
+
+          {revokeDialogUser ? (
+            <div className="rounded-lg border bg-amber-50/50 border-amber-200 p-3 text-sm text-gray-700 space-y-1">
+              <p>
+                <span className="font-medium">Người dùng:</span>{" "}
+                {revokeDialogUser.fullName || "--"}
+              </p>
+              <p>
+                <span className="font-medium">Email:</span>{" "}
+                {revokeDialogUser.email || "--"}
+              </p>
+              <p>
+                <span className="font-medium">AccountId:</span>{" "}
+                {revokeDialogUser.accountId}
+              </p>
+            </div>
+          ) : null}
+
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setRevokeDialogUser(null)}
+              disabled={revokeTokensMutation.isPending}
+            >
+              Hủy
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={handleRevokeTokens}
+              disabled={revokeTokensMutation.isPending}
+            >
+              {revokeTokensMutation.isPending ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Đang thu hồi
+                </>
+              ) : (
+                <>
+                  <AlertTriangle className="w-4 h-4 mr-2" />
+                  Thu hồi ngay
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

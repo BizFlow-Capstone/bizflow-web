@@ -41,6 +41,26 @@ export interface TemplateVersionPatchRequest {
   changeNotes?: string;
 }
 
+export interface CreateTemplateRequest {
+  templateCode: string;
+  name: string;
+  description?: string;
+  applicableGroups: number[];
+  applicableMethods?: string[];
+  dataSourceType:
+    | "revenues"
+    | "revenue_cost"
+    | "gl_entries"
+    | "stock_movements";
+  initialVersionLabel?: string;
+}
+
+export interface CreateTemplateVersionRequest {
+  versionLabel: string;
+  effectiveFrom?: string;
+  changeNotes?: string;
+}
+
 export interface FormulaPatchRequest {
   name?: string;
   description?: string;
@@ -219,6 +239,28 @@ export async function getTemplateVersionDetail(
 ): Promise<Record<string, unknown>> {
   return request<Record<string, unknown>>(
     `/api/admin/accounting/template-versions/${templateVersionId}`,
+  );
+}
+
+export async function createTemplate(
+  payload: CreateTemplateRequest,
+): Promise<Record<string, unknown>> {
+  return request<Record<string, unknown>>("/api/admin/accounting/templates", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function createTemplateVersion(
+  templateId: number,
+  payload: CreateTemplateVersionRequest,
+): Promise<Record<string, unknown>> {
+  return request<Record<string, unknown>>(
+    `/api/admin/accounting/templates/${templateId}/versions`,
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
   );
 }
 
