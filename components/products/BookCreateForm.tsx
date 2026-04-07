@@ -58,26 +58,44 @@ export default function BookCreateForm({
     );
   }, [businessTypes, selectedBusinessType]);
 
-  // Gợi ý tax methods: luôn cho phép chọn cả 3, không disable gì (vì không có dữ liệu mapping)
-  const suggestedTaxMethods: string[] = ["method_1", "method_2", "exempt"];
+  const suggestedTaxMethods = useMemo(() => {
+    if (groupNumber === 1) return ["exempt"];
+    if (groupNumber === 2) return ["method_1", "method_2"];
+    return ["method_2"];
+  }, [groupNumber]);
+
+  useEffect(() => {
+    setSelectedTaxMethod((prev) => {
+      if (suggestedTaxMethods.includes(prev)) return prev;
+      return suggestedTaxMethods.length === 1 ? suggestedTaxMethods[0] : "";
+    });
+  }, [suggestedTaxMethods]);
 
   // Gợi ý template: không block, chỉ highlight nếu applicableMethods có taxMethod
   const suggestedTemplates = useMemo(() => {
     if (!templates || !selectedTaxMethod) return [];
     return templates
-      .filter((tpl) => tpl.applicableMethods?.includes(selectedTaxMethod))
+      .filter(
+        (tpl) =>
+          !tpl.applicableMethods ||
+          tpl.applicableMethods.length === 0 ||
+          tpl.applicableMethods.includes(selectedTaxMethod),
+      )
       .map((tpl) => tpl.templateCode);
   }, [templates, selectedTaxMethod]);
 
   // Khi chọn nhóm ngành, reset tax method và templates (tránh setState trong effect)
   const handleBusinessTypeChange = (val: string) => {
     setSelectedBusinessType(val);
-    setSelectedTaxMethod("");
+    setSelectedTaxMethod(
+      suggestedTaxMethods.length === 1 ? suggestedTaxMethods[0] : "",
+    );
     setSelectedTemplates([]);
   };
 
   // Khi chọn tax method, reset templates
   const handleTaxMethodChange = (val: string) => {
+    if (!suggestedTaxMethods.includes(val)) return;
     setSelectedTaxMethod(val);
     setSelectedTemplates([]);
   };

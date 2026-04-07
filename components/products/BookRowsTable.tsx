@@ -1,4 +1,10 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   Table,
   TableBody,
@@ -47,6 +53,128 @@ type BookSummaryMeta = Record<string, unknown> & {
   summaryTotal?: number;
 };
 
+type BookSectionRow = {
+  lineType: string;
+  values?: Record<string, unknown>;
+  dataFilter?: {
+    businessTypeId?: string;
+    section?: string;
+  };
+  taxMetadata?: {
+    taxType?: string;
+  };
+};
+
+type BookSection = {
+  sectionType: string;
+  businessTypeId?: string;
+  businessTypeName?: string;
+  rows?: BookSectionRow[];
+};
+
+type BookSectionsMeta = {
+  columns?: AccountingTemplateColumnSummary[];
+  sections?: BookSection[];
+  footerRows?: BookSectionRow[];
+};
+
+const TT152_TEMPLATE_CODES = ["S1a", "S2a", "S2b", "S2c", "S2d", "S2e"];
+
+function normalizeKey(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+function toSectionDisplayRow(sectionRow: BookSectionRow): BookRow {
+  const values = { ...(sectionRow.values ?? {}) };
+  const row: BookRow = {
+    ...values,
+    lineType: values.lineType ?? sectionRow.lineType,
+    rowType: values.rowType ?? sectionRow.lineType,
+  };
+
+  if (!row.rowLabel) {
+    row.rowLabel = row.dien_giai ?? row.description ?? "";
+  }
+
+  if (!row.taxType && sectionRow.taxMetadata?.taxType) {
+    row.taxType = sectionRow.taxMetadata.taxType;
+  }
+
+  return row;
+}
+
+function resolveBusinessTypeId(row: BookRow): string {
+  return asString(row.businessTypeId) || asString(row.BusinessTypeId);
+}
+
+function assembleRowsFromSections(
+  dataRows: BookRow[],
+  sectionsMeta: BookSectionsMeta | null,
+): BookRow[] {
+  if (!sectionsMeta?.sections || sectionsMeta.sections.length === 0) {
+    return dataRows;
+  }
+
+  const groupedDataRows = new Map<string, BookRow[]>();
+  let ungroupedRows: BookRow[] = [];
+
+  dataRows.forEach((row) => {
+    const businessTypeId = normalizeKey(resolveBusinessTypeId(row));
+    if (!businessTypeId) {
+      ungroupedRows.push(row);
+      return;
+    }
+    const group = groupedDataRows.get(businessTypeId) ?? [];
+    group.push(row);
+    groupedDataRows.set(businessTypeId, group);
+  });
+
+  const assembledRows: BookRow[] = [];
+  const consumedBusinessTypes = new Set<string>();
+
+  sectionsMeta.sections.forEach((section) => {
+    (section.rows ?? []).forEach((layoutRow) => {
+      if (layoutRow.lineType !== "data_placeholder") {
+        assembledRows.push(toSectionDisplayRow(layoutRow));
+        return;
+      }
+
+      const placeholderBusinessType = normalizeKey(
+        layoutRow.dataFilter?.businessTypeId ?? section.businessTypeId ?? "",
+      );
+
+      if (placeholderBusinessType) {
+        const matchedRows = groupedDataRows.get(placeholderBusinessType) ?? [];
+        if (matchedRows.length > 0) {
+          assembledRows.push(...matchedRows);
+          consumedBusinessTypes.add(placeholderBusinessType);
+        }
+        return;
+      }
+
+      if (ungroupedRows.length > 0) {
+        assembledRows.push(...ungroupedRows);
+        ungroupedRows = [];
+      }
+    });
+  });
+
+  groupedDataRows.forEach((groupRows, businessTypeId) => {
+    if (consumedBusinessTypes.has(businessTypeId)) return;
+    assembledRows.push(...groupRows);
+  });
+
+  if (ungroupedRows.length > 0) {
+    assembledRows.push(...ungroupedRows);
+  }
+
+  (sectionsMeta.footerRows ?? []).forEach((footerRow) => {
+    assembledRows.push(toSectionDisplayRow(footerRow));
+  });
+
+  return assembledRows.length > 0 ? assembledRows : dataRows;
+}
+
 export const BookRowsTable: React.FC<BookRowsTableProps> = ({
   bookId,
   templateCode,
@@ -61,7 +189,12 @@ export const BookRowsTable: React.FC<BookRowsTableProps> = ({
   const [pageSize, setPageSize] = useState(10);
   const [columns, setColumns] = useState<AccountingTemplateColumnSummary[]>([]);
   const [summaryMeta, setSummaryMeta] = useState<BookSummaryMeta | null>(null);
+  const [sectionsMeta, setSectionsMeta] = useState<BookSectionsMeta | null>(
+    null,
+  );
   const loaderRef = useRef<HTMLDivElement | null>(null);
+
+  const isDocumentTemplate = TT152_TEMPLATE_CODES.includes(templateCode ?? "");
 
   const previewColumns: AccountingTemplateColumnSummary[] = columns.map(
     (col) => ({
@@ -76,77 +209,129 @@ export const BookRowsTable: React.FC<BookRowsTableProps> = ({
     summaryMeta?.templateName ?? summaryMeta?.name ?? "",
   );
   const previewVersionLabel = String(summaryMeta?.versionLabel ?? "");
+  const previewRows = useMemo(
+    () => assembleRowsFromSections(rows, sectionsMeta),
+    [rows, sectionsMeta],
+  );
 
-  const loadRows = useCallback(
-    async (isReset = false) => {
-      if (!isReset && (loading || !hasMore)) return;
+  const loadMoreRows = useCallback(async () => {
+    if (loading || !hasMore) return;
 
+    setLoading(true);
+    const currentPage = page;
+
+    try {
+      const result = await fetchRows(currentPage, pageSize);
+      const totalEst = result.totalEstimated || 0;
+      let nextRowsCount = 0;
+
+      setRows((prev) => {
+        const nextRows = [...prev, ...result.rows];
+        const cappedRows =
+          totalEst > 0 && nextRows.length > totalEst
+            ? nextRows.slice(0, totalEst)
+            : nextRows;
+        nextRowsCount = cappedRows.length;
+        return cappedRows;
+      });
+
+      const reachedEnd =
+        totalEst > 0 ? nextRowsCount >= totalEst : !result.hasMore;
+
+      setHasMore(!reachedEnd && !!result.hasMore);
+      setPage(currentPage + 1);
+    } catch (err) {
+      console.error("Lỗi khi tải thêm dòng sổ:", err);
+      setHasMore(false);
+    } finally {
+      setLoading(false);
+    }
+  }, [fetchRows, hasMore, loading, page, pageSize]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadInitialRows = async () => {
       setLoading(true);
-      const currentPage = isReset ? 1 : page;
+      setRows([]);
+      setPage(1);
+      setHasMore(true);
+      setColumns([]);
+      setSummaryMeta(null);
+      setSectionsMeta(null);
 
       try {
-        if (currentPage === 1) {
-          const res = await authFetch(
-            `/api/locations/${locationId || 1}/accounting/books/${bookId}/summary`,
-          );
-          if (res.ok) {
-            const api = await res.json();
-            setColumns(api.data?.columns || []);
-            setSummaryMeta(api.data || null);
+        const locId = locationId || 1;
+        const [summaryRes, sectionsRes, firstBatch] = await Promise.all([
+          authFetch(
+            `/api/locations/${locId}/accounting/books/${bookId}/summary`,
+          ),
+          isDocumentTemplate
+            ? authFetch(
+                `/api/locations/${locId}/accounting/books/${bookId}/sections`,
+              )
+            : Promise.resolve(null),
+          fetchRows(1, pageSize),
+        ]);
+
+        if (cancelled) return;
+
+        if (summaryRes.ok) {
+          const summaryApi = await summaryRes.json();
+          setColumns(summaryApi.data?.columns || []);
+          setSummaryMeta(summaryApi.data || null);
+        }
+
+        if (sectionsRes && sectionsRes.ok) {
+          const sectionsApi = await sectionsRes.json();
+          const sectionsData = (sectionsApi.data ||
+            null) as BookSectionsMeta | null;
+          setSectionsMeta(sectionsData);
+
+          if (
+            sectionsData?.columns &&
+            Array.isArray(sectionsData.columns) &&
+            sectionsData.columns.length > 0
+          ) {
+            setColumns((previousColumns) =>
+              previousColumns.length > 0
+                ? previousColumns
+                : sectionsData.columns || [],
+            );
           }
         }
 
-        const result = await fetchRows(currentPage, pageSize);
-        const totalEst = result.totalEstimated || 0;
+        const totalEst = firstBatch.totalEstimated || 0;
+        const initialRows =
+          totalEst > 0 && firstBatch.rows.length > totalEst
+            ? firstBatch.rows.slice(0, totalEst)
+            : firstBatch.rows;
 
-        setRows((prev) => {
-          const baseRows = isReset ? [] : prev;
-          const nextRows = [...baseRows, ...result.rows];
-          return totalEst > 0 && nextRows.length > totalEst
-            ? nextRows.slice(0, totalEst)
-            : nextRows;
-        });
+        setRows(initialRows);
 
-        const currentRowsCount = isReset
-          ? result.rows.length
-          : rows.length + result.rows.length;
         const reachedEnd =
-          totalEst > 0 ? currentRowsCount >= totalEst : !result.hasMore;
+          totalEst > 0 ? initialRows.length >= totalEst : !firstBatch.hasMore;
 
-        setHasMore(!reachedEnd && !!result.hasMore);
-        setPage(currentPage + 1);
+        setHasMore(!reachedEnd && !!firstBatch.hasMore);
+        setPage(2);
       } catch (err) {
-        console.error("Lỗi khi tải dòng sổ:", err);
-        if (!isReset) setHasMore(false);
+        if (!cancelled) {
+          console.error("Lỗi khi tải dòng sổ:", err);
+          setHasMore(false);
+        }
       } finally {
-        setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
-    },
-    [
-      bookId,
-      fetchRows,
-      hasMore,
-      loading,
-      locationId,
-      page,
-      pageSize,
-      rows.length,
-    ],
-  );
+    };
 
-  useEffect(() => {
-    setRows([]);
-    setPage(1);
-    setHasMore(true);
-    setLoading(false);
-  }, [bookId]);
+    void loadInitialRows();
 
-  useEffect(() => {
-    setRows([]);
-    setPage(1);
-    setHasMore(true);
-    void loadRows(true);
-  }, [bookId, loadRows, pageSize]);
+    return () => {
+      cancelled = true;
+    };
+  }, [bookId, fetchRows, isDocumentTemplate, locationId, pageSize]);
 
   useEffect(() => {
     if (!loaderRef.current || !hasMore || loading) return;
@@ -154,14 +339,14 @@ export const BookRowsTable: React.FC<BookRowsTableProps> = ({
       (entries) => {
         const target = entries[0];
         if (target.isIntersecting && !loading && hasMore) {
-          void loadRows();
+          void loadMoreRows();
         }
       },
       { threshold: 0.1 },
     );
     observer.observe(loaderRef.current);
     return () => observer.disconnect();
-  }, [loadRows, hasMore, loading]);
+  }, [hasMore, loadMoreRows, loading]);
 
   const renderCell = (row: BookRow, fieldCode: string) => {
     const val = row[fieldCode];
@@ -219,8 +404,6 @@ export const BookRowsTable: React.FC<BookRowsTableProps> = ({
     </div>
   );
 
-  const isDocumentTemplate = templateCode === "S1a" || templateCode === "S2a";
-
   if (isDocumentTemplate) {
     return (
       <div className="max-w-6xl mx-auto my-6">
@@ -230,7 +413,7 @@ export const BookRowsTable: React.FC<BookRowsTableProps> = ({
           templateName={previewTemplateName}
           versionLabel={previewVersionLabel || undefined}
           columns={previewColumns}
-          rows={rows}
+          rows={previewRows}
           summaryMeta={summaryMeta}
         />
 
@@ -241,7 +424,7 @@ export const BookRowsTable: React.FC<BookRowsTableProps> = ({
           </div>
         )}
 
-        {!hasMore && rows.length > 0 && (
+        {!hasMore && previewRows.length > 0 && (
           <p className="text-[10px] text-center text-slate-400 italic pt-8 font-serif">
             — Hết sổ —
           </p>

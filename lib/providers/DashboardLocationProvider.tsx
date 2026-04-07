@@ -11,6 +11,7 @@ import {
 } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
+import { useLocations } from "@/hooks/useLocations";
 
 type DashboardLocationContextValue = {
   selectedLocationId: number | null;
@@ -31,18 +32,35 @@ export function DashboardLocationProvider({
 }) {
   const router = useRouter();
   const pathname = usePathname();
-  const [selectedLocationId, setSelectedLocationIdState] = useState<
-    number | null
-  >(() => {
-    if (typeof window === "undefined") return null;
+  const { data: locations = [], isLoading: isLocationsLoading } =
+    useLocations();
+  const [storedLocationId, setStoredLocationIdState] = useState<number | null>(
+    () => {
+      if (typeof window === "undefined") return null;
 
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return null;
+      const raw = window.localStorage.getItem(STORAGE_KEY);
+      if (!raw) return null;
 
-    const parsed = Number(raw);
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
-  });
+      const parsed = Number(raw);
+      return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+    },
+  );
   const [isSwitchingLocation, setIsSwitchingLocation] = useState(false);
+
+  const selectedLocationId = useMemo(() => {
+    if (isLocationsLoading) return storedLocationId;
+
+    if (!locations || locations.length === 0) return null;
+
+    if (
+      storedLocationId &&
+      locations.some((location) => location.id === storedLocationId)
+    ) {
+      return storedLocationId;
+    }
+
+    return locations[0].id;
+  }, [isLocationsLoading, locations, storedLocationId]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -56,7 +74,7 @@ export function DashboardLocationProvider({
   }, [selectedLocationId]);
 
   const setSelectedLocationId = useCallback((locationId: number | null) => {
-    setSelectedLocationIdState(locationId);
+    setStoredLocationIdState(locationId);
   }, []);
 
   const switchLocation = useCallback(
@@ -64,7 +82,7 @@ export function DashboardLocationProvider({
       if (!locationId || locationId <= 0) return;
 
       setIsSwitchingLocation(true);
-      setSelectedLocationIdState(locationId);
+      setStoredLocationIdState(locationId);
       router.push("/dashboard");
     },
     [router],

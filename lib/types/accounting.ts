@@ -144,7 +144,8 @@ export interface CashFlowReport {
 
 // ═══ Accounting Period ═══
 
-export type PeriodType = "quarter" | "year";
+export type StandardPeriodType = "quarter" | "year";
+export type PeriodType = StandardPeriodType | "custom";
 export type PeriodStatus = "open" | "finalized" | "reopened";
 
 export interface AccountingPeriod {
@@ -177,7 +178,7 @@ export interface PeriodAuditLog {
 }
 
 export interface CreatePeriodRequest {
-  periodType: PeriodType;
+  periodType: StandardPeriodType;
   year: number;
   quarter?: number;
   openingCashBalance?: number;
@@ -256,6 +257,50 @@ export interface AccountingExport {
   format: "xlsx" | "pdf";
   fileUrl: string;
   createdAt: string;
+}
+
+export interface AccountingBookSectionColumn {
+  fieldCode: string;
+  label: string;
+  fieldType: string;
+  exportColumn?: string;
+}
+
+export interface AccountingBookSectionDataFilter {
+  businessTypeId?: string;
+  section?: string;
+}
+
+export interface AccountingBookSectionTaxMetadata {
+  taxType: string;
+  rate: number;
+  source: string;
+}
+
+export interface AccountingBookSectionRow {
+  lineType: string;
+  values: Record<string, unknown>;
+  dataFilter?: AccountingBookSectionDataFilter;
+  taxMetadata?: AccountingBookSectionTaxMetadata;
+  explanation?: string;
+}
+
+export interface AccountingBookSection {
+  sectionType: string;
+  businessTypeId?: string;
+  businessTypeName?: string;
+  groupIndex: number;
+  rows: AccountingBookSectionRow[];
+}
+
+export interface AccountingBookSections {
+  bookId: number;
+  templateCode: BookType;
+  templateName: string;
+  lastCalculatedAt: string;
+  columns: AccountingBookSectionColumn[];
+  sections: AccountingBookSection[];
+  footerRows: AccountingBookSectionRow[];
 }
 
 // ═══ General Ledger Entry ═══

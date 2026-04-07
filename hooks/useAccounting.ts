@@ -11,6 +11,8 @@ import {
   deleteManualRevenue,
   getCashFlowReport,
   getAccountingPeriods,
+  getAccountingPeriodDetail,
+  deleteAccountingPeriod,
   createAccountingPeriod,
   createCustomPeriod,
   getOpeningBalanceSuggestion,
@@ -21,6 +23,7 @@ import {
   getAccountingBooks,
   getGLEntries,
   getGLReferenceCatalog,
+  deleteAccountingBook,
 } from "@/services/accountingService";
 import type {
   CostFilters,
@@ -50,6 +53,8 @@ export const accountingKeys = {
     [...accountingKeys.all, "cashflow", locationId, start, end] as const,
   periods: (locationId: number) =>
     [...accountingKeys.all, "periods", locationId] as const,
+  periodDetail: (locationId: number, periodId?: number) =>
+    [...accountingKeys.all, "period-detail", locationId, periodId] as const,
   auditLogs: (locationId: number, periodId: number) =>
     [...accountingKeys.all, "audit-logs", locationId, periodId] as const,
   templates: () => [...accountingKeys.all, "templates"] as const,
@@ -210,6 +215,24 @@ export function useAccountingPeriods(locationId: number) {
   });
 }
 
+export function useAccountingPeriodDetail(
+  locationId: number,
+  periodId?: number,
+) {
+  return useQuery({
+    queryKey: accountingKeys.periodDetail(locationId, periodId),
+    queryFn: async () => {
+      const result = await getAccountingPeriodDetail(
+        locationId,
+        periodId as number,
+      );
+      if (!result.success) throw new Error(result.message);
+      return result.data;
+    },
+    enabled: locationId > 0 && !!periodId,
+  });
+}
+
 export function useCreatePeriod(locationId: number) {
   const queryClient = useQueryClient();
   return useMutation({
@@ -218,6 +241,22 @@ export function useCreatePeriod(locationId: number) {
     onSuccess: () => {
       queryClient.invalidateQueries({
         queryKey: accountingKeys.periods(locationId),
+      });
+    },
+  });
+}
+
+export function useDeletePeriod(locationId: number) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (periodId: number) =>
+      deleteAccountingPeriod(locationId, periodId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: accountingKeys.periods(locationId),
+      });
+      queryClient.invalidateQueries({
+        queryKey: accountingKeys.books(locationId),
       });
     },
   });
@@ -279,7 +318,7 @@ export function useAccountingBooks(locationId: number, periodId?: number) {
       if (!result.success) throw new Error(result.message);
       return result.data;
     },
-    enabled: locationId > 0,
+    enabled: locationId > 0 && !!periodId,
   });
 }
 
@@ -332,6 +371,19 @@ export function useCreateAccountingBook(locationId: number) {
     mutationFn: (data: CreateAccountingBookRequest) =>
       createAccountingBook(locationId, data),
     onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: accountingKeys.books(locationId),
+      });
+    },
+  });
+}
+
+export function useDeleteAccountingBook(locationId: number) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (bookId: number) => deleteAccountingBook(locationId, bookId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: accountingKeys.all });
       queryClient.invalidateQueries({
         queryKey: accountingKeys.books(locationId),
       });

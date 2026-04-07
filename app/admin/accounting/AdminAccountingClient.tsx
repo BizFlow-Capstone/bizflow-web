@@ -1,8 +1,7 @@
-"use client";
+﻿"use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  AlertCircle,
   ArrowRight,
   BookOpen,
   Boxes,
@@ -10,6 +9,7 @@ import {
   FileJson,
   FunctionSquare,
   GitBranch,
+  MoreVertical,
   Play,
   Plug,
   Rows,
@@ -20,10 +20,14 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { toast } from "sonner";
 import {
   activateTemplateVersion,
   cloneFormula,
   cloneTemplateVersion,
+  createTemplate,
+  createTemplateVersion,
+  createFormula,
   createFieldMapping,
   createMappableEntity,
   createMappableField,
@@ -34,37 +38,48 @@ import {
   deleteTemplateVersion,
   getAccountingOverview,
   getAccountingReference,
+  getBusinessTypesWithRates,
   getFormulaDetail,
   getFormulaNodeSchemas,
   getMappableEntities,
   getMappableEntityDetail,
   getRowDefinitions,
   getTemplateVersionDetail,
-  getTemplateVersionFormulas,
   getTemplateVersionFullStructure,
   runAccountingCompare,
+  runAccountingPreview,
   runAccountingTrace,
+  replaceBusinessTypeTaxRates,
   updateFieldMappingForTesting,
   updateFormulaTesting,
+  updateBusinessTypeMetadata,
   updateMappableEntity,
   updateMappableField,
   updateRowDefinition,
   updateTemplateVersion,
 } from "@/lib/admin-accounting-api";
 import type {
+  BusinessTypeWithRatesDto,
+  CreateTemplateRequest,
+  CreateTemplateVersionRequest,
+} from "@/lib/admin-accounting-api";
+import type {
+  AccountingBookRow,
   AccountingBusinessTypeSummary,
   AccountingFormulaSummary,
   AccountingOverviewResponse,
+  AccountingTemplateColumnSummary,
   AccountingTemplateSummary,
 } from "@/lib/types/adminAccounting";
-import JsonTree from "./components/JsonTree";
 import VersionFlowTab from "./components/VersionFlowTab";
 import FormulaTab from "./components/FormulaTab";
 import MappingTab from "./components/MappingTab";
+import BookTemplatePreview from "@/components/accounting/BookTemplatePreview";
 import type { MappingFormState } from "./components/types";
 
 type AccountingTabKey =
   | "overview"
+  | "business-types"
   | "version"
   | "formulas"
   | "mappings"
@@ -72,6 +87,7 @@ type AccountingTabKey =
   | "entities"
   | "reference"
   | "compare"
+  | "preview"
   | "trace"
   | "schema";
 
@@ -97,6 +113,26 @@ interface RowFormState {
   visibleFieldCodes: string;
 }
 
+interface RowTaxRateHint {
+  taxType: string;
+  businessTypeCode: string;
+  businessTypeName: string;
+  taxRate: number;
+  description: string;
+}
+
+interface BusinessTypeMetadataForm {
+  name: string;
+  description: string;
+  status: string;
+}
+
+interface BusinessTypeTaxRateForm {
+  taxType: string;
+  taxRate: string;
+  description: string;
+}
+
 const tabs: Array<{
   key: AccountingTabKey;
   label: string;
@@ -107,6 +143,12 @@ const tabs: Array<{
     key: "overview",
     label: "Overview",
     icon: <Boxes className="h-4 w-4" />,
+    group: "core",
+  },
+  {
+    key: "business-types",
+    label: "Business Types & Tax Rates",
+    icon: <BookOpen className="h-4 w-4" />,
     group: "core",
   },
   {
@@ -143,6 +185,12 @@ const tabs: Array<{
     key: "compare",
     label: "Compare (A/B)",
     icon: <Scale className="h-4 w-4" />,
+    group: "support",
+  },
+  {
+    key: "preview",
+    label: "Preview",
+    icon: <Play className="h-4 w-4" />,
     group: "support",
   },
   {
@@ -195,6 +243,18 @@ const emptyRowForm: RowFormState = {
   visibleFieldCodes: "",
 };
 
+const emptyBusinessTypeMetadataForm: BusinessTypeMetadataForm = {
+  name: "",
+  description: "",
+  status: "active",
+};
+
+const emptyBusinessTypeTaxRateForm: BusinessTypeTaxRateForm = {
+  taxType: "",
+  taxRate: "",
+  description: "",
+};
+
 function toNum(value: string): number | null {
   if (!value.trim()) return null;
   const parsed = Number(value);
@@ -207,6 +267,19 @@ function asArray(value: unknown): Array<Record<string, unknown>> {
     (item): item is Record<string, unknown> =>
       !!item && typeof item === "object",
   );
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function toDisplayText(value: unknown): string {
+  if (value == null) return "-";
+  if (typeof value === "number") return value.toLocaleString("vi-VN");
+  if (typeof value === "boolean") return value ? "true" : "false";
+  if (typeof value === "string") return value || "-";
+  return JSON.stringify(value);
 }
 
 function asOptionList(value: unknown): Array<{ value: string; label: string }> {
@@ -224,8 +297,240 @@ function asOptionList(value: unknown): Array<{ value: string; label: string }> {
     .filter((option): option is { value: string; label: string } => !!option);
 }
 
+function buildFormulaSelectOptions(
+  formulas: AccountingFormulaSummary[],
+): Array<{ value: string; label: string }> {
+  return formulas
+    .map((formula) => {
+      const formulaId = String(formula.formulaId ?? "").trim();
+      if (!formulaId) return null;
+      const formulaCode = String(formula.code ?? "").trim();
+      const formulaName = String(formula.name ?? "").trim();
+      return {
+        value: formulaId,
+        label:
+          `${formulaId} - ${formulaCode} ${formulaName ? `(${formulaName})` : ""}`.trim(),
+      };
+    })
+    .filter((option): option is { value: string; label: string } => !!option);
+}
+
+function parseVisibleFieldCodes(raw: string): string[] {
+  if (!raw.trim()) return [];
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .map((item) => (typeof item === "string" ? item.trim() : ""))
+      .filter(Boolean);
+  } catch {
+    return raw
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+}
+
+function pickFirstRowValue(
+  row: Record<string, unknown>,
+  fieldCodes: Array<string | undefined>,
+): unknown {
+  for (const fieldCode of fieldCodes) {
+    if (!fieldCode) continue;
+    const value = row[fieldCode];
+    if (value !== undefined && value !== null && value !== "") return value;
+  }
+  return null;
+}
+
+function resolveRowAmountValue(row: Record<string, unknown>): unknown {
+  const visibleCodes = parseVisibleFieldCodes(
+    String(row.visibleFieldCodes ?? ""),
+  );
+  const preferredValue = pickFirstRowValue(row, [
+    ...visibleCodes.filter((code) => {
+      const normalized = code.toLowerCase();
+      return normalized !== "dien_giai" && normalized !== "description";
+    }),
+    "so_tien",
+    "amount",
+    "revenue",
+    "value",
+  ]);
+
+  if (preferredValue !== null) return preferredValue;
+
+  const ignoredKeys = new Set([
+    "stt",
+    "lineType",
+    "line_type",
+    "rowType",
+    "row_type",
+    "rowLabel",
+    "row_label",
+    "dien_giai",
+    "description",
+    "so_hieu",
+    "chung_tu_so_hieu",
+    "ngay_thang",
+    "chung_tu_ngay_thang",
+    "date",
+    "businessTypeId",
+    "business_type_id",
+  ]);
+
+  const numericFallback = Object.entries(row).find(([key, value]) => {
+    if (ignoredKeys.has(key)) return false;
+    return typeof value === "number" && Number.isFinite(value);
+  });
+
+  return numericFallback?.[1] ?? null;
+}
+
+function formatAmountValue(value: unknown): string {
+  if (value == null || value === "") return "-";
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value.toLocaleString("vi-VN");
+  }
+
+  const parsed = Number(value);
+  if (Number.isFinite(parsed)) return parsed.toLocaleString("vi-VN");
+
+  return String(value);
+}
+
+function stringifyVisibleFieldCodes(values: string[]): string {
+  return JSON.stringify(Array.from(new Set(values.filter(Boolean))));
+}
+
+function parseAllowedAggregations(raw: string): string[] {
+  if (!raw.trim()) return [];
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (Array.isArray(parsed)) {
+      return parsed
+        .map((item) => (typeof item === "string" ? item.trim() : ""))
+        .filter(Boolean);
+    }
+  } catch {
+    // Fallback for legacy comma-separated values.
+  }
+
+  return raw
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function stringifyAllowedAggregations(values: string[]): string {
+  return JSON.stringify(Array.from(new Set(values.filter(Boolean))));
+}
+
+function derivePreviewColumnsFromRows(
+  rows: Array<Record<string, unknown>>,
+): AccountingTemplateColumnSummary[] {
+  if (rows.length === 0) return [];
+
+  const ignoredKeys = new Set([
+    "lineType",
+    "line_type",
+    "rowType",
+    "row_type",
+    "rowLabel",
+    "row_label",
+    "visibleFieldCodes",
+  ]);
+
+  const labelMap: Record<string, string> = {
+    so_hieu: "Số hiệu chứng từ",
+    chung_tu_so_hieu: "Số hiệu chứng từ",
+    ngay_thang: "Ngày, tháng",
+    chung_tu_ngay_thang: "Ngày, tháng",
+    date: "Ngày, tháng",
+    dien_giai: "Diễn giải",
+    description: "Diễn giải",
+    so_tien: "Số tiền",
+    amount: "Số tiền",
+    revenue: "Số tiền",
+    value: "Giá trị",
+    businessTypeId: "Business Type ID",
+  };
+
+  const preferredOrder = [
+    "so_hieu",
+    "chung_tu_so_hieu",
+    "ngay_thang",
+    "chung_tu_ngay_thang",
+    "date",
+    "dien_giai",
+    "description",
+    "so_tien",
+    "amount",
+    "revenue",
+    "value",
+  ];
+
+  const keySet = new Set<string>();
+  rows.slice(0, 50).forEach((row) => {
+    Object.keys(row).forEach((key) => {
+      if (!ignoredKeys.has(key)) keySet.add(key);
+    });
+  });
+
+  const keys = Array.from(keySet).sort((left, right) => {
+    const leftIndex = preferredOrder.indexOf(left);
+    const rightIndex = preferredOrder.indexOf(right);
+    if (leftIndex !== -1 && rightIndex !== -1) return leftIndex - rightIndex;
+    if (leftIndex !== -1) return -1;
+    if (rightIndex !== -1) return 1;
+    return left.localeCompare(right);
+  });
+
+  return keys.map((fieldCode) => {
+    const sampleValues = rows
+      .map((row) => row[fieldCode])
+      .filter((value) => value !== undefined && value !== null && value !== "")
+      .slice(0, 12);
+
+    const hasNumericSample = sampleValues.some((value) => {
+      if (typeof value === "number" && Number.isFinite(value)) return true;
+      const parsed = Number(value);
+      return (
+        typeof value === "string" &&
+        value.trim() !== "" &&
+        Number.isFinite(parsed)
+      );
+    });
+
+    const looksLikeDate =
+      fieldCode.toLowerCase().includes("date") ||
+      fieldCode.toLowerCase().includes("ngay");
+
+    const fieldType = looksLikeDate
+      ? "date"
+      : hasNumericSample
+        ? "decimal"
+        : "text";
+
+    return {
+      fieldCode,
+      label: labelMap[fieldCode] || fieldCode,
+      fieldType,
+      exportColumn: "",
+    };
+  });
+}
+
 function isAccountingTabKey(value: string | null): value is AccountingTabKey {
   return Boolean(value) && tabs.some((tab) => tab.key === value);
+}
+
+function shouldToastSuccessLog(message: string): boolean {
+  const trimmed = message.trim();
+  if (!trimmed) return false;
+  if (trimmed.startsWith("Loaded ")) return false;
+  if (trimmed.startsWith("No ")) return false;
+  return true;
 }
 
 export default function AdminAccountingClient() {
@@ -235,7 +540,7 @@ export default function AdminAccountingClient() {
   const [overview, setOverview] = useState<AccountingOverviewResponse | null>(
     null,
   );
-  const [error, setError] = useState("");
+  const [, setError] = useState("");
   const [logs, setLogs] = useState<LogEntry[]>([]);
 
   const [tvId, setTvId] = useState("");
@@ -256,7 +561,9 @@ export default function AdminAccountingClient() {
   const [fmExplanation, setFmExplanation] = useState("-");
   const [fmCloneCode, setFmCloneCode] = useState("");
   const [fmCloneSuffix, setFmCloneSuffix] = useState(" (draft)");
-  const [fmJsonView, setFmJsonView] = useState<unknown>(null);
+  const [fmResultDataType, setFmResultDataType] = useState("decimal");
+  const [fmRoundingMode, setFmRoundingMode] = useState("");
+  const [fmRoundingPrecision, setFmRoundingPrecision] = useState("2");
 
   const [fldVer, setFldVer] = useState("");
   const [fieldMappings, setFieldMappings] = useState<
@@ -294,8 +601,60 @@ export default function AdminAccountingClient() {
   >([]);
 
   const [rdVer, setRdVer] = useState("");
+  const [rdRulesetId, setRdRulesetId] = useState("1");
   const [rowDefs, setRowDefs] = useState<Array<Record<string, unknown>>>([]);
   const [rowForm, setRowForm] = useState<RowFormState>(emptyRowForm);
+  const [rowEditorMode, setRowEditorMode] = useState<"create" | "update">(
+    "create",
+  );
+  const [rowActionMenuId, setRowActionMenuId] = useState("");
+  const [rowTypeOptions, setRowTypeOptions] = useState<
+    Array<{ value: string; label: string }>
+  >([
+    { value: "data_placeholder", label: "Vùng dữ liệu" },
+    { value: "industry_header", label: "Tiêu đề ngành" },
+    { value: "subtotal", label: "Cộng nhóm" },
+    { value: "tax_line", label: "Dòng thuế" },
+    { value: "grand_total", label: "Tổng cộng" },
+  ]);
+  const [rowPositionOptions, setRowPositionOptions] = useState<
+    Array<{ value: string; label: string }>
+  >([
+    { value: "per_group", label: "Mỗi nhóm" },
+    { value: "per_section", label: "Mỗi phần" },
+    { value: "start_of_book", label: "Đầu sổ" },
+    { value: "end_of_book", label: "Cuối sổ" },
+  ]);
+  const [rowSectionTypeOptions, setRowSectionTypeOptions] = useState<
+    Array<{ value: string; label: string }>
+  >([
+    { value: "industry_group", label: "Nhóm ngành nghề" },
+    { value: "revenue_cost", label: "Doanh thu / Chi phí" },
+    { value: "cash_bank", label: "Tiền mặt / Ngân hàng" },
+    { value: "per_product", label: "Theo sản phẩm" },
+  ]);
+  const [rowTaxTypeOptions, setRowTaxTypeOptions] = useState<
+    Array<{ value: string; label: string }>
+  >([
+    { value: "VAT", label: "VAT" },
+    { value: "PIT_METHOD_1", label: "PIT_METHOD_1" },
+  ]);
+  const [rowFormulaOptions, setRowFormulaOptions] = useState<
+    Array<{ value: string; label: string }>
+  >([]);
+  const [rowVisibleFieldOptions, setRowVisibleFieldOptions] = useState<
+    Array<{ value: string; label: string }>
+  >([]);
+  const [rowTaxRateHints, setRowTaxRateHints] = useState<RowTaxRateHint[]>([]);
+
+  const [btRulesetId, setBtRulesetId] = useState("1");
+  const [businessTypesWithRates, setBusinessTypesWithRates] = useState<
+    BusinessTypeWithRatesDto[]
+  >([]);
+  const [btSelectedId, setBtSelectedId] = useState("");
+  const [btMetadataForm, setBtMetadataForm] =
+    useState<BusinessTypeMetadataForm>(emptyBusinessTypeMetadataForm);
+  const [btRatesForm, setBtRatesForm] = useState<BusinessTypeTaxRateForm[]>([]);
 
   const [entities, setEntities] = useState<Array<Record<string, unknown>>>([]);
   const [entityFields, setEntityFields] = useState<
@@ -307,6 +666,7 @@ export default function AdminAccountingClient() {
   const [entName, setEntName] = useState("");
   const [entCat, setEntCat] = useState("revenue");
   const [entDesc, setEntDesc] = useState("");
+  const [entIsActive, setEntIsActive] = useState("true");
   const [efEditId, setEfEditId] = useState("");
   const [efEntId, setEfEntId] = useState("");
   const [efCode, setEfCode] = useState("");
@@ -314,6 +674,7 @@ export default function AdminAccountingClient() {
   const [efDtype, setEfDtype] = useState("decimal");
   const [efAggs, setEfAggs] = useState('["sum","none"]');
   const [efDesc, setEfDesc] = useState("");
+  const [efIsActive, setEfIsActive] = useState("true");
 
   const [refData, setRefData] = useState<Record<string, unknown>>({});
   const [schemas, setSchemas] = useState<Array<Record<string, unknown>>>([]);
@@ -328,6 +689,23 @@ export default function AdminAccountingClient() {
   const [cmpBatch, setCmpBatch] = useState("20");
   const [cmpBiz, setCmpBiz] = useState("");
   const [compareResult, setCompareResult] = useState<Record<
+    string,
+    unknown
+  > | null>(null);
+
+  const [pvLoc, setPvLoc] = useState("6");
+  const [pvPer, setPvPer] = useState("1");
+  const [pvVer, setPvVer] = useState("");
+  const [pvGrp, setPvGrp] = useState("3");
+  const [pvMeth, setPvMeth] = useState("method_1");
+  const [pvRule, setPvRule] = useState("1");
+  const [pvBiz, setPvBiz] = useState("");
+  const [pvBatch, setPvBatch] = useState("10");
+  const [previewResult, setPreviewResult] = useState<Record<
+    string,
+    unknown
+  > | null>(null);
+  const [previewFullStructure, setPreviewFullStructure] = useState<Record<
     string,
     unknown
   > | null>(null);
@@ -355,6 +733,334 @@ export default function AdminAccountingClient() {
     [overview?.businessTypes],
   );
 
+  const previewSummary = useMemo(() => {
+    const root = asRecord(previewResult);
+    const summary = asRecord(root?.summary);
+    if (!summary) return null;
+    return {
+      totalRows: Number(summary.totalRows ?? 0),
+      totalRevenue: summary.totalRevenue,
+      totalCost: summary.totalCost,
+      totalTax: summary.totalTax,
+    };
+  }, [previewResult]);
+
+  const previewFormulaValues = useMemo(() => {
+    const root = asRecord(previewResult);
+    const summary = asRecord(root?.summary);
+    const formulaValues = asRecord(summary?.formulaValues);
+    if (!formulaValues) return [];
+    return Object.entries(formulaValues).map(([code, value]) => ({
+      code,
+      value,
+    }));
+  }, [previewResult]);
+
+  const previewRowsMeta = useMemo(() => {
+    const root = asRecord(previewResult);
+    const rows = asRecord(root?.rows);
+    if (!rows) return null;
+
+    return {
+      hasMore: Boolean(rows.hasMore),
+      loadedCount: Number(rows.loadedCount ?? 0),
+      totalEstimated: Number(rows.totalEstimated ?? 0),
+      nextCursor: String(rows.nextCursor ?? ""),
+    };
+  }, [previewResult]);
+
+  const previewRowItems = useMemo(() => {
+    const root = asRecord(previewResult);
+    const rows = asRecord(root?.rows);
+    return asArray(rows?.items);
+  }, [previewResult]);
+
+  const previewSummaryMeta = useMemo(() => {
+    const root = asRecord(previewResult);
+    return asRecord(root?.summary);
+  }, [previewResult]);
+
+  const previewTemplateIdentity = useMemo(() => {
+    const structure = asRecord(previewFullStructure);
+    return {
+      templateCode: String(structure?.templateCode ?? "").trim(),
+      templateName: String(structure?.templateName ?? "").trim(),
+      versionLabel: String(structure?.versionLabel ?? "").trim(),
+      templateVersionId: Number(structure?.templateVersionId ?? 0),
+    };
+  }, [previewFullStructure]);
+
+  const previewTemplateColumns = useMemo<
+    AccountingTemplateColumnSummary[]
+  >(() => {
+    const structure = asRecord(previewFullStructure);
+    const fieldMappings = asArray(structure?.fieldMappings)
+      .map((mapping) => ({
+        fieldCode: String(mapping.fieldCode ?? "").trim(),
+        label: String(mapping.fieldLabel ?? mapping.fieldCode ?? "").trim(),
+        fieldType: String(mapping.fieldType ?? "text").trim() || "text",
+        exportColumn: String(mapping.exportColumn ?? "").trim(),
+        sortOrder: Number(mapping.sortOrder ?? 0),
+      }))
+      .filter((mapping) => mapping.fieldCode.length > 0)
+      .sort((left, right) => left.sortOrder - right.sortOrder);
+
+    return fieldMappings.map((mapping) => ({
+      fieldCode: mapping.fieldCode,
+      label: mapping.label,
+      fieldType: mapping.fieldType,
+      exportColumn: mapping.exportColumn,
+    }));
+  }, [previewFullStructure]);
+
+  const previewTemplateRows = useMemo<AccountingBookRow[]>(() => {
+    return previewRowItems.map((row) => ({
+      ...row,
+      rowType: row.rowType ?? row.lineType ?? "data",
+    }));
+  }, [previewRowItems]);
+
+  const previewTemplateRowDefinitions = useMemo(() => {
+    const structure = asRecord(previewFullStructure);
+    return asArray(structure?.rowDefinitions);
+  }, [previewFullStructure]);
+
+  const previewRenderableColumns = useMemo<
+    AccountingTemplateColumnSummary[]
+  >(() => {
+    if (previewTemplateColumns.length > 0) return previewTemplateColumns;
+    return derivePreviewColumnsFromRows(previewRowItems);
+  }, [previewTemplateColumns, previewRowItems]);
+
+  const previewRenderIdentity = useMemo(() => {
+    const fallbackVersionId = Number(pvVer || 0);
+    return {
+      templateCode: previewTemplateIdentity.templateCode || "unknown",
+      templateName: previewTemplateIdentity.templateName || "Mẫu sổ tổng quát",
+      versionLabel:
+        previewTemplateIdentity.versionLabel ||
+        (fallbackVersionId > 0 ? `v${fallbackVersionId}` : ""),
+      templateVersionId:
+        previewTemplateIdentity.templateVersionId || fallbackVersionId,
+    };
+  }, [previewTemplateIdentity, pvVer]);
+
+  const compareActive = useMemo(() => {
+    const root = asRecord(compareResult);
+    const active = asRecord(root?.active);
+    const summary = asRecord(active?.summary);
+    const formulaValues = asRecord(summary?.formulaValues);
+    const rows = asRecord(active?.rows);
+
+    return {
+      summary: summary
+        ? {
+            totalRows: Number(summary.totalRows ?? 0),
+            totalRevenue: summary.totalRevenue,
+            totalCost: summary.totalCost,
+            totalTax: summary.totalTax,
+          }
+        : null,
+      formulaValues: formulaValues
+        ? Object.entries(formulaValues).map(([code, value]) => ({
+            code,
+            value,
+          }))
+        : [],
+      rowsMeta: rows
+        ? {
+            hasMore: Boolean(rows.hasMore),
+            loadedCount: Number(rows.loadedCount ?? 0),
+            totalEstimated: Number(rows.totalEstimated ?? 0),
+            nextCursor: String(rows.nextCursor ?? ""),
+          }
+        : null,
+      rowItems: asArray(rows?.items),
+    };
+  }, [compareResult]);
+
+  const compareDraft = useMemo(() => {
+    const root = asRecord(compareResult);
+    const draft = asRecord(root?.draft);
+    const summary = asRecord(draft?.summary);
+    const formulaValues = asRecord(summary?.formulaValues);
+    const rows = asRecord(draft?.rows);
+
+    return {
+      summary: summary
+        ? {
+            totalRows: Number(summary.totalRows ?? 0),
+            totalRevenue: summary.totalRevenue,
+            totalCost: summary.totalCost,
+            totalTax: summary.totalTax,
+          }
+        : null,
+      formulaValues: formulaValues
+        ? Object.entries(formulaValues).map(([code, value]) => ({
+            code,
+            value,
+          }))
+        : [],
+      rowsMeta: rows
+        ? {
+            hasMore: Boolean(rows.hasMore),
+            loadedCount: Number(rows.loadedCount ?? 0),
+            totalEstimated: Number(rows.totalEstimated ?? 0),
+            nextCursor: String(rows.nextCursor ?? ""),
+          }
+        : null,
+      rowItems: asArray(rows?.items),
+    };
+  }, [compareResult]);
+
+  const compareDiff = useMemo(() => {
+    const root = asRecord(compareResult);
+    const diff = asRecord(root?.diff);
+
+    return {
+      changedFormulas: Array.isArray(diff?.changedFormulas)
+        ? diff.changedFormulas.map((item) => String(item ?? "")).filter(Boolean)
+        : [],
+      valueChanges: asArray(diff?.valueChanges).map((item) => ({
+        code: String(item.code ?? ""),
+        before: item.before,
+        after: item.after,
+      })),
+    };
+  }, [compareResult]);
+
+  const traceOverview = useMemo(() => {
+    const root = asRecord(traceResult);
+    const traceItems = asArray(root?.trace).map((item) => {
+      const rawDebug = item.debug;
+      const debugText =
+        rawDebug == null
+          ? "-"
+          : typeof rawDebug === "string"
+            ? rawDebug
+            : JSON.stringify(rawDebug);
+
+      return {
+        step: Number(item.step ?? 0),
+        nodeType: String(item.nodeType ?? ""),
+        description: String(item.description ?? ""),
+        resolvedValue: item.resolvedValue,
+        source: String(item.source ?? ""),
+        debug: debugText,
+        childrenCount: Array.isArray(item.children) ? item.children.length : 0,
+      };
+    });
+
+    return {
+      formulaCode: String(root?.formulaCode ?? ""),
+      formulaName: String(root?.formulaName ?? ""),
+      finalValue: root?.finalValue,
+      traceItems,
+    };
+  }, [traceResult]);
+
+  const referenceRows = useMemo(() => {
+    return Object.entries(refData).map(([groupName, rawValue]) => {
+      const normalizedValues: string[] = Array.isArray(rawValue)
+        ? rawValue
+            .map((item) => {
+              if (item && typeof item === "object") {
+                const record = item as Record<string, unknown>;
+                const value = String(
+                  record.value ?? record.code ?? record.key ?? "",
+                ).trim();
+                const label = String(
+                  record.label ?? record.name ?? record.description ?? "",
+                ).trim();
+                if (value && label && label !== value) {
+                  return `${value} (${label})`;
+                }
+                return value || label || toDisplayText(record);
+              }
+              return toDisplayText(item);
+            })
+            .filter(Boolean)
+        : rawValue && typeof rawValue === "object"
+          ? Object.entries(rawValue as Record<string, unknown>).map(
+              ([k, v]) => `${k}: ${toDisplayText(v)}`,
+            )
+          : [toDisplayText(rawValue)];
+
+      const previewItems = normalizedValues.slice(0, 8);
+      return {
+        groupName,
+        count: normalizedValues.length,
+        previewText: previewItems.join(", ") || "-",
+        remainingCount:
+          normalizedValues.length > previewItems.length
+            ? normalizedValues.length - previewItems.length
+            : 0,
+      };
+    });
+  }, [refData]);
+
+  const schemaRows = useMemo(() => {
+    return schemas.map((schema, index) => {
+      const nodeType = String(
+        schema.nodeType ?? schema.type ?? schema.code ?? `schema-${index + 1}`,
+      );
+      const name = String(schema.displayName ?? schema.name ?? "-");
+      const category = String(
+        schema.category ?? schema.group ?? schema.nodeGroup ?? "-",
+      );
+      const resultType = String(
+        schema.resultType ?? schema.returnType ?? schema.outputType ?? "-",
+      );
+      const inputCount = Array.isArray(schema.inputs)
+        ? schema.inputs.length
+        : Array.isArray(schema.parameters)
+          ? schema.parameters.length
+          : 0;
+      const description = String(schema.description ?? schema.summary ?? "-");
+
+      return {
+        nodeType,
+        name,
+        category,
+        resultType,
+        inputCount,
+        description,
+        fieldCount: Object.keys(schema).length,
+      };
+    });
+  }, [schemas]);
+
+  const filteredRowTaxRateHints = useMemo(() => {
+    const taxType = rowForm.taxType.trim().toUpperCase();
+    if (!taxType) return rowTaxRateHints;
+    return rowTaxRateHints.filter((item) => item.taxType === taxType);
+  }, [rowForm.taxType, rowTaxRateHints]);
+
+  const fieldAggregationOptions = useMemo(
+    () => ["none", "sum", "avg", "count", "min", "max"],
+    [],
+  );
+  const selectedFieldAggregations = useMemo(
+    () => parseAllowedAggregations(efAggs),
+    [efAggs],
+  );
+
+  const hasSelectedEntity = Boolean(toNum(entEditId));
+  const hasSelectedField = Boolean(toNum(efEditId));
+  const currentFieldEntityId = efEntId || entEditId;
+
+  const toggleFieldAggregation = (aggregation: string) => {
+    setEfAggs((prev) => {
+      const selected = new Set(parseAllowedAggregations(prev));
+      if (selected.has(aggregation)) {
+        selected.delete(aggregation);
+      } else {
+        selected.add(aggregation);
+      }
+      return stringifyAllowedAggregations(Array.from(selected));
+    });
+  };
+
   const versionIsActiveMap = useMemo(() => {
     const map = new Map<number, boolean>();
     templates.forEach((template: AccountingTemplateSummary) => {
@@ -378,23 +1084,6 @@ export default function AdminAccountingClient() {
   const activeTab: AccountingTabKey = isAccountingTabKey(tabParam)
     ? tabParam
     : "overview";
-  const deepLinkState = useMemo(() => {
-    if (isAccountingTabKey(tabParam)) {
-      return {
-        confirmed: true,
-        message: `Deep-link query applied: tab=${tabParam}`,
-      };
-    }
-
-    if (tabParam) {
-      return {
-        confirmed: false,
-        message: `Ignored invalid deep-link query: tab=${tabParam}`,
-      };
-    }
-
-    return { confirmed: false, message: "" };
-  }, [tabParam]);
 
   const navigateToTab = useCallback(
     (tab: AccountingTabKey) => {
@@ -412,6 +1101,15 @@ export default function AdminAccountingClient() {
         100,
       ),
     );
+
+    if (type === "error") {
+      toast.error(message);
+      return;
+    }
+
+    if (type === "ok" && shouldToastSuccessLog(message)) {
+      toast.success(message);
+    }
   }, []);
 
   const runSafe = useCallback(
@@ -485,6 +1183,51 @@ export default function AdminAccountingClient() {
     return options;
   }, [templates]);
 
+  const templateOptions = useMemo(() => {
+    return templates.map((template: AccountingTemplateSummary) => ({
+      value: String(template.templateId),
+      label: `${template.templateCode} - ${template.name}`,
+    }));
+  }, [templates]);
+
+  const effectiveFldVer = fldVer || versionOptions[0]?.value || "";
+
+  const rowRulesetOptions = useMemo(() => {
+    return (overview?.taxRulesets ?? []).map((ruleset) => ({
+      value: String(ruleset.rulesetId),
+      label: `${ruleset.rulesetId} - ${ruleset.name} (${ruleset.code})`,
+    }));
+  }, [overview?.taxRulesets]);
+
+  const effectiveRdVer = rdVer || versionOptions[0]?.value || "";
+  const effectiveRdRulesetId = useMemo(() => {
+    if (rowRulesetOptions.length === 0) {
+      return rdRulesetId || "1";
+    }
+    const matched = rowRulesetOptions.some(
+      (option) => option.value === rdRulesetId,
+    );
+    return matched ? rdRulesetId : rowRulesetOptions[0].value;
+  }, [rdRulesetId, rowRulesetOptions]);
+
+  const effectiveBtRulesetId = useMemo(() => {
+    if (rowRulesetOptions.length === 0) {
+      return btRulesetId || "1";
+    }
+    const matched = rowRulesetOptions.some(
+      (option) => option.value === btRulesetId,
+    );
+    return matched ? btRulesetId : rowRulesetOptions[0].value;
+  }, [btRulesetId, rowRulesetOptions]);
+
+  const selectedBusinessTypeWithRates = useMemo(
+    () =>
+      businessTypesWithRates.find(
+        (item) => item.businessTypeId === btSelectedId,
+      ) ?? null,
+    [businessTypesWithRates, btSelectedId],
+  );
+
   const formulaOptions = useMemo(() => {
     return formulas.map((f: AccountingFormulaSummary) => ({
       value: String(f.formulaId),
@@ -505,6 +1248,193 @@ export default function AdminAccountingClient() {
     setTrFId(String(id));
     navigateToTab("formulas");
     void fmDetail(String(id));
+  };
+
+  const hydrateBusinessTypeEditor = useCallback(
+    (businessType: BusinessTypeWithRatesDto | null) => {
+      if (!businessType) {
+        setBtSelectedId("");
+        setBtMetadataForm(emptyBusinessTypeMetadataForm);
+        setBtRatesForm([]);
+        return;
+      }
+
+      setBtSelectedId(businessType.businessTypeId);
+      setBtMetadataForm({
+        name: String(businessType.name ?? ""),
+        description: String(businessType.description ?? ""),
+        status: String(businessType.status ?? "active") || "active",
+      });
+      setBtRatesForm(
+        (businessType.taxRates ?? []).map((rate) => ({
+          taxType: String(rate.taxType ?? ""),
+          taxRate: String(rate.taxRate ?? ""),
+          description: String(rate.description ?? ""),
+        })),
+      );
+    },
+    [],
+  );
+
+  const btLoad = useCallback(
+    async (rawRulesetId?: string, preferredBusinessTypeId?: string) => {
+      const rulesetId = toNum(rawRulesetId ?? effectiveBtRulesetId) ?? 1;
+      await runSafe(async () => {
+        const list = await getBusinessTypesWithRates(rulesetId);
+        setBusinessTypesWithRates(list);
+
+        if (list.length === 0) {
+          hydrateBusinessTypeEditor(null);
+          log(`No business types for ruleset ${rulesetId}`, "info");
+          return;
+        }
+
+        const selected =
+          list.find(
+            (item) => item.businessTypeId === preferredBusinessTypeId,
+          ) ?? list[0];
+        hydrateBusinessTypeEditor(selected);
+        log(`Loaded business types for ruleset ${rulesetId}`, "ok");
+      });
+    },
+    [effectiveBtRulesetId, hydrateBusinessTypeEditor, log, runSafe],
+  );
+
+  const goBusinessType = useCallback(
+    (businessTypeId?: string) => {
+      const targetRulesetId = effectiveBtRulesetId;
+      setBtRulesetId(targetRulesetId);
+      navigateToTab("business-types");
+      void btLoad(targetRulesetId, businessTypeId);
+    },
+    [btLoad, effectiveBtRulesetId, navigateToTab],
+  );
+
+  const handleBtRulesetSelect = (nextRulesetId: string) => {
+    setBtRulesetId(nextRulesetId);
+    void btLoad(nextRulesetId, btSelectedId || undefined);
+  };
+
+  const handleBtSelect = (nextBusinessTypeId: string) => {
+    const selected =
+      businessTypesWithRates.find(
+        (item) => item.businessTypeId === nextBusinessTypeId,
+      ) ?? null;
+    hydrateBusinessTypeEditor(selected);
+  };
+
+  const addBtRate = () => {
+    setBtRatesForm((prev) => [...prev, emptyBusinessTypeTaxRateForm]);
+  };
+
+  const updateBtRateField = (
+    index: number,
+    key: keyof BusinessTypeTaxRateForm,
+    value: string,
+  ) => {
+    setBtRatesForm((prev) =>
+      prev.map((rate, rateIndex) =>
+        rateIndex === index ? { ...rate, [key]: value } : rate,
+      ),
+    );
+  };
+
+  const removeBtRate = (index: number) => {
+    setBtRatesForm((prev) =>
+      prev.filter((_, rateIndex) => rateIndex !== index),
+    );
+  };
+
+  const btUpdateMetadata = async () => {
+    if (!selectedBusinessTypeWithRates) return;
+    await runSafe(async () => {
+      const payload = {
+        name: btMetadataForm.name.trim(),
+        description: btMetadataForm.description.trim(),
+        status: btMetadataForm.status.trim() || "active",
+      };
+
+      if (!payload.name) {
+        throw new Error("Business type name không được để trống.");
+      }
+
+      await updateBusinessTypeMetadata(
+        selectedBusinessTypeWithRates.businessTypeId,
+        payload,
+      );
+      log(`Updated metadata for ${selectedBusinessTypeWithRates.code}`, "ok");
+      await loadOverview();
+      await btLoad(
+        effectiveBtRulesetId,
+        selectedBusinessTypeWithRates.businessTypeId,
+      );
+    });
+  };
+
+  const btReplaceRates = async () => {
+    if (!selectedBusinessTypeWithRates) return;
+    const rulesetId = toNum(effectiveBtRulesetId) ?? 1;
+
+    await runSafe(async () => {
+      const normalizedRows = btRatesForm
+        .map((rate) => ({
+          taxType: rate.taxType.trim(),
+          taxRate: rate.taxRate.trim(),
+          description: rate.description.trim(),
+        }))
+        .filter((rate) => rate.taxType || rate.taxRate || rate.description);
+
+      const rates = normalizedRows.map((rate, index) => {
+        if (!rate.taxType) {
+          throw new Error(`Thiếu taxType ở dòng ${index + 1}.`);
+        }
+        const parsedTaxRate = Number(rate.taxRate);
+        if (!Number.isFinite(parsedTaxRate)) {
+          throw new Error(`taxRate không hợp lệ ở dòng ${index + 1}.`);
+        }
+
+        return {
+          taxType: rate.taxType,
+          taxRate: parsedTaxRate,
+          description: rate.description,
+        };
+      });
+
+      await replaceBusinessTypeTaxRates(
+        rulesetId,
+        selectedBusinessTypeWithRates.businessTypeId,
+        { rates },
+      );
+      log(
+        `Replaced tax rates for ${selectedBusinessTypeWithRates.code} (ruleset ${rulesetId})`,
+        "ok",
+      );
+      await btLoad(
+        effectiveBtRulesetId,
+        selectedBusinessTypeWithRates.businessTypeId,
+      );
+    });
+  };
+
+  useEffect(() => {
+    if (activeTab !== "business-types") return;
+    queueMicrotask(() => {
+      void btLoad();
+    });
+  }, [activeTab, btLoad]);
+
+  const getFirstCreatedVersionId = (
+    templateData: Record<string, unknown>,
+  ): number | null => {
+    const versions = asArray(templateData.versions);
+    for (const version of versions) {
+      const versionId = Number(version.templateVersionId ?? 0);
+      if (versionId > 0) {
+        return versionId;
+      }
+    }
+
+    return null;
   };
 
   const tvDetail = async (rawId?: string) => {
@@ -555,6 +1485,61 @@ export default function AdminAccountingClient() {
     });
   };
 
+  const tvCreateTemplate = async (payload: CreateTemplateRequest) => {
+    let createdVersionId: number | null = null;
+
+    await runSafe(async () => {
+      const createdTemplate = await createTemplate(payload);
+      const firstVersionId = getFirstCreatedVersionId(createdTemplate);
+
+      if (firstVersionId) {
+        setTvId(String(firstVersionId));
+        setFldVer(String(firstVersionId));
+        setRdVer(String(firstVersionId));
+        await tvDetail(String(firstVersionId));
+        createdVersionId = firstVersionId;
+      } else {
+        setTvResult(createdTemplate);
+      }
+
+      const createdCode = String(createdTemplate.templateCode ?? "").trim();
+      log(
+        `Created template ${createdCode || payload.templateCode.toUpperCase()}`,
+        "ok",
+      );
+      await loadOverview();
+    });
+
+    return createdVersionId;
+  };
+
+  const tvCreateVersion = async (
+    templateId: number,
+    payload: CreateTemplateVersionRequest,
+  ) => {
+    let createdVersionId: number | null = null;
+
+    await runSafe(async () => {
+      const createdVersion = await createTemplateVersion(templateId, payload);
+      const newVersionId = Number(createdVersion.templateVersionId ?? 0);
+
+      if (newVersionId > 0) {
+        setTvId(String(newVersionId));
+        setFldVer(String(newVersionId));
+        setRdVer(String(newVersionId));
+        await tvDetail(String(newVersionId));
+        createdVersionId = newVersionId;
+      } else {
+        setTvResult(createdVersion);
+      }
+
+      log(`Created draft version for template ${templateId}`, "ok");
+      await loadOverview();
+    });
+
+    return createdVersionId;
+  };
+
   const tvUpdate = async () => {
     const id = ensureDraftVersion(tvId, "template metadata update");
     if (!id) return;
@@ -596,7 +1581,14 @@ export default function AdminAccountingClient() {
     if (!id) return;
     await runSafe(async () => {
       await deleteTemplateVersion(id);
-      setTvResult({ message: "Deleted" });
+      // Clear current selection to avoid fetching detail/full-structure for a deleted version.
+      setTvId("");
+      setFldVer("");
+      setRdVer("");
+      setTvLabel("");
+      setTvEffective("");
+      setTvNotes("");
+      setTvResult(null);
       log(`Deleted version ${id}`, "ok");
       await loadOverview();
     });
@@ -616,35 +1608,48 @@ export default function AdminAccountingClient() {
       setFmName(String(d.name ?? ""));
       setFmDesc(String(d.description ?? ""));
       setFmFType(String(d.formulaType ?? ""));
+      setFmIsActive(Boolean(d.isActive) ? "true" : "false");
+      setFmResultDataType(String(d.resultDataType ?? "decimal"));
+      setFmRoundingMode(String(d.roundingMode ?? ""));
+      setFmRoundingPrecision(String(d.roundingPrecision ?? "2"));
       const expr = String(d.expressionJson ?? "{}");
       setFmExprJson(expr);
-      try {
-        setFmJsonView(JSON.parse(expr));
-      } catch {
-        setFmJsonView(expr);
-      }
       log(`Loaded formula ${id}`, "ok");
     });
   };
 
-  const fmFormat = () => {
-    try {
-      const parsed = JSON.parse(fmExprJson);
-      setFmExprJson(JSON.stringify(parsed, null, 2));
-      setFmJsonView(parsed);
-      log("Formatted formula JSON", "ok");
-    } catch (err) {
-      log(err instanceof Error ? err.message : "JSON không hợp lệ", "error");
-    }
-  };
+  const fmCreate = async () => {
+    await runSafe(async () => {
+      if (!fmCode.trim() || !fmName.trim() || !fmFType.trim()) {
+        throw new Error("Tạo công thức cần nhập đủ code, name, formulaType.");
+      }
 
-  const fmValidate = () => {
-    try {
-      JSON.parse(fmExprJson);
-      log("JSON hợp lệ", "ok");
-    } catch (err) {
-      log(err instanceof Error ? err.message : "JSON không hợp lệ", "error");
-    }
+      const payload: Record<string, unknown> = {
+        code: fmCode.trim(),
+        name: fmName.trim(),
+        formulaType: fmFType.trim(),
+        expressionJson: fmExprJson.trim() || "{}",
+      };
+
+      if (fmDesc.trim()) payload.description = fmDesc.trim();
+      if (fmResultDataType.trim())
+        payload.resultDataType = fmResultDataType.trim();
+      if (fmRoundingMode.trim()) payload.roundingMode = fmRoundingMode.trim();
+      if (fmRoundingPrecision.trim()) {
+        const precision = Number(fmRoundingPrecision);
+        if (Number.isFinite(precision)) payload.roundingPrecision = precision;
+      }
+
+      const created = await createFormula(payload as never);
+      const newId = Number(created.formulaId ?? 0);
+      if (newId > 0) {
+        setFmId(String(newId));
+        await fmDetail(String(newId));
+      }
+
+      log("Created formula", "ok");
+      await loadOverview();
+    });
   };
 
   const fmUpdate = async () => {
@@ -663,13 +1668,18 @@ export default function AdminAccountingClient() {
     });
   };
 
-  const fmClone = async () => {
+  const fmClone = async (payloadInput?: {
+    newCode?: string;
+    nameSuffix?: string;
+  }) => {
     const id = toNum(fmId);
     if (!id) return;
     await runSafe(async () => {
       const payload: Record<string, string> = {};
-      if (fmCloneCode.trim()) payload.newCode = fmCloneCode;
-      if (fmCloneSuffix.trim()) payload.nameSuffix = fmCloneSuffix;
+      const nextCode = (payloadInput?.newCode ?? fmCloneCode).trim();
+      const nextSuffix = (payloadInput?.nameSuffix ?? fmCloneSuffix).trim();
+      if (nextCode) payload.newCode = nextCode;
+      if (nextSuffix) payload.nameSuffix = nextSuffix;
       const d = await cloneFormula(id, payload);
       const newId = Number(d.formulaId ?? 0);
       if (newId > 0) {
@@ -681,62 +1691,90 @@ export default function AdminAccountingClient() {
     });
   };
 
-  const fldLoad = async () => {
-    const versionId = toNum(fldVer);
-    if (!versionId) return;
+  const fmActivate = async () => {
+    const id = toNum(fmId);
+    if (!id) return;
     await runSafe(async () => {
-      const [d, formulasForVersion, activeEntities, reference] =
-        await Promise.all([
+      await updateFormulaTesting(id, { isActive: true });
+      setFmIsActive("true");
+      await fmDetail(String(id));
+      log(`Activated formula ${id}`, "ok");
+      await loadOverview();
+    });
+  };
+
+  const fmDeactivate = async () => {
+    const id = toNum(fmId);
+    if (!id) return;
+    await runSafe(async () => {
+      await updateFormulaTesting(id, { isActive: false });
+      setFmIsActive("false");
+      await fmDetail(String(id));
+      log(`Deactivated formula ${id}`, "ok");
+      await loadOverview();
+    });
+  };
+
+  const fldLoad = useCallback(
+    async (rawVersionId?: string) => {
+      const versionId = toNum(rawVersionId ?? effectiveFldVer);
+      if (!versionId) return;
+      await runSafe(async () => {
+        const [d, overviewData, activeEntities, reference] = await Promise.all([
           getTemplateVersionDetail(versionId),
-          getTemplateVersionFormulas(versionId),
+          getAccountingOverview(),
           getMappableEntities(true),
           getAccountingReference(),
         ]);
 
-      setFieldMappings(asArray(d.fieldMappings));
+        setFieldMappings(asArray(d.fieldMappings));
+        setMappingFormulaOptions(
+          buildFormulaSelectOptions(overviewData.formulas ?? []),
+        );
 
-      setMappingFormulaOptions(
-        formulasForVersion.map((formula) => {
-          const formulaId = String(formula.formulaId ?? "");
-          const formulaCode = String(formula.code ?? "");
-          const formulaName = String(formula.name ?? "");
-          return {
-            value: formulaId,
-            label:
-              `${formulaId} - ${formulaCode} ${formulaName ? `(${formulaName})` : ""}`.trim(),
-          };
-        }),
-      );
+        setMappingEntityOptions(
+          activeEntities.map((entity) => {
+            const entityId = String(entity.entityId ?? "");
+            const entityCode = String(entity.entityCode ?? "");
+            const entityName = String(entity.displayName ?? "");
+            return {
+              value: entityId,
+              label: `${entityCode} - ${entityName}`,
+            };
+          }),
+        );
 
-      setMappingEntityOptions(
-        activeEntities.map((entity) => {
-          const entityId = String(entity.entityId ?? "");
-          const entityCode = String(entity.entityCode ?? "");
-          const entityName = String(entity.displayName ?? "");
-          return {
-            value: entityId,
-            label: `${entityCode} - ${entityName}`,
-          };
-        }),
-      );
+        const fieldTypes = asOptionList(reference.fieldTypes);
+        if (fieldTypes.length > 0) setMappingFieldTypeOptions(fieldTypes);
 
-      const fieldTypes = asOptionList(reference.fieldTypes);
-      if (fieldTypes.length > 0) setMappingFieldTypeOptions(fieldTypes);
+        const sourceTypes = asOptionList(reference.sourceTypes);
+        if (sourceTypes.length > 0) setMappingSourceTypeOptions(sourceTypes);
 
-      const sourceTypes = asOptionList(reference.sourceTypes);
-      if (sourceTypes.length > 0) setMappingSourceTypeOptions(sourceTypes);
+        const aggregationTypes = asOptionList(reference.aggregateTypes);
+        if (aggregationTypes.length > 0) {
+          setMappingAggregationOptions([
+            { value: "none", label: "none" },
+            ...aggregationTypes,
+          ]);
+        }
 
-      const aggregationTypes = asOptionList(reference.aggregateTypes);
-      if (aggregationTypes.length > 0) {
-        setMappingAggregationOptions([
-          { value: "none", label: "none" },
-          ...aggregationTypes,
-        ]);
-      }
+        log(`Loaded field mappings for v${versionId}`, "ok");
+      });
+    },
+    [effectiveFldVer, log, runSafe],
+  );
 
-      log(`Loaded field mappings for v${versionId}`, "ok");
-    });
+  const handleFldVersionSelect = (nextVersionId: string) => {
+    setFldVer(nextVersionId);
+    void fldLoad(nextVersionId);
   };
+
+  useEffect(() => {
+    if (activeTab !== "mappings") return;
+    queueMicrotask(() => {
+      void fldLoad();
+    });
+  }, [activeTab, fldLoad]);
 
   useEffect(() => {
     const entityId = toNum(mappingForm.sourceEntityId);
@@ -788,7 +1826,10 @@ export default function AdminAccountingClient() {
   };
 
   const fldCreate = async () => {
-    const versionId = ensureDraftVersion(fldVer, "field mapping create");
+    const versionId = ensureDraftVersion(
+      effectiveFldVer,
+      "field mapping create",
+    );
     if (!versionId) return;
     await runSafe(async () => {
       const sourceType = mappingForm.sourceType.trim().toLowerCase();
@@ -842,7 +1883,10 @@ export default function AdminAccountingClient() {
   };
 
   const fldUpdate = async () => {
-    const versionId = ensureDraftVersion(fldVer, "field mapping update");
+    const versionId = ensureDraftVersion(
+      effectiveFldVer,
+      "field mapping update",
+    );
     if (!versionId) return;
     const mappingId = toNum(mappingForm.mappingId);
     if (!mappingId) return;
@@ -897,26 +1941,149 @@ export default function AdminAccountingClient() {
     });
   };
 
-  const fldDelete = async () => {
-    const versionId = ensureDraftVersion(fldVer, "field mapping delete");
+  const fldDelete = async (rawMappingId?: string) => {
+    const versionId = ensureDraftVersion(
+      effectiveFldVer,
+      "field mapping delete",
+    );
     if (!versionId) return;
-    const mappingId = toNum(mappingForm.mappingId);
+    const mappingId = toNum(rawMappingId ?? mappingForm.mappingId);
     if (!mappingId) return;
     await runSafe(async () => {
       await deleteFieldMapping(mappingId);
-      setMappingForm(emptyMappingForm);
+      if (String(mappingId) === mappingForm.mappingId) {
+        setMappingForm(emptyMappingForm);
+      }
       log(`Deleted mapping ${mappingId}`, "ok");
       await fldLoad();
     });
   };
 
-  const rdLoad = async () => {
-    const versionId = toNum(rdVer);
-    if (!versionId) return;
-    await runSafe(async () => {
-      const rows = await getRowDefinitions(versionId);
-      setRowDefs(asArray(rows));
-      log(`Loaded row definitions for v${versionId}`, "ok");
+  const rdLoad = useCallback(
+    async (rawVersionId?: string, rawRulesetId?: string) => {
+      const versionId = toNum(rawVersionId ?? effectiveRdVer);
+      if (!versionId) return;
+      const rulesetId = toNum(rawRulesetId ?? effectiveRdRulesetId) ?? 1;
+      await runSafe(async () => {
+        const [rows, detail, overviewData, reference, businessTypeRates] =
+          await Promise.all([
+            getRowDefinitions(versionId),
+            getTemplateVersionDetail(versionId),
+            getAccountingOverview(),
+            getAccountingReference(),
+            getBusinessTypesWithRates(rulesetId),
+          ]);
+
+        setRowDefs(asArray(rows));
+
+        setRowFormulaOptions(
+          buildFormulaSelectOptions(overviewData.formulas ?? []),
+        );
+
+        const visibleOptions = asArray(detail.fieldMappings)
+          .map((mapping) => {
+            const code = String(mapping.fieldCode ?? "").trim();
+            if (!code) return null;
+            const label = String(mapping.fieldLabel ?? code).trim();
+            return {
+              value: code,
+              label: `${code} - ${label}`,
+            };
+          })
+          .filter(
+            (option): option is { value: string; label: string } => !!option,
+          );
+        setRowVisibleFieldOptions(visibleOptions);
+
+        const refRowTypes = asOptionList(
+          (reference as Record<string, unknown>).rowTypes,
+        );
+        if (refRowTypes.length > 0) setRowTypeOptions(refRowTypes);
+        const refPositions = asOptionList(
+          (reference as Record<string, unknown>).positions,
+        );
+        if (refPositions.length > 0) setRowPositionOptions(refPositions);
+        const refSections = asOptionList(
+          (reference as Record<string, unknown>).sectionTypes,
+        );
+        if (refSections.length > 0) setRowSectionTypeOptions(refSections);
+
+        const refTaxTypes = asOptionList(
+          (reference as Record<string, unknown>).taxTypes,
+        );
+        const taxTypeFromRates = businessTypeRates
+          .flatMap((item) => item.taxRates ?? [])
+          .map((rate) =>
+            String(rate.taxType ?? "")
+              .trim()
+              .toUpperCase(),
+          )
+          .filter(Boolean);
+        const mergedTaxTypes = Array.from(
+          new Set([
+            ...refTaxTypes.map((item) => item.value.toUpperCase()),
+            ...taxTypeFromRates,
+          ]),
+        ).map((value) => {
+          const refMatch = refTaxTypes.find(
+            (item) => item.value.toUpperCase() === value,
+          );
+          return {
+            value,
+            label: refMatch?.label || value,
+          };
+        });
+        if (mergedTaxTypes.length > 0) setRowTaxTypeOptions(mergedTaxTypes);
+
+        const hints: RowTaxRateHint[] = businessTypeRates.flatMap(
+          (businessType) =>
+            (businessType.taxRates ?? []).map((rate) => ({
+              taxType: String(rate.taxType ?? "")
+                .trim()
+                .toUpperCase(),
+              businessTypeCode: String(businessType.code ?? ""),
+              businessTypeName: String(businessType.name ?? ""),
+              taxRate: Number(rate.taxRate ?? 0),
+              description: String(rate.description ?? ""),
+            })),
+        );
+        setRowTaxRateHints(hints);
+
+        log(`Loaded row definitions for v${versionId}`, "ok");
+      });
+    },
+    [effectiveRdRulesetId, effectiveRdVer, runSafe, log],
+  );
+
+  const handleRdVersionSelect = (nextVersionId: string) => {
+    setRdVer(nextVersionId);
+    void rdLoad(nextVersionId, effectiveRdRulesetId);
+  };
+
+  const handleRdRulesetSelect = (nextRulesetId: string) => {
+    setRdRulesetId(nextRulesetId);
+    void rdLoad(effectiveRdVer, nextRulesetId);
+  };
+
+  useEffect(() => {
+    if (activeTab !== "rowdefs") return;
+    queueMicrotask(() => {
+      void rdLoad();
+    });
+  }, [activeTab, rdLoad]);
+
+  const toggleRowVisibleFieldCode = (fieldCode: string) => {
+    setRowForm((prev) => {
+      const selected = new Set(parseVisibleFieldCodes(prev.visibleFieldCodes));
+      if (selected.has(fieldCode)) {
+        selected.delete(fieldCode);
+      } else {
+        selected.add(fieldCode);
+      }
+      return {
+        ...prev,
+        visibleFieldCodes: stringifyVisibleFieldCodes(Array.from(selected)),
+      };
     });
   };
 
@@ -934,10 +2101,15 @@ export default function AdminAccountingClient() {
       taxType: String(r.taxType ?? ""),
       visibleFieldCodes: String(r.visibleFieldCodes ?? ""),
     });
+    setRowActionMenuId("");
+    setRowEditorMode("update");
   };
 
   const rdCreate = async () => {
-    const versionId = ensureDraftVersion(rdVer, "row definition create");
+    const versionId = ensureDraftVersion(
+      effectiveRdVer,
+      "row definition create",
+    );
     if (!versionId) return;
     await runSafe(async () => {
       const payload: Record<string, unknown> = {
@@ -958,12 +2130,17 @@ export default function AdminAccountingClient() {
         payload.visibleFieldCodes = rowForm.visibleFieldCodes;
       await createRowDefinition(versionId, payload as never);
       log("Created row definition", "ok");
+      setRowForm(emptyRowForm);
+      setRowEditorMode("create");
       await rdLoad();
     });
   };
 
   const rdUpdate = async () => {
-    const versionId = ensureDraftVersion(rdVer, "row definition update");
+    const versionId = ensureDraftVersion(
+      effectiveRdVer,
+      "row definition update",
+    );
     if (!versionId) return;
     const rowId = toNum(rowForm.rowDefId);
     if (!rowId) return;
@@ -985,48 +2162,117 @@ export default function AdminAccountingClient() {
     });
   };
 
-  const rdDelete = async () => {
-    const versionId = ensureDraftVersion(rdVer, "row definition delete");
+  const rdDelete = async (rawRowId?: string) => {
+    const versionId = ensureDraftVersion(
+      effectiveRdVer,
+      "row definition delete",
+    );
     if (!versionId) return;
-    const rowId = toNum(rowForm.rowDefId);
+    const rowId = toNum(rawRowId ?? rowForm.rowDefId);
     if (!rowId) return;
     await runSafe(async () => {
       await deleteRowDefinition(rowId);
       setRowForm(emptyRowForm);
+      setRowActionMenuId("");
+      setRowEditorMode("create");
       log(`Deleted row definition ${rowId}`, "ok");
       await rdLoad();
     });
   };
 
-  const entLoad = async () => {
-    await runSafe(async () => {
-      const data = await getMappableEntities();
-      setEntities(asArray(data));
-      log("Loaded entities", "ok");
-    });
-  };
+  const entApplyDetail = useCallback((entity: Record<string, unknown>) => {
+    const entityId = String(entity.entityId ?? "");
+    setEntEditId(entityId);
+    setEntCode(String(entity.entityCode ?? ""));
+    setEntName(String(entity.displayName ?? ""));
+    setEntCat(String(entity.category ?? "revenue"));
+    setEntDesc(String(entity.description ?? ""));
+    setEntIsActive(Boolean(entity.isActive) ? "true" : "false");
+    setSelectedEntityName(String(entity.entityCode ?? "-"));
 
-  const entSelect = async (entityId: number) => {
-    await runSafe(async () => {
-      setEfEntId(String(entityId));
-      const d = await getMappableEntityDetail(entityId);
-      setSelectedEntityName(String(d.entityCode ?? "-"));
-      setEntityFields(asArray(d.fields));
-      log(`Loaded fields for entity ${entityId}`, "ok");
-    });
-  };
+    setEntityFields(asArray(entity.fields));
+
+    setEfEditId("");
+    setEfEntId(entityId);
+    setEfCode("");
+    setEfName("");
+    setEfDtype("decimal");
+    setEfAggs('["sum","none"]');
+    setEfDesc("");
+    setEfIsActive("true");
+  }, []);
+
+  const entLoad = useCallback(
+    async (preferredEntityId?: number) => {
+      await runSafe(async () => {
+        const data = await getMappableEntities();
+        const list = asArray(data);
+        setEntities(list);
+
+        const firstEntityId = Number(list[0]?.entityId ?? 0);
+        const hasPreferred =
+          typeof preferredEntityId === "number" &&
+          list.some(
+            (entity) => Number(entity.entityId ?? 0) === preferredEntityId,
+          );
+        const targetEntityId = hasPreferred
+          ? preferredEntityId
+          : firstEntityId > 0
+            ? firstEntityId
+            : 0;
+
+        if (targetEntityId > 0) {
+          const detail = await getMappableEntityDetail(targetEntityId);
+          entApplyDetail(detail);
+        } else {
+          setSelectedEntityName("-");
+          setEntityFields([]);
+          setEntEditId("");
+          setEntCode("");
+          setEntName("");
+          setEntCat("revenue");
+          setEntDesc("");
+          setEntIsActive("true");
+          setEfEditId("");
+          setEfEntId("");
+          setEfCode("");
+          setEfName("");
+          setEfDtype("decimal");
+          setEfAggs('["sum","none"]');
+          setEfDesc("");
+          setEfIsActive("true");
+        }
+
+        log("Loaded entities", "ok");
+      });
+    },
+    [entApplyDetail, log, runSafe],
+  );
+
+  const entSelect = useCallback(
+    async (entityId: number) => {
+      if (!entityId) return;
+      await runSafe(async () => {
+        const detail = await getMappableEntityDetail(entityId);
+        entApplyDetail(detail);
+        log(`Loaded fields for entity ${entityId}`, "ok");
+      });
+    },
+    [entApplyDetail, log, runSafe],
+  );
 
   const entCreate = async () => {
     await runSafe(async () => {
       const payload: Record<string, unknown> = {
-        entityCode: entCode,
-        displayName: entName,
+        entityCode: entCode.trim(),
+        displayName: entName.trim(),
         category: entCat,
       };
-      if (entDesc.trim()) payload.description = entDesc;
-      await createMappableEntity(payload as never);
+      if (entDesc.trim()) payload.description = entDesc.trim();
+      const created = await createMappableEntity(payload as never);
+      const newId = Number(created.entityId ?? 0);
       log("Created entity", "ok");
-      await entLoad();
+      await entLoad(newId > 0 ? newId : undefined);
     });
   };
 
@@ -1035,25 +2281,28 @@ export default function AdminAccountingClient() {
     if (!id) return;
     await runSafe(async () => {
       const payload: Record<string, unknown> = {};
-      if (entName.trim()) payload.displayName = entName;
-      if (entDesc.trim()) payload.description = entDesc;
-      await updateMappableEntity(id, payload);
+      if (entCode.trim()) payload.entityCode = entCode.trim();
+      if (entName.trim()) payload.displayName = entName.trim();
+      if (entCat.trim()) payload.category = entCat.trim();
+      if (entDesc.trim()) payload.description = entDesc.trim();
+      payload.isActive = entIsActive === "true";
+      await updateMappableEntity(id, payload as never);
       log(`Updated entity ${id}`, "ok");
-      await entLoad();
+      await entLoad(id);
     });
   };
 
   const efCreate = async () => {
-    const entityId = toNum(efEntId);
+    const entityId = toNum(currentFieldEntityId);
     if (!entityId) return;
     await runSafe(async () => {
       const payload: Record<string, unknown> = {
-        fieldCode: efCode,
-        displayName: efName,
+        fieldCode: efCode.trim(),
+        displayName: efName.trim(),
         dataType: efDtype,
         allowedAggregations: efAggs,
       };
-      if (efDesc.trim()) payload.description = efDesc;
+      if (efDesc.trim()) payload.description = efDesc.trim();
       await createMappableField(entityId, payload as never);
       log("Created field", "ok");
       await entSelect(entityId);
@@ -1062,19 +2311,28 @@ export default function AdminAccountingClient() {
 
   const efUpdate = async () => {
     const fieldId = toNum(efEditId);
-    const entityId = toNum(efEntId);
+    const entityId = toNum(currentFieldEntityId);
     if (!fieldId || !entityId) return;
     await runSafe(async () => {
       const payload: Record<string, unknown> = {};
-      if (efName.trim()) payload.displayName = efName;
-      if (efDesc.trim()) payload.description = efDesc;
+      if (efCode.trim()) payload.fieldCode = efCode.trim();
+      if (efName.trim()) payload.displayName = efName.trim();
+      if (efDesc.trim()) payload.description = efDesc.trim();
       if (efDtype.trim()) payload.dataType = efDtype;
       if (efAggs.trim()) payload.allowedAggregations = efAggs;
+      payload.isActive = efIsActive === "true";
       await updateMappableField(fieldId, payload as never);
       log(`Updated field ${fieldId}`, "ok");
       await entSelect(entityId);
     });
   };
+
+  useEffect(() => {
+    if (activeTab !== "entities") return;
+    queueMicrotask(() => {
+      void entLoad();
+    });
+  }, [activeTab, entLoad]);
 
   const loadRef = async () => {
     await runSafe(async () => {
@@ -1136,6 +2394,51 @@ export default function AdminAccountingClient() {
     });
   };
 
+  const runPreview = async () => {
+    await runSafe(async () => {
+      const payload = {
+        businessLocationId: Number(pvLoc || 0),
+        periodId: Number(pvPer || 0),
+        templateVersionId: Number(pvVer || 0),
+        groupNumber: Number(pvGrp || 0),
+        taxMethod: pvMeth,
+        rulesetId: Number(pvRule || 0),
+        businessTypeIds: pvBiz
+          ? pvBiz
+              .split(",")
+              .map((item) => item.trim())
+              .filter(Boolean)
+          : [],
+        batchSize: Number(pvBatch || 10),
+      };
+
+      setPreviewFullStructure(null);
+
+      const [d, reference] = await Promise.all([
+        runAccountingPreview(payload),
+        getAccountingReference(),
+      ]);
+      setPreviewResult(d);
+      setRefData(reference);
+
+      if (payload.templateVersionId > 0) {
+        try {
+          const fullStructure = await getTemplateVersionFullStructure(
+            payload.templateVersionId,
+          );
+          setPreviewFullStructure(fullStructure);
+        } catch {
+          log(
+            "Preview data loaded nhưng không tải được full structure để dựng mẫu sổ.",
+            "error",
+          );
+        }
+      }
+
+      log("Preview finished", "ok");
+    });
+  };
+
   const toggleBusinessTypeCsv = useCallback(
     (
       currentValue: string,
@@ -1157,35 +2460,6 @@ export default function AdminAccountingClient() {
 
   return (
     <main className="space-y-6" aria-labelledby="admin-accounting-title">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          {deepLinkState.message ? (
-            <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-gray-600">
-              <Badge
-                variant="secondary"
-                className={
-                  deepLinkState.confirmed
-                    ? "bg-emerald-50 text-emerald-700"
-                    : "bg-amber-50 text-amber-700"
-                }
-              >
-                {deepLinkState.confirmed ? "Deep-link OK" : "Deep-link check"}
-              </Badge>
-              <span>{deepLinkState.message}</span>
-            </div>
-          ) : null}
-        </div>
-      </div>
-
-      {error ? (
-        <Card className="border border-red-200 bg-red-50 shadow-sm">
-          <CardContent className="flex items-center gap-2 p-4 text-sm text-red-700">
-            <AlertCircle className="h-4 w-4" />
-            {error}
-          </CardContent>
-        </Card>
-      ) : null}
-
       <Card className="rounded-xl border border-gray-200 bg-white shadow-sm">
         <CardContent className="p-3">
           <nav aria-label="Admin accounting sections" className="space-y-3">
@@ -1261,7 +2535,7 @@ export default function AdminAccountingClient() {
                   ))}
                 </div>
               ) : null}
-              <div className="max-h-72 overflow-auto rounded-xl border border-gray-200 bg-white">
+              <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
                 <table className="w-full text-sm">
                   <thead className="sticky top-0 bg-gray-50 text-left text-xs uppercase text-gray-500">
                     <tr>
@@ -1327,23 +2601,31 @@ export default function AdminAccountingClient() {
           </Card>
 
           <Card className="rounded-xl border border-gray-200 bg-white shadow-sm">
-            <CardHeader>
+            <CardHeader className="flex-row items-center justify-between">
               <CardTitle>Business Types</CardTitle>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => goBusinessType()}
+              >
+                Open Manager
+              </Button>
             </CardHeader>
             <CardContent>
-              <div className="max-h-64 overflow-auto rounded-xl border border-gray-200 bg-white">
+              <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
                 <table className="w-full text-sm">
                   <thead className="sticky top-0 bg-gray-50 text-left text-xs uppercase text-gray-500">
                     <tr>
                       <th className="px-3 py-2">Code</th>
                       <th className="px-3 py-2">Tên ngành</th>
                       <th className="px-3 py-2">ID</th>
+                      <th className="px-3 py-2 text-right">Action</th>
                     </tr>
                   </thead>
                   <tbody>
                     {businessTypes.length === 0 ? (
                       <tr>
-                        <td className="px-3 py-3 text-gray-500" colSpan={3}>
+                        <td className="px-3 py-3 text-gray-500" colSpan={4}>
                           Chưa có business type trong overview.
                         </td>
                       </tr>
@@ -1357,6 +2639,17 @@ export default function AdminAccountingClient() {
                             <td className="px-3 py-2">{item.name}</td>
                             <td className="px-3 py-2 font-mono text-[11px] text-gray-500">
                               {item.businessTypeId}
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  goBusinessType(item.businessTypeId)
+                                }
+                                className="inline-flex items-center gap-1 text-sky-700 hover:underline"
+                              >
+                                Manage <ArrowRight className="h-3 w-3" />
+                              </button>
                             </td>
                           </tr>
                         ),
@@ -1373,7 +2666,7 @@ export default function AdminAccountingClient() {
               <CardTitle>Formulas</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="max-h-80 overflow-auto rounded-xl border border-gray-200 bg-white">
+              <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
                 <table className="w-full text-sm">
                   <thead className="sticky top-0 bg-gray-50 text-left text-xs uppercase text-gray-500">
                     <tr>
@@ -1425,6 +2718,246 @@ export default function AdminAccountingClient() {
         </div>
       ) : null}
 
+      {activeTab === "business-types" ? (
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+          <Card className="xl:col-span-2 rounded-xl border border-gray-200 bg-white shadow-sm">
+            <CardHeader>
+              <CardTitle>Business Types By Ruleset</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                <select
+                  value={effectiveBtRulesetId}
+                  onChange={(e) => handleBtRulesetSelect(e.target.value)}
+                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                >
+                  {rowRulesetOptions.length === 0 ? (
+                    <option value="1">1 - Default Ruleset</option>
+                  ) : (
+                    rowRulesetOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))
+                  )}
+                </select>
+              </div>
+
+              <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
+                <table className="w-full text-sm">
+                  <thead className="sticky top-0 bg-gray-50 text-left text-xs uppercase text-gray-500">
+                    <tr>
+                      <th className="px-3 py-2">Code</th>
+                      <th className="px-3 py-2">Name</th>
+                      <th className="px-3 py-2">Status</th>
+                      <th className="px-3 py-2">Rates</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {businessTypesWithRates.length === 0 ? (
+                      <tr>
+                        <td className="px-3 py-3 text-gray-500" colSpan={4}>
+                          Chưa có dữ liệu business type theo ruleset này.
+                        </td>
+                      </tr>
+                    ) : (
+                      businessTypesWithRates.map((item) => {
+                        const isSelected = item.businessTypeId === btSelectedId;
+                        return (
+                          <tr
+                            key={item.businessTypeId}
+                            className={`cursor-pointer border-t transition-colors ${
+                              isSelected
+                                ? "bg-[#23C4C1]/15 text-teal-900 shadow-[inset_4px_0_0_0_#23C4C1]"
+                                : "hover:bg-gray-50/70"
+                            }`}
+                            onClick={() => handleBtSelect(item.businessTypeId)}
+                          >
+                            <td className="px-3 py-2 font-mono text-xs">
+                              {item.code}
+                            </td>
+                            <td className="px-3 py-2">{item.name}</td>
+                            <td className="px-3 py-2">
+                              <Badge
+                                variant="secondary"
+                                className={
+                                  item.status?.toLowerCase() === "active"
+                                    ? "bg-emerald-50 text-emerald-700"
+                                    : "bg-red-50 text-red-700"
+                                }
+                              >
+                                {item.status || "unknown"}
+                              </Badge>
+                            </td>
+                            <td className="px-3 py-2 text-xs text-gray-600">
+                              {(item.taxRates ?? [])
+                                .map(
+                                  (rate) =>
+                                    `${rate.taxType}: ${(Number(rate.taxRate || 0) * 100).toFixed(2)}%`,
+                                )
+                                .join(" | ") || "-"}
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="rounded-xl border border-gray-200 bg-white shadow-sm">
+            <CardHeader>
+              <CardTitle>Business Type Editor</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs text-gray-600">
+                <div className="font-medium text-gray-700">
+                  {selectedBusinessTypeWithRates
+                    ? `${selectedBusinessTypeWithRates.code} - ${selectedBusinessTypeWithRates.businessTypeId}`
+                    : "Chọn business type để chỉnh sửa"}
+                </div>
+              </div>
+
+              <div className="space-y-2 rounded-xl border border-gray-100 bg-gray-50/60 p-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                  Metadata (PATCH)
+                </p>
+                <input
+                  value={btMetadataForm.name}
+                  onChange={(e) =>
+                    setBtMetadataForm((prev) => ({
+                      ...prev,
+                      name: e.target.value,
+                    }))
+                  }
+                  placeholder="Name"
+                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                  disabled={!selectedBusinessTypeWithRates}
+                />
+                <textarea
+                  value={btMetadataForm.description}
+                  onChange={(e) =>
+                    setBtMetadataForm((prev) => ({
+                      ...prev,
+                      description: e.target.value,
+                    }))
+                  }
+                  placeholder="Description"
+                  rows={2}
+                  className="w-full resize-y rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                  disabled={!selectedBusinessTypeWithRates}
+                />
+                <select
+                  value={btMetadataForm.status}
+                  onChange={(e) =>
+                    setBtMetadataForm((prev) => ({
+                      ...prev,
+                      status: e.target.value,
+                    }))
+                  }
+                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                  disabled={!selectedBusinessTypeWithRates}
+                >
+                  <option value="active">active</option>
+                  <option value="inactive">inactive</option>
+                </select>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => void btUpdateMetadata()}
+                  disabled={!selectedBusinessTypeWithRates}
+                >
+                  Save Metadata
+                </Button>
+              </div>
+
+              <div className="space-y-2 rounded-xl border border-gray-100 bg-gray-50/60 p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                    Tax Rates (PUT Replace)
+                  </p>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={addBtRate}
+                    disabled={!selectedBusinessTypeWithRates}
+                  >
+                    Add Rate
+                  </Button>
+                </div>
+                <div className="max-h-72 space-y-2 overflow-auto">
+                  {btRatesForm.length === 0 ? (
+                    <div className="rounded-md border border-dashed border-gray-300 px-3 py-2 text-xs text-gray-500">
+                      Chưa có tax rate. Bấm Add Rate để thêm mới.
+                    </div>
+                  ) : (
+                    btRatesForm.map((rate, index) => (
+                      <div
+                        key={`${rate.taxType || "rate"}-${index}`}
+                        className="space-y-2 rounded-lg border border-gray-200 bg-white p-2"
+                      >
+                        <input
+                          value={rate.taxType}
+                          onChange={(e) =>
+                            updateBtRateField(index, "taxType", e.target.value)
+                          }
+                          placeholder="Tax Type (VAT, PIT_METHOD_1...)"
+                          className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                          disabled={!selectedBusinessTypeWithRates}
+                        />
+                        <input
+                          value={rate.taxRate}
+                          onChange={(e) =>
+                            updateBtRateField(index, "taxRate", e.target.value)
+                          }
+                          placeholder="Tax Rate (e.g. 0.05)"
+                          className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                          disabled={!selectedBusinessTypeWithRates}
+                        />
+                        <input
+                          value={rate.description}
+                          onChange={(e) =>
+                            updateBtRateField(
+                              index,
+                              "description",
+                              e.target.value,
+                            )
+                          }
+                          placeholder="Description"
+                          className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                          disabled={!selectedBusinessTypeWithRates}
+                        />
+                        <div className="text-right">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="text-red-600 hover:text-red-700"
+                            onClick={() => removeBtRate(index)}
+                            disabled={!selectedBusinessTypeWithRates}
+                          >
+                            Remove
+                          </Button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+                <Button
+                  size="sm"
+                  className="w-full bg-[#23C4C1] text-white hover:bg-[#1ea8a6]"
+                  onClick={() => void btReplaceRates()}
+                  disabled={!selectedBusinessTypeWithRates}
+                >
+                  Replace Tax Rates
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      ) : null}
+
       {activeTab === "version" ? (
         <VersionFlowTab
           tvId={tvId}
@@ -1433,12 +2966,17 @@ export default function AdminAccountingClient() {
           tvNotes={tvNotes}
           tvResult={tvResult}
           versionOptions={versionOptions}
+          templateOptions={templateOptions}
           setTvId={setTvId}
           setTvLabel={setTvLabel}
           setTvEffective={setTvEffective}
           setTvNotes={setTvNotes}
           onDetail={(rawId) => void tvDetail(rawId)}
           onFull={(rawId) => void tvFull(rawId)}
+          onCreateTemplate={(payload) => tvCreateTemplate(payload)}
+          onCreateVersion={(templateId, payload) =>
+            tvCreateVersion(templateId, payload)
+          }
           onClone={() => tvClone()}
           onActivate={() => tvActivate()}
           onDeactivate={() => tvDeactivate()}
@@ -1461,9 +2999,13 @@ export default function AdminAccountingClient() {
           fmExplanation={fmExplanation}
           fmCloneCode={fmCloneCode}
           fmCloneSuffix={fmCloneSuffix}
-          fmJsonView={fmJsonView}
+          fmResultDataType={fmResultDataType}
+          fmRoundingMode={fmRoundingMode}
+          fmRoundingPrecision={fmRoundingPrecision}
           formulaOptions={formulaOptions}
+          formulaList={formulas}
           setFmId={setFmId}
+          setFmCode={setFmCode}
           setFmName={setFmName}
           setFmDesc={setFmDesc}
           setFmExprJson={setFmExprJson}
@@ -1471,17 +3013,22 @@ export default function AdminAccountingClient() {
           setFmIsActive={setFmIsActive}
           setFmCloneCode={setFmCloneCode}
           setFmCloneSuffix={setFmCloneSuffix}
-          onDetail={() => void fmDetail()}
-          onClone={() => void fmClone()}
-          onFormat={fmFormat}
-          onValidate={fmValidate}
+          setFmResultDataType={setFmResultDataType}
+          setFmRoundingMode={setFmRoundingMode}
+          setFmRoundingPrecision={setFmRoundingPrecision}
+          onDetail={(rawId) => void fmDetail(rawId)}
+          onClone={(payload) => void fmClone(payload)}
+          onCreate={() => void fmCreate()}
+          onActivate={() => void fmActivate()}
+          onDeactivate={() => void fmDeactivate()}
           onUpdate={() => void fmUpdate()}
         />
       ) : null}
 
       {activeTab === "mappings" ? (
         <MappingTab
-          fldVer={fldVer}
+          fldVer={effectiveFldVer}
+          versionOptions={versionOptions}
           fieldMappings={fieldMappings}
           mappingForm={mappingForm}
           fieldTypeOptions={mappingFieldTypeOptions}
@@ -1490,13 +3037,12 @@ export default function AdminAccountingClient() {
           formulaOptions={mappingFormulaOptions}
           entityOptions={mappingEntityOptions}
           entityFieldOptions={mappingEntityFieldOptions}
-          setFldVer={setFldVer}
+          onVersionChange={handleFldVersionSelect}
           setMappingForm={setMappingForm}
-          onLoad={() => void fldLoad()}
           onPick={fldPick}
           onCreate={() => void fldCreate()}
           onUpdate={() => void fldUpdate()}
-          onDelete={() => void fldDelete()}
+          onDelete={(mappingId) => void fldDelete(mappingId)}
         />
       ) : null}
 
@@ -1507,22 +3053,36 @@ export default function AdminAccountingClient() {
               <CardTitle>Row Definitions</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              <div className="flex items-center gap-2">
-                <input
-                  value={rdVer}
-                  onChange={(e) => setRdVer(e.target.value)}
-                  placeholder="Template Version ID"
-                  className="w-40 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-                />
-                <Button
-                  size="sm"
-                  className="bg-[#23C4C1] text-white hover:bg-[#1ea8a6]"
-                  onClick={() => void rdLoad()}
+              <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                <select
+                  value={effectiveRdVer}
+                  onChange={(e) => handleRdVersionSelect(e.target.value)}
+                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
                 >
-                  Load
-                </Button>
+                  <option value="">Chọn Template Version</option>
+                  {versionOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={effectiveRdRulesetId}
+                  onChange={(e) => handleRdRulesetSelect(e.target.value)}
+                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                >
+                  {rowRulesetOptions.length === 0 ? (
+                    <option value="1">1 - Default Ruleset</option>
+                  ) : (
+                    rowRulesetOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))
+                  )}
+                </select>
               </div>
-              <div className="max-h-130 overflow-auto rounded-xl border border-gray-200 bg-white">
+              <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
                 <table className="w-full text-sm">
                   <thead className="sticky top-0 bg-gray-50 text-left text-xs uppercase text-gray-500">
                     <tr>
@@ -1533,6 +3093,7 @@ export default function AdminAccountingClient() {
                       <th className="px-3 py-2">Sort</th>
                       <th className="px-3 py-2">Formula</th>
                       <th className="px-3 py-2">Tax</th>
+                      <th className="px-3 py-2 text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1558,10 +3119,47 @@ export default function AdminAccountingClient() {
                           {String(r.sortOrder ?? "-")}
                         </td>
                         <td className="px-3 py-2">
-                          {String(r.formulaId ?? "-")}
+                          {r.formulaId
+                            ? `Số ${String(r.formulaId)} ( ${String(r.formulaCode)} )`
+                            : "-"}
                         </td>
                         <td className="px-3 py-2">
                           {String(r.taxType ?? "-")}
+                        </td>
+                        <td className="px-3 py-2 text-right">
+                          <div className="relative inline-block text-left">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const rowId = String(
+                                  r.rowDefId ?? `row-${index}`,
+                                );
+                                setRowActionMenuId((prev) =>
+                                  prev === rowId ? "" : rowId,
+                                );
+                              }}
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
+                              aria-label="Row actions"
+                            >
+                              <MoreVertical className="h-4 w-4" />
+                            </button>
+                            {rowActionMenuId ===
+                            String(r.rowDefId ?? `row-${index}`) ? (
+                              <div className="absolute right-0 top-9 z-10 w-28 rounded-md border border-gray-200 bg-white p-1 shadow-lg">
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    void rdDelete(String(r.rowDefId ?? ""));
+                                  }}
+                                  className="w-full rounded px-2 py-1.5 text-left text-xs text-red-600 hover:bg-red-50"
+                                >
+                                  Delete
+                                </button>
+                              </div>
+                            ) : null}
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -1573,146 +3171,275 @@ export default function AdminAccountingClient() {
 
           <Card className="rounded-xl border border-gray-200 bg-white shadow-sm">
             <CardHeader>
-              <CardTitle>Row Editor</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              <input
-                value={rowForm.rowDefId}
-                readOnly
-                placeholder="ID"
-                className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm"
-              />
-              <input
-                value={rowForm.rowLabel}
-                onChange={(e) =>
-                  setRowForm((p) => ({ ...p, rowLabel: e.target.value }))
-                }
-                placeholder="Row Label"
-                className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-              />
-              <select
-                value={rowForm.rowType}
-                onChange={(e) =>
-                  setRowForm((p) => ({ ...p, rowType: e.target.value }))
-                }
-                className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-              >
-                <option>data_placeholder</option>
-                <option>industry_header</option>
-                <option>subtotal</option>
-                <option>tax_line</option>
-                <option>grand_total</option>
-                <option>section_header</option>
-                <option>balance_row</option>
-                <option>opening_balance</option>
-                <option>closing_balance</option>
-              </select>
-              <select
-                value={rowForm.position}
-                onChange={(e) =>
-                  setRowForm((p) => ({ ...p, position: e.target.value }))
-                }
-                className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-              >
-                <option>per_group</option>
-                <option>end_of_book</option>
-                <option>per_section</option>
-              </select>
-              <input
-                value={rowForm.sortOrder}
-                onChange={(e) =>
-                  setRowForm((p) => ({ ...p, sortOrder: e.target.value }))
-                }
-                placeholder="Sort"
-                className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-              />
-              <input
-                value={rowForm.formulaId}
-                onChange={(e) =>
-                  setRowForm((p) => ({ ...p, formulaId: e.target.value }))
-                }
-                placeholder="Formula ID"
-                className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-              />
-              <select
-                value={rowForm.sectionType}
-                onChange={(e) =>
-                  setRowForm((p) => ({ ...p, sectionType: e.target.value }))
-                }
-                className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-              >
-                <option value="">Section Type</option>
-                <option>industry_group</option>
-                <option>revenue_section</option>
-                <option>cost_section</option>
-                <option>tax_section</option>
-                <option>summary_section</option>
-              </select>
-              <input
-                value={rowForm.sectionFilterValue}
-                onChange={(e) =>
-                  setRowForm((p) => ({
-                    ...p,
-                    sectionFilterValue: e.target.value,
-                  }))
-                }
-                placeholder="Section Filter"
-                className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-              />
-              <input
-                value={rowForm.groupByField}
-                onChange={(e) =>
-                  setRowForm((p) => ({ ...p, groupByField: e.target.value }))
-                }
-                placeholder="GroupBy Field"
-                className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-              />
-              <select
-                value={rowForm.taxType}
-                onChange={(e) =>
-                  setRowForm((p) => ({ ...p, taxType: e.target.value }))
-                }
-                className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-              >
-                <option value="">Tax Type</option>
-                <option>vat</option>
-                <option>pit</option>
-              </select>
-              <input
-                value={rowForm.visibleFieldCodes}
-                onChange={(e) =>
-                  setRowForm((p) => ({
-                    ...p,
-                    visibleFieldCodes: e.target.value,
-                  }))
-                }
-                placeholder="Visible Fields JSON"
-                className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-              />
-              <div className="grid grid-cols-2 gap-2 pt-2">
+              <div className="flex items-center justify-between gap-2">
+                <CardTitle>Row Editor</CardTitle>
                 <Button
                   size="sm"
-                  className="bg-[#23C4C1] text-white hover:bg-[#1ea8a6]"
-                  onClick={() => void rdCreate()}
+                  variant="link"
+                  onClick={() => {
+                    if (rowEditorMode === "update") {
+                      setRowEditorMode("create");
+                      setRowForm(emptyRowForm);
+                      setRowActionMenuId("");
+                      return;
+                    }
+
+                    setRowEditorMode("update");
+                    setRowActionMenuId("");
+                    if (!rowForm.rowDefId && rowDefs.length > 0) {
+                      rdPick(rowDefs[0]);
+                    }
+                  }}
+                  className=" text-[#23C4C1] hover:text-[#1ea8a6]"
                 >
-                  Create
-                </Button>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  onClick={() => void rdUpdate()}
-                >
-                  Update
-                </Button>
-                <Button
-                  size="sm"
-                  variant="destructive"
-                  className="col-span-2"
-                  onClick={() => void rdDelete()}
-                >
-                  Delete
+                  {rowEditorMode === "create" ? "Update" : "Create"}
                 </Button>
               </div>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {rowEditorMode === "update" ? (
+                <div className="space-y-1">
+                  <label className="block text-xs font-medium text-gray-600">
+                    Row ID
+                  </label>
+                  <input
+                    value={rowForm.rowDefId}
+                    readOnly
+                    placeholder="ID"
+                    className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm"
+                  />
+                </div>
+              ) : null}
+              <div className="space-y-1">
+                <label className="block text-xs font-medium text-gray-600">
+                  Loại dòng
+                </label>
+                <select
+                  value={rowForm.rowType}
+                  onChange={(e) =>
+                    setRowForm((p) => ({ ...p, rowType: e.target.value }))
+                  }
+                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                >
+                  {rowTypeOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-1">
+                <label className="block text-xs font-medium text-gray-600">
+                  Nhãn dòng
+                </label>
+                <input
+                  value={rowForm.rowLabel}
+                  onChange={(e) =>
+                    setRowForm((p) => ({ ...p, rowLabel: e.target.value }))
+                  }
+                  placeholder="Row Label"
+                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <label className="block text-xs font-medium text-gray-600">
+                    Position
+                  </label>
+                  <select
+                    value={rowForm.position}
+                    onChange={(e) =>
+                      setRowForm((p) => ({ ...p, position: e.target.value }))
+                    }
+                    className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                  >
+                    {rowPositionOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="block text-xs font-medium text-gray-600">
+                    Thứ tự
+                  </label>
+                  <input
+                    value={rowForm.sortOrder}
+                    onChange={(e) =>
+                      setRowForm((p) => ({ ...p, sortOrder: e.target.value }))
+                    }
+                    placeholder="Sort"
+                    className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                  />
+                </div>
+              </div>
+              <div className="space-y-1">
+                <label className="block text-xs font-medium text-gray-600">
+                  Formula ID
+                </label>
+                <select
+                  value={rowForm.formulaId}
+                  onChange={(e) =>
+                    setRowForm((p) => ({ ...p, formulaId: e.target.value }))
+                  }
+                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                >
+                  <option value="">Chọn formula</option>
+                  {rowFormulaOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-1">
+                <label className="block text-xs font-medium text-gray-600">
+                  Section type
+                </label>
+                <select
+                  value={rowForm.sectionType}
+                  onChange={(e) =>
+                    setRowForm((p) => ({ ...p, sectionType: e.target.value }))
+                  }
+                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                >
+                  <option value="">Không chọn section</option>
+                  {rowSectionTypeOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-1">
+                <label className="block text-xs font-medium text-gray-600">
+                  Section filter value
+                </label>
+                <input
+                  value={rowForm.sectionFilterValue}
+                  onChange={(e) =>
+                    setRowForm((p) => ({
+                      ...p,
+                      sectionFilterValue: e.target.value,
+                    }))
+                  }
+                  placeholder="Section Filter"
+                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="block text-xs font-medium text-gray-600">
+                  Group by field
+                </label>
+                <input
+                  value={rowForm.groupByField}
+                  onChange={(e) =>
+                    setRowForm((p) => ({ ...p, groupByField: e.target.value }))
+                  }
+                  placeholder="GroupBy Field"
+                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="block text-xs font-medium text-gray-600">
+                  Tax type
+                </label>
+                <select
+                  value={rowForm.taxType}
+                  onChange={(e) =>
+                    setRowForm((p) => ({ ...p, taxType: e.target.value }))
+                  }
+                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                >
+                  <option value="">Không chọn tax type</option>
+                  {rowTaxTypeOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {filteredRowTaxRateHints.length > 0 ? (
+                <div className="max-h-28 overflow-auto rounded-lg border border-sky-100 bg-sky-50 p-2 text-xs text-sky-700">
+                  {filteredRowTaxRateHints.map((item, index) => (
+                    <div
+                      key={`${item.businessTypeCode}-${item.taxType}-${index}`}
+                    >
+                      {item.businessTypeCode} - {item.businessTypeName}:{" "}
+                      {(item.taxRate * 100).toFixed(2)}%
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+              <div className="space-y-1">
+                <label className="block text-xs font-medium text-gray-600">
+                  Visible field codes (quick pick)
+                </label>
+                <div className="max-h-28 overflow-auto rounded-lg border border-gray-200 bg-gray-50 p-2">
+                  <div className="flex flex-wrap gap-1.5">
+                    {rowVisibleFieldOptions.map((option) => {
+                      const selected = parseVisibleFieldCodes(
+                        rowForm.visibleFieldCodes,
+                      ).includes(option.value);
+                      return (
+                        <button
+                          key={option.value}
+                          type="button"
+                          onClick={() =>
+                            toggleRowVisibleFieldCode(option.value)
+                          }
+                          className={`rounded-full border px-2 py-1 text-[11px] ${
+                            selected
+                              ? "border-[#23C4C1]/40 bg-[#23C4C1]/10 text-[#15918f]"
+                              : "border-gray-200 bg-white text-gray-600"
+                          }`}
+                        >
+                          {option.value}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+              <div className="space-y-1">
+                <label className="block text-xs font-medium text-gray-600">
+                  Visible field codes
+                </label>
+                <input
+                  value={rowForm.visibleFieldCodes}
+                  onChange={(e) =>
+                    setRowForm((p) => ({
+                      ...p,
+                      visibleFieldCodes: e.target.value,
+                    }))
+                  }
+                  placeholder="Visible field codes"
+                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                />
+              </div>
+              {rowEditorMode === "create" ? (
+                <div className="pt-2">
+                  <Button
+                    size="sm"
+                    className="w-full bg-[#23C4C1] text-white hover:bg-[#1ea8a6]"
+                    onClick={() => void rdCreate()}
+                  >
+                    Create
+                  </Button>
+                </div>
+              ) : (
+                <div className="pt-2">
+                  <Button
+                    size="sm"
+                    className="w-full bg-[#23C4C1] text-white hover:bg-[#1ea8a6]"
+                    onClick={() => void rdUpdate()}
+                    disabled={!rowForm.rowDefId}
+                  >
+                    Update
+                  </Button>
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
@@ -1720,45 +3447,78 @@ export default function AdminAccountingClient() {
 
       {activeTab === "entities" ? (
         <div className="space-y-6">
-          <div className="flex justify-end">
-            <Button variant="outline" onClick={() => void entLoad()}>
-              Load Entities
-            </Button>
-          </div>
           <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
             <Card className="rounded-xl border border-gray-200 bg-white shadow-sm">
               <CardHeader>
                 <CardTitle>Entities</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="max-h-80 overflow-auto rounded-xl border border-gray-200 bg-white">
+                <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
                   <table className="w-full text-sm">
+                    <thead className="sticky top-0 z-10 border-b border-gray-200 bg-white/95 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600 backdrop-blur">
+                      <tr>
+                        <th className="px-3 py-2">ID</th>
+                        <th className="px-3 py-2">Code</th>
+                        <th className="px-3 py-2">Name</th>
+                        <th className="px-3 py-2">Category</th>
+                        <th className="px-3 py-2">Fields</th>
+                        <th className="px-3 py-2">Status</th>
+                      </tr>
+                    </thead>
                     <tbody>
-                      {entities.map((e, index) => (
-                        <tr
-                          key={String(e.entityId ?? `entity-${index}`)}
-                          className="cursor-pointer border-t hover:bg-gray-50/70"
-                          onClick={() =>
-                            void entSelect(Number(e.entityId ?? 0))
-                          }
-                        >
-                          <td className="px-3 py-2">
-                            {String(e.entityId ?? "-")}
-                          </td>
-                          <td className="px-3 py-2 font-mono text-xs">
-                            {String(e.entityCode ?? "-")}
-                          </td>
-                          <td className="px-3 py-2">
-                            {String(e.displayName ?? "-")}
-                          </td>
-                          <td className="px-3 py-2">
-                            {String(e.category ?? "-")}
-                          </td>
-                          <td className="px-3 py-2">
-                            {Boolean(e.isActive) ? "Yes" : "No"}
+                      {entities.length === 0 ? (
+                        <tr>
+                          <td className="px-3 py-3 text-gray-500" colSpan={6}>
+                            Chưa có entity.
                           </td>
                         </tr>
-                      ))}
+                      ) : (
+                        entities.map((e, index) => {
+                          const entityId = String(e.entityId ?? "");
+                          const isSelected = entityId === entEditId;
+                          return (
+                            <tr
+                              key={entityId || `entity-${index}`}
+                              className={`cursor-pointer border-t transition-colors ${
+                                isSelected
+                                  ? "bg-[#23C4C1]/15 text-teal-900 shadow-[inset_4px_0_0_0_#23C4C1]"
+                                  : "hover:bg-gray-50/70"
+                              }`}
+                              onClick={() =>
+                                void entSelect(Number(e.entityId ?? 0))
+                              }
+                            >
+                              <td className="px-3 py-2">
+                                {String(e.entityId ?? "-")}
+                              </td>
+                              <td className="px-3 py-2 font-mono text-xs">
+                                {String(e.entityCode ?? "-")}
+                              </td>
+                              <td className="px-3 py-2">
+                                {String(e.displayName ?? "-")}
+                              </td>
+                              <td className="px-3 py-2">
+                                {String(e.category ?? "-")}
+                              </td>
+                              <td className="px-3 py-2">
+                                {String(e.fieldCount ?? "-")}
+                              </td>
+                              <td className="px-3 py-2">
+                                <Badge
+                                  variant="secondary"
+                                  className={
+                                    Boolean(e.isActive)
+                                      ? "bg-emerald-50 text-emerald-700"
+                                      : "bg-red-50 text-red-700"
+                                  }
+                                >
+                                  {Boolean(e.isActive) ? "Active" : "Inactive"}
+                                </Badge>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
                     </tbody>
                   </table>
                 </div>
@@ -1770,37 +3530,83 @@ export default function AdminAccountingClient() {
                 <CardTitle>Fields of {selectedEntityName}</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="max-h-80 overflow-auto rounded-xl border border-gray-200 bg-white">
+                <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
                   <table className="w-full text-sm">
+                    <thead className="sticky top-0 z-10 border-b border-gray-200 bg-white/95 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600 backdrop-blur">
+                      <tr>
+                        <th className="px-3 py-2">ID</th>
+                        <th className="px-3 py-2">Code</th>
+                        <th className="px-3 py-2">Name</th>
+                        <th className="px-3 py-2">Description</th>
+                        <th className="px-3 py-2">Type</th>
+                        <th className="px-3 py-2">Status</th>
+                      </tr>
+                    </thead>
                     <tbody>
-                      {entityFields.map((f, index) => (
-                        <tr
-                          key={String(f.fieldId ?? `field-${index}`)}
-                          className="cursor-pointer border-t hover:bg-gray-50/70"
-                          onClick={() => {
-                            setEfEditId(String(f.fieldId ?? ""));
-                            setEfEntId(String(f.entityId ?? ""));
-                            setEfCode(String(f.fieldCode ?? ""));
-                            setEfName(String(f.displayName ?? ""));
-                            setEfDtype(String(f.dataType ?? "decimal"));
-                            setEfAggs(String(f.allowedAggregations ?? ""));
-                            setEfDesc(String(f.description ?? ""));
-                          }}
-                        >
-                          <td className="px-3 py-2">
-                            {String(f.fieldId ?? "-")}
-                          </td>
-                          <td className="px-3 py-2 font-mono text-xs">
-                            {String(f.fieldCode ?? "-")}
-                          </td>
-                          <td className="px-3 py-2">
-                            {String(f.displayName ?? "-")}
-                          </td>
-                          <td className="px-3 py-2">
-                            {String(f.dataType ?? "-")}
+                      {entityFields.length === 0 ? (
+                        <tr>
+                          <td className="px-3 py-3 text-gray-500" colSpan={6}>
+                            Entity này chưa có field.
                           </td>
                         </tr>
-                      ))}
+                      ) : (
+                        entityFields.map((f, index) => {
+                          const fieldId = String(f.fieldId ?? "");
+                          const isSelected = fieldId === efEditId;
+                          return (
+                            <tr
+                              key={fieldId || `field-${index}`}
+                              className={`cursor-pointer border-t transition-colors ${
+                                isSelected
+                                  ? "bg-[#23C4C1]/15 text-teal-900 shadow-[inset_4px_0_0_0_#23C4C1]"
+                                  : "hover:bg-gray-50/70"
+                              }`}
+                              onClick={() => {
+                                setEfEditId(String(f.fieldId ?? ""));
+                                setEfEntId(String(f.entityId ?? entEditId));
+                                setEfCode(String(f.fieldCode ?? ""));
+                                setEfName(String(f.displayName ?? ""));
+                                setEfDtype(String(f.dataType ?? "decimal"));
+                                setEfAggs(
+                                  String(f.allowedAggregations ?? '["none"]'),
+                                );
+                                setEfDesc(String(f.description ?? ""));
+                                setEfIsActive(
+                                  Boolean(f.isActive) ? "true" : "false",
+                                );
+                              }}
+                            >
+                              <td className="px-3 py-2">
+                                {String(f.fieldId ?? "-")}
+                              </td>
+                              <td className="px-3 py-2 font-mono text-xs">
+                                {String(f.fieldCode ?? "-")}
+                              </td>
+                              <td className="px-3 py-2">
+                                {String(f.displayName ?? "-")}
+                              </td>
+                              <td className="max-w-[280px] px-3 py-2 text-gray-600">
+                                {String(f.description ?? "-")}
+                              </td>
+                              <td className="px-3 py-2">
+                                {String(f.dataType ?? "-")}
+                              </td>
+                              <td className="px-3 py-2">
+                                <Badge
+                                  variant="secondary"
+                                  className={
+                                    Boolean(f.isActive)
+                                      ? "bg-emerald-50 text-emerald-700"
+                                      : "bg-red-50 text-red-700"
+                                  }
+                                >
+                                  {Boolean(f.isActive) ? "Active" : "Inactive"}
+                                </Badge>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
                     </tbody>
                   </table>
                 </div>
@@ -1810,120 +3616,298 @@ export default function AdminAccountingClient() {
 
           <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
             <Card className="rounded-xl border border-gray-200 bg-white shadow-sm">
-              <CardHeader>
-                <CardTitle>Entity Editor</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                <input
-                  value={entEditId}
-                  onChange={(e) => setEntEditId(e.target.value)}
-                  placeholder="Entity ID"
-                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-                />
-                <input
-                  value={entCode}
-                  onChange={(e) => setEntCode(e.target.value)}
-                  placeholder="Entity Code"
-                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-                />
-                <input
-                  value={entName}
-                  onChange={(e) => setEntName(e.target.value)}
-                  placeholder="Display Name"
-                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-                />
-                <select
-                  value={entCat}
-                  onChange={(e) => setEntCat(e.target.value)}
-                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+              <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div className="space-y-1">
+                  <CardTitle>Entity Editor</CardTitle>
+                  <p className="text-xs text-gray-500">
+                    {hasSelectedEntity
+                      ? `Đang chỉnh sửa entity #${entEditId}`
+                      : "Tạo mới entity"}
+                  </p>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    setEntEditId("");
+                    setEntCode("");
+                    setEntName("");
+                    setEntCat("revenue");
+                    setEntDesc("");
+                    setEntIsActive("true");
+                  }}
                 >
-                  <option>revenue</option>
-                  <option>cost</option>
-                  <option>tax</option>
-                  <option>asset</option>
-                </select>
-                <input
-                  value={entDesc}
-                  onChange={(e) => setEntDesc(e.target.value)}
-                  placeholder="Description"
-                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-                />
+                  New Entity
+                </Button>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="space-y-3 rounded-xl border border-gray-100 bg-gray-50/60 p-3">
+                  <div className="space-y-1">
+                    <label className="block text-xs font-medium text-gray-600">
+                      Entity ID
+                    </label>
+                    <input
+                      value={entEditId}
+                      readOnly
+                      placeholder="(auto)"
+                      className="w-full rounded-lg border border-gray-200 bg-gray-100 px-3 py-2 text-sm"
+                    />
+                  </div>
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                    <div className="space-y-1">
+                      <label className="block text-xs font-medium text-gray-600">
+                        Entity Code
+                      </label>
+                      <input
+                        value={entCode}
+                        onChange={(e) => setEntCode(e.target.value)}
+                        placeholder="orders"
+                        className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="block text-xs font-medium text-gray-600">
+                        Display Name
+                      </label>
+                      <input
+                        value={entName}
+                        onChange={(e) => setEntName(e.target.value)}
+                        placeholder="Đơn hàng"
+                        className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                    <div className="space-y-1">
+                      <label className="block text-xs font-medium text-gray-600">
+                        Category
+                      </label>
+                      <select
+                        value={entCat}
+                        onChange={(e) => setEntCat(e.target.value)}
+                        className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                      >
+                        <option>revenue</option>
+                        <option>cost</option>
+                        <option>tax</option>
+                        <option>asset</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="block text-xs font-medium text-gray-600">
+                        Status
+                      </label>
+                      <select
+                        value={entIsActive}
+                        onChange={(e) => setEntIsActive(e.target.value)}
+                        className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                      >
+                        <option value="true">Active</option>
+                        <option value="false">Inactive</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="block text-xs font-medium text-gray-600">
+                      Description
+                    </label>
+                    <textarea
+                      value={entDesc}
+                      onChange={(e) => setEntDesc(e.target.value)}
+                      placeholder="Mô tả ngắn cho entity"
+                      rows={2}
+                      className="w-full resize-y rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                    />
+                  </div>
+                </div>
                 <div className="grid grid-cols-2 gap-2">
                   <Button
                     size="sm"
                     className="bg-[#23C4C1] text-white hover:bg-[#1ea8a6]"
                     onClick={() => void entCreate()}
+                    disabled={!entCode.trim() || !entName.trim()}
                   >
-                    Create
+                    Create Entity
                   </Button>
                   <Button
                     size="sm"
                     variant="secondary"
                     onClick={() => void entUpdate()}
+                    disabled={!hasSelectedEntity}
                   >
-                    Update
+                    Update Entity
                   </Button>
                 </div>
               </CardContent>
             </Card>
 
             <Card className="rounded-xl border border-gray-200 bg-white shadow-sm">
-              <CardHeader>
-                <CardTitle>Field Editor</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                <input
-                  value={efEditId}
-                  onChange={(e) => setEfEditId(e.target.value)}
-                  placeholder="Field ID"
-                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-                />
-                <input
-                  value={efEntId}
-                  onChange={(e) => setEfEntId(e.target.value)}
-                  placeholder="Entity ID"
-                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-                />
-                <input
-                  value={efCode}
-                  onChange={(e) => setEfCode(e.target.value)}
-                  placeholder="Field Code"
-                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-                />
-                <input
-                  value={efName}
-                  onChange={(e) => setEfName(e.target.value)}
-                  placeholder="Display Name"
-                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-                />
-                <select
-                  value={efDtype}
-                  onChange={(e) => setEfDtype(e.target.value)}
-                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+              <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div className="space-y-1">
+                  <CardTitle>Field Editor</CardTitle>
+                  <p className="text-xs text-gray-500">
+                    {hasSelectedField
+                      ? `Đang chỉnh sửa field #${efEditId}`
+                      : "Tạo mới field cho entity đang chọn"}
+                  </p>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    setEfEditId("");
+                    setEfEntId(currentFieldEntityId);
+                    setEfCode("");
+                    setEfName("");
+                    setEfDtype("decimal");
+                    setEfAggs('["sum","none"]');
+                    setEfDesc("");
+                    setEfIsActive("true");
+                  }}
+                  disabled={!currentFieldEntityId}
                 >
-                  <option>decimal</option>
-                  <option>string</option>
-                  <option>date</option>
-                  <option>long</option>
-                  <option>guid</option>
-                </select>
-                <input
-                  value={efAggs}
-                  onChange={(e) => setEfAggs(e.target.value)}
-                  placeholder="Allowed Aggregations JSON"
-                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-                />
-                <input
-                  value={efDesc}
-                  onChange={(e) => setEfDesc(e.target.value)}
-                  placeholder="Description"
-                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-                />
+                  New Field
+                </Button>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="space-y-3 rounded-xl border border-gray-100 bg-gray-50/60 p-3">
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                    <div className="space-y-1">
+                      <label className="block text-xs font-medium text-gray-600">
+                        Field ID
+                      </label>
+                      <input
+                        value={efEditId}
+                        readOnly
+                        placeholder="(auto)"
+                        className="w-full rounded-lg border border-gray-200 bg-gray-100 px-3 py-2 text-sm"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="block text-xs font-medium text-gray-600">
+                        Entity ID
+                      </label>
+                      <input
+                        value={currentFieldEntityId}
+                        readOnly
+                        placeholder="Chọn entity trước"
+                        className="w-full rounded-lg border border-gray-200 bg-gray-100 px-3 py-2 text-sm"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                    <div className="space-y-1">
+                      <label className="block text-xs font-medium text-gray-600">
+                        Field Code
+                      </label>
+                      <input
+                        value={efCode}
+                        onChange={(e) => setEfCode(e.target.value)}
+                        placeholder="TotalAmount"
+                        className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="block text-xs font-medium text-gray-600">
+                        Display Name
+                      </label>
+                      <input
+                        value={efName}
+                        onChange={(e) => setEfName(e.target.value)}
+                        placeholder="Tổng tiền"
+                        className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                    <div className="space-y-1">
+                      <label className="block text-xs font-medium text-gray-600">
+                        Data Type
+                      </label>
+                      <select
+                        value={efDtype}
+                        onChange={(e) => setEfDtype(e.target.value)}
+                        className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                      >
+                        <option>decimal</option>
+                        <option>string</option>
+                        <option>text</option>
+                        <option>date</option>
+                        <option>long</option>
+                        <option>guid</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="block text-xs font-medium text-gray-600">
+                        Status
+                      </label>
+                      <select
+                        value={efIsActive}
+                        onChange={(e) => setEfIsActive(e.target.value)}
+                        className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                      >
+                        <option value="true">Active</option>
+                        <option value="false">Inactive</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="block text-xs font-medium text-gray-600">
+                      Allowed Aggregations
+                    </label>
+                    <div className="rounded-lg border border-gray-200 bg-gray-50 p-2">
+                      <div className="flex flex-wrap gap-1.5">
+                        {fieldAggregationOptions.map((aggregation) => {
+                          const selected =
+                            selectedFieldAggregations.includes(aggregation);
+                          return (
+                            <button
+                              key={aggregation}
+                              type="button"
+                              onClick={() =>
+                                toggleFieldAggregation(aggregation)
+                              }
+                              className={`rounded-full border px-2.5 py-1 text-xs transition ${
+                                selected
+                                  ? "border-[#23C4C1]/40 bg-[#23C4C1]/10 text-[#15918f]"
+                                  : "border-gray-200 bg-white text-gray-600 hover:bg-gray-100"
+                              }`}
+                            >
+                              {aggregation}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                    <div className="text-[11px] text-gray-500">
+                      Payload: {efAggs}
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="block text-xs font-medium text-gray-600">
+                      Description
+                    </label>
+                    <textarea
+                      value={efDesc}
+                      onChange={(e) => setEfDesc(e.target.value)}
+                      placeholder="Mô tả ngắn cho field"
+                      rows={2}
+                      className="w-full resize-y rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                    />
+                  </div>
+                </div>
                 <div className="grid grid-cols-2 gap-2">
                   <Button
                     size="sm"
                     className="bg-[#23C4C1] text-white hover:bg-[#1ea8a6]"
                     onClick={() => void efCreate()}
+                    disabled={
+                      !currentFieldEntityId || !efCode.trim() || !efName.trim()
+                    }
                   >
                     Create Field
                   </Button>
@@ -1931,6 +3915,7 @@ export default function AdminAccountingClient() {
                     size="sm"
                     variant="secondary"
                     onClick={() => void efUpdate()}
+                    disabled={!hasSelectedField || !currentFieldEntityId}
                   >
                     Update Field
                   </Button>
@@ -2041,11 +4026,776 @@ export default function AdminAccountingClient() {
               <Play className="h-4 w-4" />
               Run Compare
             </Button>
-            <div className="max-h-80 overflow-auto rounded-xl border border-gray-200 bg-gray-50 p-4 font-mono text-xs text-gray-700">
-              <JsonTree
-                value={compareResult ?? { note: "Run compare to view output" }}
+
+            {!compareResult ? (
+              <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 px-4 py-6 text-center text-sm text-gray-500">
+                Chạy Compare để xem bảng đối chiếu Active và Draft.
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                  <div className="space-y-3 rounded-xl border border-gray-200 bg-white p-3">
+                    <h4 className="text-sm font-semibold text-gray-800">
+                      Active Version
+                    </h4>
+
+                    <div className="overflow-x-auto rounded-lg border border-gray-200">
+                      <table className="w-full min-w-180 border-collapse text-sm">
+                        <thead>
+                          <tr className="bg-[#ecfbfa] text-gray-700">
+                            <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                              Chỉ tiêu
+                            </th>
+                            <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                              Giá trị
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr>
+                            <td className="border border-gray-200 px-3 py-2">
+                              Tổng số dòng
+                            </td>
+                            <td className="border border-gray-200 px-3 py-2 font-medium">
+                              {compareActive.summary?.totalRows ?? 0}
+                            </td>
+                          </tr>
+                          <tr>
+                            <td className="border border-gray-200 px-3 py-2">
+                              Tổng doanh thu
+                            </td>
+                            <td className="border border-gray-200 px-3 py-2 font-medium">
+                              {compareActive.summary?.totalRevenue == null
+                                ? "-"
+                                : Number(
+                                    compareActive.summary.totalRevenue,
+                                  ).toLocaleString("vi-VN")}
+                            </td>
+                          </tr>
+                          <tr>
+                            <td className="border border-gray-200 px-3 py-2">
+                              Tổng chi phí
+                            </td>
+                            <td className="border border-gray-200 px-3 py-2 font-medium">
+                              {compareActive.summary?.totalCost == null
+                                ? "-"
+                                : Number(
+                                    compareActive.summary.totalCost,
+                                  ).toLocaleString("vi-VN")}
+                            </td>
+                          </tr>
+                          <tr>
+                            <td className="border border-gray-200 px-3 py-2">
+                              Tổng thuế
+                            </td>
+                            <td className="border border-gray-200 px-3 py-2 font-medium">
+                              {compareActive.summary?.totalTax == null
+                                ? "-"
+                                : Number(
+                                    compareActive.summary.totalTax,
+                                  ).toLocaleString("vi-VN")}
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {compareActive.formulaValues.length > 0 ? (
+                      <div className="overflow-x-auto rounded-lg border border-gray-200">
+                        <table className="w-full min-w-180 border-collapse text-sm">
+                          <thead>
+                            <tr className="bg-[#ecfbfa] text-gray-700">
+                              <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                                Formula
+                              </th>
+                              <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                                Giá trị
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {compareActive.formulaValues.map((formula) => (
+                              <tr key={`active-${formula.code}`}>
+                                <td className="border border-gray-200 px-3 py-2 font-mono text-xs">
+                                  {formula.code}
+                                </td>
+                                <td className="border border-gray-200 px-3 py-2">
+                                  {formula.value == null
+                                    ? "-"
+                                    : typeof formula.value === "number"
+                                      ? formula.value.toLocaleString("vi-VN")
+                                      : String(formula.value)}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : null}
+                  </div>
+
+                  <div className="space-y-3 rounded-xl border border-gray-200 bg-white p-3">
+                    <h4 className="text-sm font-semibold text-gray-800">
+                      Draft Version
+                    </h4>
+
+                    <div className="overflow-x-auto rounded-lg border border-gray-200">
+                      <table className="w-full min-w-180 border-collapse text-sm">
+                        <thead>
+                          <tr className="bg-[#ecfbfa] text-gray-700">
+                            <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                              Chỉ tiêu
+                            </th>
+                            <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                              Giá trị
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr>
+                            <td className="border border-gray-200 px-3 py-2">
+                              Tổng số dòng
+                            </td>
+                            <td className="border border-gray-200 px-3 py-2 font-medium">
+                              {compareDraft.summary?.totalRows ?? 0}
+                            </td>
+                          </tr>
+                          <tr>
+                            <td className="border border-gray-200 px-3 py-2">
+                              Tổng doanh thu
+                            </td>
+                            <td className="border border-gray-200 px-3 py-2 font-medium">
+                              {compareDraft.summary?.totalRevenue == null
+                                ? "-"
+                                : Number(
+                                    compareDraft.summary.totalRevenue,
+                                  ).toLocaleString("vi-VN")}
+                            </td>
+                          </tr>
+                          <tr>
+                            <td className="border border-gray-200 px-3 py-2">
+                              Tổng chi phí
+                            </td>
+                            <td className="border border-gray-200 px-3 py-2 font-medium">
+                              {compareDraft.summary?.totalCost == null
+                                ? "-"
+                                : Number(
+                                    compareDraft.summary.totalCost,
+                                  ).toLocaleString("vi-VN")}
+                            </td>
+                          </tr>
+                          <tr>
+                            <td className="border border-gray-200 px-3 py-2">
+                              Tổng thuế
+                            </td>
+                            <td className="border border-gray-200 px-3 py-2 font-medium">
+                              {compareDraft.summary?.totalTax == null
+                                ? "-"
+                                : Number(
+                                    compareDraft.summary.totalTax,
+                                  ).toLocaleString("vi-VN")}
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {compareDraft.formulaValues.length > 0 ? (
+                      <div className="overflow-x-auto rounded-lg border border-gray-200">
+                        <table className="w-full min-w-180 border-collapse text-sm">
+                          <thead>
+                            <tr className="bg-[#ecfbfa] text-gray-700">
+                              <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                                Formula
+                              </th>
+                              <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                                Giá trị
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {compareDraft.formulaValues.map((formula) => (
+                              <tr key={`draft-${formula.code}`}>
+                                <td className="border border-gray-200 px-3 py-2 font-mono text-xs">
+                                  {formula.code}
+                                </td>
+                                <td className="border border-gray-200 px-3 py-2">
+                                  {formula.value == null
+                                    ? "-"
+                                    : typeof formula.value === "number"
+                                      ? formula.value.toLocaleString("vi-VN")
+                                      : String(formula.value)}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                  <div className="space-y-2">
+                    <h4 className="text-sm font-semibold text-gray-800">
+                      Active Rows
+                    </h4>
+                    <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
+                      <table className="w-full min-w-275 border-collapse text-sm">
+                        <thead>
+                          <tr className="bg-[#ecfbfa] text-gray-700">
+                            <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                              STT
+                            </th>
+                            <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                              Ngày tháng
+                            </th>
+                            <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                              Diễn giải
+                            </th>
+                            <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                              Số tiền
+                            </th>
+                            <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                              Business Type ID
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {compareActive.rowItems.length === 0 ? (
+                            <tr>
+                              <td
+                                className="border border-gray-200 px-3 py-4 text-center text-gray-500"
+                                colSpan={5}
+                              >
+                                Không có dòng dữ liệu.
+                              </td>
+                            </tr>
+                          ) : (
+                            compareActive.rowItems.map((row, index) => (
+                              <tr
+                                key={`active-row-${String(row.stt ?? index)}-${String(row.businessTypeId ?? "")}`}
+                              >
+                                <td className="border border-gray-200 px-3 py-2">
+                                  {String(row.stt ?? "-")}
+                                </td>
+                                <td className="border border-gray-200 px-3 py-2">
+                                  {String(row.ngay_thang ?? "-")}
+                                </td>
+                                <td className="border border-gray-200 px-3 py-2">
+                                  {String(row.dien_giai ?? "-")}
+                                </td>
+                                <td className="border border-gray-200 px-3 py-2">
+                                  {formatAmountValue(
+                                    resolveRowAmountValue(row),
+                                  )}
+                                </td>
+                                <td className="border border-gray-200 px-3 py-2 font-mono text-xs text-gray-600">
+                                  {String(row.businessTypeId ?? "-")}
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600">
+                      <span className="mr-4">
+                        Loaded:{" "}
+                        {compareActive.rowsMeta?.loadedCount ??
+                          compareActive.rowItems.length}
+                      </span>
+                      <span className="mr-4">
+                        Estimated Total:{" "}
+                        {compareActive.rowsMeta?.totalEstimated ??
+                          compareActive.rowItems.length}
+                      </span>
+                      <span>
+                        Next Cursor: {compareActive.rowsMeta?.nextCursor || "-"}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <h4 className="text-sm font-semibold text-gray-800">
+                      Draft Rows
+                    </h4>
+                    <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
+                      <table className="w-full min-w-275 border-collapse text-sm">
+                        <thead>
+                          <tr className="bg-[#ecfbfa] text-gray-700">
+                            <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                              STT
+                            </th>
+                            <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                              Ngày tháng
+                            </th>
+                            <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                              Diễn giải
+                            </th>
+                            <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                              Số tiền
+                            </th>
+                            <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                              Business Type ID
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {compareDraft.rowItems.length === 0 ? (
+                            <tr>
+                              <td
+                                className="border border-gray-200 px-3 py-4 text-center text-gray-500"
+                                colSpan={5}
+                              >
+                                Không có dòng dữ liệu.
+                              </td>
+                            </tr>
+                          ) : (
+                            compareDraft.rowItems.map((row, index) => (
+                              <tr
+                                key={`draft-row-${String(row.stt ?? index)}-${String(row.businessTypeId ?? "")}`}
+                              >
+                                <td className="border border-gray-200 px-3 py-2">
+                                  {String(row.stt ?? "-")}
+                                </td>
+                                <td className="border border-gray-200 px-3 py-2">
+                                  {String(row.ngay_thang ?? "-")}
+                                </td>
+                                <td className="border border-gray-200 px-3 py-2">
+                                  {String(row.dien_giai ?? "-")}
+                                </td>
+                                <td className="border border-gray-200 px-3 py-2">
+                                  {formatAmountValue(
+                                    resolveRowAmountValue(row),
+                                  )}
+                                </td>
+                                <td className="border border-gray-200 px-3 py-2 font-mono text-xs text-gray-600">
+                                  {String(row.businessTypeId ?? "-")}
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600">
+                      <span className="mr-4">
+                        Loaded:{" "}
+                        {compareDraft.rowsMeta?.loadedCount ??
+                          compareDraft.rowItems.length}
+                      </span>
+                      <span className="mr-4">
+                        Estimated Total:{" "}
+                        {compareDraft.rowsMeta?.totalEstimated ??
+                          compareDraft.rowItems.length}
+                      </span>
+                      <span>
+                        Next Cursor: {compareDraft.rowsMeta?.nextCursor || "-"}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-3 rounded-xl border border-gray-200 bg-white p-3">
+                  <h4 className="text-sm font-semibold text-gray-800">Diff</h4>
+
+                  {compareDiff.changedFormulas.length > 0 ? (
+                    <div className="flex flex-wrap gap-2">
+                      {compareDiff.changedFormulas.map((formulaCode) => (
+                        <span
+                          key={formulaCode}
+                          className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700"
+                        >
+                          {formulaCode}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-xs text-gray-500">
+                      Không có công thức thay đổi.
+                    </div>
+                  )}
+
+                  <div className="overflow-x-auto rounded-lg border border-gray-200">
+                    <table className="w-full min-w-180 border-collapse text-sm">
+                      <thead>
+                        <tr className="bg-[#ecfbfa] text-gray-700">
+                          <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                            Code
+                          </th>
+                          <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                            Before
+                          </th>
+                          <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                            After
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {compareDiff.valueChanges.length === 0 ? (
+                          <tr>
+                            <td
+                              className="border border-gray-200 px-3 py-4 text-center text-gray-500"
+                              colSpan={3}
+                            >
+                              Không có value changes.
+                            </td>
+                          </tr>
+                        ) : (
+                          compareDiff.valueChanges.map((item, index) => (
+                            <tr key={`${item.code || "diff"}-${index}`}>
+                              <td className="border border-gray-200 px-3 py-2 font-mono text-xs">
+                                {item.code || "-"}
+                              </td>
+                              <td className="border border-gray-200 px-3 py-2">
+                                {item.before == null
+                                  ? "-"
+                                  : typeof item.before === "number"
+                                    ? item.before.toLocaleString("vi-VN")
+                                    : String(item.before)}
+                              </td>
+                              <td className="border border-gray-200 px-3 py-2">
+                                {item.after == null
+                                  ? "-"
+                                  : typeof item.after === "number"
+                                    ? item.after.toLocaleString("vi-VN")
+                                    : String(item.after)}
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {activeTab === "preview" ? (
+        <Card className="rounded-xl border border-gray-200 bg-white shadow-sm">
+          <CardHeader>
+            <CardTitle>Template Preview</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+              <input
+                value={pvLoc}
+                onChange={(e) => setPvLoc(e.target.value)}
+                placeholder="Location ID"
+                className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+              />
+              <input
+                value={pvPer}
+                onChange={(e) => setPvPer(e.target.value)}
+                placeholder="Period ID"
+                className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+              />
+              <input
+                value={pvVer}
+                onChange={(e) => setPvVer(e.target.value)}
+                placeholder="Template Version ID"
+                className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+              />
+              <input
+                value={pvGrp}
+                onChange={(e) => setPvGrp(e.target.value)}
+                placeholder="Group"
+                className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+              />
+              <input
+                value={pvMeth}
+                onChange={(e) => setPvMeth(e.target.value)}
+                placeholder="Tax Method"
+                className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+              />
+              <input
+                value={pvRule}
+                onChange={(e) => setPvRule(e.target.value)}
+                placeholder="Ruleset ID"
+                className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+              />
+              <input
+                value={pvBatch}
+                onChange={(e) => setPvBatch(e.target.value)}
+                placeholder="Batch Size"
+                className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
               />
             </div>
+            <input
+              value={pvBiz}
+              onChange={(e) => setPvBiz(e.target.value)}
+              placeholder="BusinessTypeIds (comma separated GUIDs)"
+              className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+            />
+            {businessTypes.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {businessTypes.map((item: AccountingBusinessTypeSummary) => {
+                  const selected = pvBiz
+                    .split(",")
+                    .map((token) => token.trim())
+                    .filter(Boolean)
+                    .includes(item.businessTypeId);
+                  return (
+                    <button
+                      key={item.businessTypeId}
+                      type="button"
+                      onClick={() =>
+                        toggleBusinessTypeCsv(
+                          pvBiz,
+                          setPvBiz,
+                          item.businessTypeId,
+                        )
+                      }
+                      className={`rounded-full border px-3 py-1 text-xs transition ${
+                        selected
+                          ? "border-[#23C4C1]/40 bg-[#23C4C1]/10 text-[#15918f]"
+                          : "border-gray-200 bg-white text-gray-600 hover:border-[#23C4C1]/30 hover:bg-[#23C4C1]/5"
+                      }`}
+                    >
+                      {item.code} - {item.name}
+                    </button>
+                  );
+                })}
+              </div>
+            ) : null}
+            <Button
+              onClick={() => void runPreview()}
+              className="gap-2 bg-[#23C4C1] text-white hover:bg-[#1ea8a6]"
+            >
+              <Play className="h-4 w-4" />
+              Run Preview
+            </Button>
+
+            {!previewResult ? (
+              <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 px-4 py-6 text-center text-sm text-gray-500">
+                Chạy Preview để xem dữ liệu dạng sổ.
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="rounded-xl border border-gray-200 bg-white p-4">
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                    <h3 className="text-sm font-semibold text-gray-800">
+                      Mẫu sổ (Preview Data + Full Structure nếu có)
+                    </h3>
+                    <span className="text-xs text-gray-500">
+                      Version: {previewRenderIdentity.templateVersionId || "-"}
+                    </span>
+                  </div>
+
+                  {previewTemplateRows.length === 0 ? (
+                    <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 px-4 py-6 text-sm text-gray-500">
+                      Preview không có dòng dữ liệu để dựng mẫu sổ.
+                    </div>
+                  ) : previewRenderableColumns.length === 0 ? (
+                    <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 px-4 py-6 text-sm text-gray-500">
+                      Không suy luận được cột để dựng mẫu sổ từ preview data.
+                    </div>
+                  ) : (
+                    <>
+                      {!previewFullStructure ? (
+                        <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                          Chưa tải được full structure. Đang dùng auto columns
+                          từ preview data để render UI.
+                        </div>
+                      ) : null}
+                      {previewTemplateColumns.length === 0 ? (
+                        <div className="mb-3 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-700">
+                          Full structure không có field mappings. Đang dùng auto
+                          columns từ preview data.
+                        </div>
+                      ) : null}
+                      <BookTemplatePreview
+                        templateCode={previewRenderIdentity.templateCode}
+                        templateName={previewRenderIdentity.templateName}
+                        versionLabel={previewRenderIdentity.versionLabel}
+                        columns={previewRenderableColumns}
+                        rows={previewTemplateRows}
+                        rowDefinitions={previewTemplateRowDefinitions}
+                        referenceData={refData}
+                        summaryMeta={previewSummaryMeta}
+                      />
+                    </>
+                  )}
+                </div>
+
+                <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
+                  <table className="w-full min-w-180 border-collapse text-sm">
+                    <thead>
+                      <tr className="bg-[#ecfbfa] text-gray-700">
+                        <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                          Chỉ tiêu
+                        </th>
+                        <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                          Giá trị
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td className="border border-gray-200 px-3 py-2">
+                          Tổng số dòng
+                        </td>
+                        <td className="border border-gray-200 px-3 py-2 font-medium">
+                          {previewSummary?.totalRows ?? 0}
+                        </td>
+                      </tr>
+                      <tr>
+                        <td className="border border-gray-200 px-3 py-2">
+                          Tổng doanh thu
+                        </td>
+                        <td className="border border-gray-200 px-3 py-2 font-medium">
+                          {previewSummary?.totalRevenue == null
+                            ? "-"
+                            : Number(
+                                previewSummary.totalRevenue,
+                              ).toLocaleString("vi-VN")}
+                        </td>
+                      </tr>
+                      <tr>
+                        <td className="border border-gray-200 px-3 py-2">
+                          Tổng chi phí
+                        </td>
+                        <td className="border border-gray-200 px-3 py-2 font-medium">
+                          {previewSummary?.totalCost == null
+                            ? "-"
+                            : Number(previewSummary.totalCost).toLocaleString(
+                                "vi-VN",
+                              )}
+                        </td>
+                      </tr>
+                      <tr>
+                        <td className="border border-gray-200 px-3 py-2">
+                          Tổng thuế
+                        </td>
+                        <td className="border border-gray-200 px-3 py-2 font-medium">
+                          {previewSummary?.totalTax == null
+                            ? "-"
+                            : Number(previewSummary.totalTax).toLocaleString(
+                                "vi-VN",
+                              )}
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                {previewFormulaValues.length > 0 ? (
+                  <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
+                    <table className="w-full min-w-180 border-collapse text-sm">
+                      <thead>
+                        <tr className="bg-[#ecfbfa] text-gray-700">
+                          <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                            Formula
+                          </th>
+                          <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                            Giá trị
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {previewFormulaValues.map((formula) => (
+                          <tr key={formula.code}>
+                            <td className="border border-gray-200 px-3 py-2 font-mono text-xs">
+                              {formula.code}
+                            </td>
+                            <td className="border border-gray-200 px-3 py-2">
+                              {formula.value == null
+                                ? "-"
+                                : typeof formula.value === "number"
+                                  ? formula.value.toLocaleString("vi-VN")
+                                  : String(formula.value)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : null}
+
+                <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
+                  <table className="w-full min-w-275 border-collapse text-sm">
+                    <thead>
+                      <tr className="bg-[#ecfbfa] text-gray-700">
+                        <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                          Line Type
+                        </th>
+                        <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                          STT
+                        </th>
+                        <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                          Số hiệu
+                        </th>
+                        <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                          Ngày tháng
+                        </th>
+                        <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                          Diễn giải
+                        </th>
+                        <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                          Business Type ID
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {previewRowItems.length === 0 ? (
+                        <tr>
+                          <td
+                            className="border border-gray-200 px-3 py-4 text-center text-gray-500"
+                            colSpan={6}
+                          >
+                            Không có dòng dữ liệu.
+                          </td>
+                        </tr>
+                      ) : (
+                        previewRowItems.map((row, index) => (
+                          <tr
+                            key={`${String(row.stt ?? index)}-${String(row.businessTypeId ?? "")}`}
+                          >
+                            <td className="border border-gray-200 px-3 py-2">
+                              {String(row.lineType ?? "-")}
+                            </td>
+                            <td className="border border-gray-200 px-3 py-2">
+                              {String(row.stt ?? "-")}
+                            </td>
+                            <td className="border border-gray-200 px-3 py-2">
+                              {String(row.so_hieu ?? "-")}
+                            </td>
+                            <td className="border border-gray-200 px-3 py-2">
+                              {String(row.ngay_thang ?? "-")}
+                            </td>
+                            <td className="border border-gray-200 px-3 py-2">
+                              {String(row.dien_giai ?? "-")}
+                            </td>
+                            <td className="border border-gray-200 px-3 py-2 font-mono text-xs text-gray-600">
+                              {String(row.businessTypeId ?? "-")}
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600">
+                  <span className="mr-4">
+                    Loaded:{" "}
+                    {previewRowsMeta?.loadedCount ?? previewRowItems.length}
+                  </span>
+                  <span className="mr-4">
+                    Estimated Total:{" "}
+                    {previewRowsMeta?.totalEstimated ?? previewRowItems.length}
+                  </span>
+                  <span className="mr-4">
+                    Has More: {previewRowsMeta?.hasMore ? "Yes" : "No"}
+                  </span>
+                  <span>Next Cursor: {previewRowsMeta?.nextCursor || "-"}</span>
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
       ) : null}
@@ -2126,11 +4876,133 @@ export default function AdminAccountingClient() {
               <Play className="h-4 w-4" />
               Run Trace
             </Button>
-            <div className="max-h-80 overflow-auto rounded-xl border border-gray-200 bg-gray-50 p-4 font-mono text-xs text-gray-700">
-              <JsonTree
-                value={traceResult ?? { note: "Run trace to view execution" }}
-              />
-            </div>
+
+            {!traceResult ? (
+              <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 px-4 py-6 text-center text-sm text-gray-500">
+                Chạy Trace để xem các bước tính công thức dạng bảng.
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
+                  <table className="w-full min-w-180 border-collapse text-sm">
+                    <thead>
+                      <tr className="bg-[#ecfbfa] text-gray-700">
+                        <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                          Trường
+                        </th>
+                        <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                          Giá trị
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td className="border border-gray-200 px-3 py-2">
+                          Formula Code
+                        </td>
+                        <td className="border border-gray-200 px-3 py-2 font-mono text-xs">
+                          {traceOverview.formulaCode || "-"}
+                        </td>
+                      </tr>
+                      <tr>
+                        <td className="border border-gray-200 px-3 py-2">
+                          Formula Name
+                        </td>
+                        <td className="border border-gray-200 px-3 py-2">
+                          {traceOverview.formulaName || "-"}
+                        </td>
+                      </tr>
+                      <tr>
+                        <td className="border border-gray-200 px-3 py-2">
+                          Final Value
+                        </td>
+                        <td className="border border-gray-200 px-3 py-2 font-medium">
+                          {traceOverview.finalValue == null
+                            ? "-"
+                            : typeof traceOverview.finalValue === "number"
+                              ? traceOverview.finalValue.toLocaleString("vi-VN")
+                              : String(traceOverview.finalValue)}
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
+                  <table className="w-full min-w-275 border-collapse text-sm">
+                    <thead>
+                      <tr className="bg-[#ecfbfa] text-gray-700">
+                        <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                          Step
+                        </th>
+                        <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                          Node Type
+                        </th>
+                        <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                          Description
+                        </th>
+                        <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                          Resolved Value
+                        </th>
+                        <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                          Source
+                        </th>
+                        <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                          Debug
+                        </th>
+                        <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                          Children
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {traceOverview.traceItems.length === 0 ? (
+                        <tr>
+                          <td
+                            className="border border-gray-200 px-3 py-4 text-center text-gray-500"
+                            colSpan={7}
+                          >
+                            Không có trace steps.
+                          </td>
+                        </tr>
+                      ) : (
+                        traceOverview.traceItems.map((item, index) => (
+                          <tr
+                            key={`${item.step || index}-${item.nodeType || "node"}`}
+                          >
+                            <td className="border border-gray-200 px-3 py-2">
+                              {item.step || index + 1}
+                            </td>
+                            <td className="border border-gray-200 px-3 py-2">
+                              {item.nodeType || "-"}
+                            </td>
+                            <td className="border border-gray-200 px-3 py-2">
+                              {item.description || "-"}
+                            </td>
+                            <td className="border border-gray-200 px-3 py-2">
+                              {item.resolvedValue == null
+                                ? "-"
+                                : typeof item.resolvedValue === "number"
+                                  ? item.resolvedValue.toLocaleString("vi-VN")
+                                  : String(item.resolvedValue)}
+                            </td>
+                            <td className="border border-gray-200 px-3 py-2">
+                              {item.source || "-"}
+                            </td>
+                            <td className="border border-gray-200 px-3 py-2 text-xs text-gray-600">
+                              {item.debug}
+                            </td>
+                            <td className="border border-gray-200 px-3 py-2">
+                              {item.childrenCount}
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
       ) : null}
@@ -2144,13 +5016,47 @@ export default function AdminAccountingClient() {
             </Button>
           </CardHeader>
           <CardContent>
-            <div className="max-h-130 overflow-auto rounded-xl border border-gray-200 bg-gray-50 p-4 font-mono text-xs text-gray-700">
-              <JsonTree
-                value={
-                  Object.keys(refData).length ? refData : { note: "Click Load" }
-                }
-              />
-            </div>
+            {referenceRows.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 px-4 py-6 text-center text-sm text-gray-500">
+                Bấm Load để lấy danh sách enum.
+              </div>
+            ) : (
+              <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
+                <table className="w-full min-w-275 border-collapse text-sm">
+                  <thead>
+                    <tr className="bg-[#ecfbfa] text-gray-700">
+                      <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                        Enum Group
+                      </th>
+                      <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                        Count
+                      </th>
+                      <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                        Values Preview
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {referenceRows.map((row) => (
+                      <tr key={row.groupName}>
+                        <td className="border border-gray-200 px-3 py-2 font-mono text-xs">
+                          {row.groupName}
+                        </td>
+                        <td className="border border-gray-200 px-3 py-2">
+                          {row.count}
+                        </td>
+                        <td className="border border-gray-200 px-3 py-2 text-xs text-gray-700">
+                          {row.previewText}
+                          {row.remainingCount > 0
+                            ? ` ... (+${row.remainingCount})`
+                            : ""}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </CardContent>
         </Card>
       ) : null}
@@ -2168,11 +5074,68 @@ export default function AdminAccountingClient() {
             </Button>
           </CardHeader>
           <CardContent>
-            <div className="max-h-130 overflow-auto rounded-xl border border-gray-200 bg-gray-50 p-4 font-mono text-xs text-gray-700">
-              <JsonTree
-                value={schemas.length ? schemas : { note: "Click Load" }}
-              />
-            </div>
+            {schemaRows.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 px-4 py-6 text-center text-sm text-gray-500">
+                Bấm Load để lấy danh sách node schemas.
+              </div>
+            ) : (
+              <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
+                <table className="w-full min-w-275 border-collapse text-sm">
+                  <thead>
+                    <tr className="bg-[#ecfbfa] text-gray-700">
+                      <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                        Node Type
+                      </th>
+                      <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                        Name
+                      </th>
+                      <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                        Category
+                      </th>
+                      <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                        Result Type
+                      </th>
+                      <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                        Inputs
+                      </th>
+                      <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                        Fields
+                      </th>
+                      <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
+                        Description
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {schemaRows.map((row) => (
+                      <tr key={row.nodeType}>
+                        <td className="border border-gray-200 px-3 py-2 font-mono text-xs">
+                          {row.nodeType}
+                        </td>
+                        <td className="border border-gray-200 px-3 py-2">
+                          {row.name}
+                        </td>
+                        <td className="border border-gray-200 px-3 py-2">
+                          {row.category}
+                        </td>
+                        <td className="border border-gray-200 px-3 py-2">
+                          {row.resultType}
+                        </td>
+                        <td className="border border-gray-200 px-3 py-2">
+                          {row.inputCount}
+                        </td>
+                        <td className="border border-gray-200 px-3 py-2">
+                          {row.fieldCount}
+                        </td>
+                        <td className="border border-gray-200 px-3 py-2 text-xs text-gray-700">
+                          {row.description}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </CardContent>
         </Card>
       ) : null}

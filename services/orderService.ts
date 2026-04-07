@@ -6,10 +6,12 @@ import type {
   OrderRecord,
   OrderFilters,
   CreateOrderRequest,
+  CreateOrderResult,
   ConfirmOrderRequest,
   UpdateOrderRequest,
   CancelOrderRequest,
   CompleteOrderRequest,
+  AIDraftOrderData,
 } from "@/lib/types/order";
 
 type BackendOrderDetailDto = {
@@ -247,7 +249,7 @@ export async function getOrderDetail(
 
 export async function createOrder(
   data: CreateOrderRequest,
-): Promise<ApiResponse<OrderRecord>> {
+): Promise<ApiResponse<CreateOrderResult>> {
   const response = await authFetch("/api/orders", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -261,7 +263,17 @@ export async function createOrder(
     );
   }
 
-  return parseOrderFromActionResult(response);
+  const result = await parseApiResponse<BackendOrderActionResult>(response);
+  const order = result.data?.order;
+
+  return {
+    ...result,
+    data: {
+      requiresConfirmation: Boolean(result.data?.requiresConfirmation),
+      warnings: result.data?.warnings ?? [],
+      order: order ? mapOrderDtoToRecord(order) : null,
+    },
+  };
 }
 
 export async function updateOrder(
@@ -364,10 +376,10 @@ export async function completeOrder(
   const response = await authFetch(`/api/orders/${orderId}/complete`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ 
+    body: JSON.stringify({
       confirmLowStock: data.confirmLowStock ?? false,
       excessAmount: data.excessAmount,
-      excessDebtorId: data.excessDebtorId
+      excessDebtorId: data.excessDebtorId,
     }),
   });
 
@@ -379,4 +391,27 @@ export async function completeOrder(
   }
 
   return parseOrderFromActionResult(response);
+}
+
+export async function createAIDraftOrder(
+  locationId: number,
+  audioFile: File,
+): Promise<ApiResponse<AIDraftOrderData>> {
+  const formData = new FormData();
+  formData.append("audio", audioFile);
+  formData.append("locationId", String(locationId));
+
+  const response = await authFetch("/api/my-business/ai/draft-order", {
+    method: "POST",
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const result = await parseApiResponse<unknown>(response);
+    throw new Error(
+      result.message || `Failed to create AI draft order: ${response.status}`,
+    );
+  }
+
+  return parseApiResponse<AIDraftOrderData>(response);
 }

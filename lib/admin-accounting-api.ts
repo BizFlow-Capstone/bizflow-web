@@ -9,7 +9,7 @@ type ApiEnvelope<T> = {
 };
 
 const API_BASE_URL = (
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:5139"
+  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8080"
 ).replace(/\/$/, "");
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
@@ -41,6 +41,26 @@ export interface TemplateVersionPatchRequest {
   changeNotes?: string;
 }
 
+export interface CreateTemplateRequest {
+  templateCode: string;
+  name: string;
+  description?: string;
+  applicableGroups: number[];
+  applicableMethods?: string[];
+  dataSourceType:
+    | "revenues"
+    | "revenue_cost"
+    | "gl_entries"
+    | "stock_movements";
+  initialVersionLabel?: string;
+}
+
+export interface CreateTemplateVersionRequest {
+  versionLabel: string;
+  effectiveFrom?: string;
+  changeNotes?: string;
+}
+
 export interface FormulaPatchRequest {
   name?: string;
   description?: string;
@@ -52,6 +72,17 @@ export interface FormulaPatchRequest {
 export interface FormulaCloneRequest {
   newCode?: string;
   nameSuffix?: string;
+}
+
+export interface FormulaCreateRequest {
+  code: string;
+  name: string;
+  description?: string;
+  formulaType: string;
+  expressionJson: string;
+  resultDataType?: string;
+  roundingMode?: string;
+  roundingPrecision?: number;
 }
 
 export interface FieldMappingCreateRequest {
@@ -128,6 +159,17 @@ export interface CompareRequest {
   businessTypeIds: string[];
 }
 
+export interface PreviewRequest {
+  businessLocationId: number;
+  periodId: number;
+  templateVersionId: number;
+  groupNumber: number;
+  taxMethod: string;
+  rulesetId: number;
+  businessTypeIds: string[];
+  batchSize: number;
+}
+
 export interface MappableEntityCreateRequest {
   entityCode: string;
   displayName: string;
@@ -136,8 +178,11 @@ export interface MappableEntityCreateRequest {
 }
 
 export interface MappableEntityPatchRequest {
+  entityCode?: string;
   displayName?: string;
+  category?: string;
   description?: string;
+  isActive?: boolean;
 }
 
 export interface MappableFieldCreateRequest {
@@ -149,10 +194,44 @@ export interface MappableFieldCreateRequest {
 }
 
 export interface MappableFieldPatchRequest {
+  fieldCode?: string;
   displayName?: string;
   description?: string;
   dataType?: string;
   allowedAggregations?: string;
+  isActive?: boolean;
+}
+
+export interface BusinessTypeTaxRateDto {
+  rateId: number;
+  taxType: string;
+  taxRate: number;
+  description?: string;
+}
+
+export interface BusinessTypeWithRatesDto {
+  businessTypeId: string;
+  code: string;
+  name: string;
+  description?: string;
+  status: string;
+  taxRates: BusinessTypeTaxRateDto[];
+}
+
+export interface BusinessTypeMetadataPatchRequest {
+  name: string;
+  description: string;
+  status: string;
+}
+
+export interface BusinessTypeRateReplaceItem {
+  taxType: string;
+  taxRate: number;
+  description?: string;
+}
+
+export interface BusinessTypeTaxRatesReplaceRequest {
+  rates: BusinessTypeRateReplaceItem[];
 }
 
 export async function getTemplateVersionDetail(
@@ -160,6 +239,28 @@ export async function getTemplateVersionDetail(
 ): Promise<Record<string, unknown>> {
   return request<Record<string, unknown>>(
     `/api/admin/accounting/template-versions/${templateVersionId}`,
+  );
+}
+
+export async function createTemplate(
+  payload: CreateTemplateRequest,
+): Promise<Record<string, unknown>> {
+  return request<Record<string, unknown>>("/api/admin/accounting/templates", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function createTemplateVersion(
+  templateId: number,
+  payload: CreateTemplateVersionRequest,
+): Promise<Record<string, unknown>> {
+  return request<Record<string, unknown>>(
+    `/api/admin/accounting/templates/${templateId}/versions`,
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
   );
 }
 
@@ -255,6 +356,15 @@ export async function cloneFormula(
   );
 }
 
+export async function createFormula(
+  payload: FormulaCreateRequest,
+): Promise<Record<string, unknown>> {
+  return request<Record<string, unknown>>("/api/admin/accounting/formulas", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
 export async function createFieldMapping(
   templateVersionId: number,
   payload: FieldMappingCreateRequest,
@@ -328,6 +438,35 @@ export async function getMappableEntities(
   const params = activeOnly ? "?active=true" : "";
   return request<Record<string, unknown>[]>(
     `/api/admin/accounting/mappable-entities${params}`,
+  );
+}
+
+export async function getBusinessTypesWithRates(
+  rulesetId: number,
+): Promise<BusinessTypeWithRatesDto[]> {
+  return request<BusinessTypeWithRatesDto[]>(
+    `/api/admin/accounting/business-types?rulesetId=${rulesetId}`,
+  );
+}
+
+export async function updateBusinessTypeMetadata(
+  businessTypeId: string,
+  payload: BusinessTypeMetadataPatchRequest,
+): Promise<Record<string, unknown>> {
+  return request<Record<string, unknown>>(
+    `/api/admin/accounting/business-types/${businessTypeId}`,
+    { method: "PATCH", body: JSON.stringify(payload) },
+  );
+}
+
+export async function replaceBusinessTypeTaxRates(
+  rulesetId: number,
+  businessTypeId: string,
+  payload: BusinessTypeTaxRatesReplaceRequest,
+): Promise<Record<string, unknown>> {
+  return request<Record<string, unknown>>(
+    `/api/admin/accounting/rulesets/${rulesetId}/business-types/${businessTypeId}/tax-rates`,
+    { method: "PUT", body: JSON.stringify(payload) },
   );
 }
 
@@ -406,6 +545,15 @@ export async function runAccountingTrace(
 ): Promise<Record<string, unknown>> {
   return request<Record<string, unknown>>(
     "/api/admin/accounting/testing/trace",
+    { method: "POST", body: JSON.stringify(payload) },
+  );
+}
+
+export async function runAccountingPreview(
+  payload: PreviewRequest,
+): Promise<Record<string, unknown>> {
+  return request<Record<string, unknown>>(
+    "/api/admin/accounting/testing/preview",
     { method: "POST", body: JSON.stringify(payload) },
   );
 }

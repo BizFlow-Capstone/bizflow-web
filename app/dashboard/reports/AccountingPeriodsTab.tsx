@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   Calendar,
   Lock,
@@ -18,6 +19,8 @@ import {
   Info,
   X,
   Sparkles,
+  BookOpen,
+  Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -64,6 +67,8 @@ import {
   usePeriodAuditLogs,
   useOpeningBalanceSuggestion,
   useAccountingBooks,
+  useAccountingPeriodDetail,
+  useDeletePeriod,
 } from "@/hooks/useAccounting";
 import type {
   AccountingPeriod,
@@ -79,6 +84,14 @@ const fmt = new Intl.NumberFormat("vi-VN", {
 
 function fmtDate(d: string) {
   return new Date(d).toLocaleDateString("vi-VN");
+}
+
+function getTaxMethodLabel(method?: string) {
+  if (!method) return "";
+  if (method === "method_1") return "Cách 1";
+  if (method === "method_2") return "Cách 2";
+  if (method === "exempt") return "Miễn thuế";
+  return method;
 }
 
 // ─── Status Badge ─────────────────────────────────────────────────────────────
@@ -439,9 +452,9 @@ function CreatePeriodDialog({
                 <div className="space-y-1">
                   <p className="font-bold">Vui lòng nhập ngày trước</p>
                   <p className="text-amber-700 text-xs leading-relaxed">
-                    Hãy chọn <strong>"Từ ngày"</strong> cho kỳ tùy chỉnh này trước khi 
-                    nhấn lấy gợi ý hoặc nhập số dư. Việc này giúp hệ thống xác định 
-                    đúng điểm carry-over từ các kỳ trước đó.
+                    Hãy chọn <strong>"Từ ngày"</strong> cho kỳ tùy chỉnh này
+                    trước khi nhấn lấy gợi ý hoặc nhập số dư. Việc này giúp hệ
+                    thống xác định đúng điểm carry-over từ các kỳ trước đó.
                   </p>
                 </div>
               </div>
@@ -858,14 +871,21 @@ function PeriodDetailSheet({
   period,
   locationId,
   onClose,
+  onOpenBooks,
 }: {
   period: AccountingPeriod | null;
   locationId: number;
   onClose: () => void;
+  onOpenBooks: (periodId: number) => void;
 }) {
-  const { data: books, isLoading } = useAccountingBooks(
+  const { data: periodDetail } = useAccountingPeriodDetail(
     locationId,
     period?.periodId,
+  );
+  const displayPeriod = periodDetail ?? period;
+  const { data: books, isLoading } = useAccountingBooks(
+    locationId,
+    displayPeriod?.periodId,
   );
   return (
     <Sheet
@@ -878,32 +898,45 @@ function PeriodDetailSheet({
         <SheetHeader>
           <SheetTitle className="flex items-center gap-2">
             <Calendar className="w-5 h-5 text-[#23C4C1]" />
-            {period ? periodLabel(period) : "Chi tiết kỳ"}
+            {displayPeriod ? periodLabel(displayPeriod) : "Chi tiết kỳ"}
           </SheetTitle>
           <SheetDescription>
-            {period && <PeriodStatusBadge status={period.status} />}
+            {displayPeriod && (
+              <PeriodStatusBadge status={displayPeriod.status} />
+            )}
           </SheetDescription>
         </SheetHeader>
-        {period && (
+        {displayPeriod && (
           <div className="flex-1 overflow-y-auto mt-4 space-y-5">
+            <div className="flex justify-end">
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-8 text-xs border-[#23C4C1]/30 text-[#23C4C1] hover:bg-[#23C4C1]/5"
+                onClick={() => onOpenBooks(displayPeriod.periodId)}
+              >
+                <BookOpen className="w-3.5 h-3.5 mr-1" />
+                Xem sổ của kỳ này
+              </Button>
+            </div>
             {/* Overview cards */}
             <div className="grid grid-cols-2 gap-3">
               <InfoCard
                 icon={<Calendar className="w-4 h-4 text-gray-400" />}
                 label="Thời gian"
-                value={`${fmtDate(period.startDate)} – ${fmtDate(period.endDate)}`}
+                value={`${fmtDate(displayPeriod.startDate)} – ${fmtDate(displayPeriod.endDate)}`}
               />
               <InfoCard
                 icon={<Clock className="w-4 h-4 text-gray-400" />}
                 label="Ngày tạo"
-                value={fmtDate(period.createdAt)}
+                value={fmtDate(displayPeriod.createdAt)}
               />
               <InfoCard
                 icon={<Banknote className="w-4 h-4 text-emerald-500" />}
                 label="TM đầu kỳ"
                 value={
-                  period.openingCashBalance != null
-                    ? fmt.format(period.openingCashBalance)
+                  displayPeriod.openingCashBalance != null
+                    ? fmt.format(displayPeriod.openingCashBalance)
                     : "—"
                 }
               />
@@ -911,16 +944,16 @@ function PeriodDetailSheet({
                 icon={<Landmark className="w-4 h-4 text-blue-500" />}
                 label="NH đầu kỳ"
                 value={
-                  period.openingBankBalance != null
-                    ? fmt.format(period.openingBankBalance)
+                  displayPeriod.openingBankBalance != null
+                    ? fmt.format(displayPeriod.openingBankBalance)
                     : "—"
                 }
               />
-              {period.finalizedAt && (
+              {displayPeriod.finalizedAt && (
                 <InfoCard
                   icon={<Lock className="w-4 h-4 text-blue-400" />}
                   label="Ngày chốt"
-                  value={fmtDate(period.finalizedAt)}
+                  value={fmtDate(displayPeriod.finalizedAt)}
                 />
               )}
             </div>
@@ -950,8 +983,9 @@ function PeriodDetailSheet({
                             {book.templateCode}
                           </span>
                           {" · "}Nhóm {book.groupNumber}
-                          {book.taxMethod &&
-                            ` · ${book.taxMethod === "method_1" ? "Cách 1" : "Cách 2"}`}
+                          {book.taxMethod
+                            ? ` · ${getTaxMethodLabel(book.taxMethod)}`
+                            : ""}
                         </p>
                       </div>
                       <span
@@ -1004,7 +1038,10 @@ export default function AccountingPeriodsTab({
 }: {
   locationId: number;
 }) {
+  const router = useRouter();
   const { data: periods, isLoading } = useAccountingPeriods(locationId);
+  const { mutateAsync: deletePeriod, isPending: isDeletingPeriod } =
+    useDeletePeriod(locationId);
   const [filterStatus, setFilterStatus] = useState<FilterStatus>("all");
   const [showCreate, setShowCreate] = useState(false);
   const [finalizeTarget, setFinalizeTarget] = useState<AccountingPeriod | null>(
@@ -1017,6 +1054,33 @@ export default function AccountingPeriodsTab({
   const [detailTarget, setDetailTarget] = useState<AccountingPeriod | null>(
     null,
   );
+  const [deletingPeriodId, setDeletingPeriodId] = useState<number | null>(null);
+
+  const openBooksByPeriod = (periodId: number) => {
+    router.replace(`/dashboard/reports?tab=books&periodId=${periodId}`, {
+      scroll: false,
+    });
+  };
+
+  const handleDeletePeriod = async (period: AccountingPeriod) => {
+    const confirmed = window.confirm(
+      `Bạn có chắc muốn xóa kỳ ${periodLabel(period)}? Chỉ xóa được kỳ đang mở khi chưa có sổ hoặc phát sinh khóa sổ.`,
+    );
+    if (!confirmed) return;
+
+    try {
+      setDeletingPeriodId(period.periodId);
+      await deletePeriod(period.periodId);
+      if (detailTarget?.periodId === period.periodId) {
+        setDetailTarget(null);
+      }
+      alert("Xóa kỳ kế toán thành công!");
+    } catch (err: unknown) {
+      alert((err as Error).message || "Không thể xóa kỳ kế toán.");
+    } finally {
+      setDeletingPeriodId(null);
+    }
+  };
 
   const filtered = (periods ?? []).filter(
     (p) => filterStatus === "all" || p.status === filterStatus,
@@ -1179,6 +1243,15 @@ export default function AccountingPeriodsTab({
                         <History className="w-3.5 h-3.5 mr-0.5" />
                         Lịch sử
                       </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 px-2 text-xs text-[#23C4C1] hover:text-[#1aa8a5]"
+                        onClick={() => openBooksByPeriod(period.periodId)}
+                      >
+                        <BookOpen className="w-3.5 h-3.5 mr-0.5" />
+                        Xem sổ
+                      </Button>
                       {/* Finalize */}
                       {(period.status === "open" ||
                         period.status === "reopened") && (
@@ -1190,6 +1263,26 @@ export default function AccountingPeriodsTab({
                         >
                           <Lock className="w-3 h-3 mr-0.5" />
                           Chốt kỳ
+                        </Button>
+                      )}
+                      {period.status === "open" && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 px-2 text-xs border-rose-200 text-rose-600 hover:bg-rose-50 hover:border-rose-300"
+                          disabled={
+                            isDeletingPeriod &&
+                            deletingPeriodId === period.periodId
+                          }
+                          onClick={() => handleDeletePeriod(period)}
+                        >
+                          {isDeletingPeriod &&
+                          deletingPeriodId === period.periodId ? (
+                            <Loader2 className="w-3 h-3 mr-0.5 animate-spin" />
+                          ) : (
+                            <Trash2 className="w-3 h-3 mr-0.5" />
+                          )}
+                          Xóa kỳ
                         </Button>
                       )}
                       {/* Reopen */}
@@ -1238,6 +1331,7 @@ export default function AccountingPeriodsTab({
         period={detailTarget}
         locationId={locationId}
         onClose={() => setDetailTarget(null)}
+        onOpenBooks={openBooksByPeriod}
       />
     </div>
   );

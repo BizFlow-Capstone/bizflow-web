@@ -24,12 +24,20 @@ const API_BASE_URL = (
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:5139"
 ).replace(/\/$/, "");
 
+function encodePathSegment(value: string): string {
+  return encodeURIComponent(value);
+}
+
+function normalizeActionTypeForApi(value?: string | null): string | undefined {
+  if (value == null) return value ?? undefined;
+  const normalized = value.trim().toUpperCase();
+  if (normalized === "NONE") return "";
+  return value;
+}
+
 // ── Core request helper ──────────────────────────────────────────────────────
 
-async function request<T>(
-  path: string,
-  options: RequestInit = {},
-): Promise<T> {
+async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers ?? {});
   headers.set("Content-Type", "application/json");
 
@@ -51,24 +59,26 @@ async function request<T>(
 // ── Templates ────────────────────────────────────────────────────────────────
 
 export async function getTemplates(): Promise<NotificationTemplate[]> {
-  return request<NotificationTemplate[]>(
-    "/api/admin/notifications/templates",
-  );
+  return request<NotificationTemplate[]>("/api/admin/notifications/templates");
 }
 
 export async function upsertTemplate(
   eventCode: string,
   payload: Partial<NotificationTemplate>,
 ): Promise<NotificationTemplate> {
+  const normalizedDefaultActionType = normalizeActionTypeForApi(
+    payload.defaultActionType,
+  );
+
   return request<NotificationTemplate>(
-    `/api/admin/notifications/templates/${eventCode}`,
+    `/api/admin/notifications/templates/${encodePathSegment(eventCode)}`,
     {
       method: "PUT",
       body: JSON.stringify({
         notificationType: payload.notificationType,
         titleTemplate: payload.titleTemplate,
         contentTemplate: payload.contentTemplate,
-        defaultActionType: payload.defaultActionType,
+        defaultActionType: normalizedDefaultActionType,
         defaultTargetScreen: payload.defaultTargetScreen,
         defaultActionPayloadJson: payload.defaultActionPayloadJson,
         isActive: payload.isActive,
@@ -77,12 +87,20 @@ export async function upsertTemplate(
   );
 }
 
+export async function getTemplateByEventCode(
+  eventCode: string,
+): Promise<NotificationTemplate> {
+  return request<NotificationTemplate>(
+    `/api/admin/notifications/templates/${encodePathSegment(eventCode)}`,
+  );
+}
+
 export async function toggleTemplate(
   eventCode: string,
   isActive: boolean,
 ): Promise<NotificationTemplate> {
   return request<NotificationTemplate>(
-    `/api/admin/notifications/templates/${eventCode}/toggle`,
+    `/api/admin/notifications/templates/${encodePathSegment(eventCode)}/toggle`,
     {
       method: "PATCH",
       body: JSON.stringify({ isActive }),
@@ -103,9 +121,14 @@ export async function getActionCatalog(): Promise<NotificationActionCatalog> {
 export async function createDispatch(
   payload: CreateDispatchRequest,
 ): Promise<NotificationDispatch> {
+  const normalizedPayload: CreateDispatchRequest = {
+    ...payload,
+    actionType: normalizeActionTypeForApi(payload.actionType),
+  };
+
   return request<NotificationDispatch>("/api/admin/notifications/dispatches", {
     method: "POST",
-    body: JSON.stringify(payload),
+    body: JSON.stringify(normalizedPayload),
   });
 }
 

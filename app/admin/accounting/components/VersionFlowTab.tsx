@@ -1,14 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import type { ElementType, ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { ElementType } from "react";
 import {
   Activity,
   ArrowRight,
   CalendarDays,
   CheckCircle2,
-  ChevronDown,
-  ChevronRight,
+  CircleHelp,
   Copy,
   Database,
   FileText,
@@ -34,16 +33,23 @@ import {
 } from "@/components/ui/dialog";
 import {
   cloneFormula,
+  getAccountingOverview,
   getAccountingReference,
+  getBusinessTypesWithRates,
   getFormulaDetail,
   getMappableEntities,
   getMappableEntityDetail,
-  getTemplateVersionFormulas,
+  runAccountingPreview,
   updateFieldMappingForTesting,
   updateFormulaTesting,
   updateMappableEntity,
   updateRowDefinition,
 } from "@/lib/admin-accounting-api";
+import type {
+  CreateTemplateRequest,
+  CreateTemplateVersionRequest,
+} from "@/lib/admin-accounting-api";
+import BookTemplatePreview from "../../../../components/accounting/BookTemplatePreview";
 import type { VersionOption } from "./types";
 
 interface VersionTabProps {
@@ -53,12 +59,20 @@ interface VersionTabProps {
   tvNotes: string;
   tvResult: unknown;
   versionOptions: VersionOption[];
+  templateOptions: VersionOption[];
   setTvId: (value: string) => void;
   setTvLabel: (value: string) => void;
   setTvEffective: (value: string) => void;
   setTvNotes: (value: string) => void;
   onDetail: (rawId?: string) => Promise<void> | void;
   onFull: (rawId?: string) => Promise<void> | void;
+  onCreateTemplate: (
+    payload: CreateTemplateRequest,
+  ) => Promise<number | null> | number | null;
+  onCreateVersion: (
+    templateId: number,
+    payload: CreateTemplateVersionRequest,
+  ) => Promise<number | null> | number | null;
   onClone: () => Promise<void> | void;
   onActivate: () => Promise<void> | void;
   onDeactivate: () => Promise<void> | void;
@@ -112,6 +126,42 @@ interface EntityDraftState {
   description: string;
 }
 
+interface RowTaxRateHint {
+  taxType: string;
+  businessTypeCode: string;
+  businessTypeName: string;
+  taxRate: number;
+}
+
+type ReferenceHelpCategory =
+  | "fieldTypes"
+  | "sourceTypes"
+  | "aggregateTypes"
+  | "rowTypes"
+  | "positions"
+  | "sectionTypes"
+  | "taxTypes";
+
+interface ReferenceHelpItem {
+  value: string;
+  label: string;
+  description: string;
+  example: string;
+}
+
+const EMPTY_REFERENCE_HELP_CATALOG: Record<
+  ReferenceHelpCategory,
+  ReferenceHelpItem[]
+> = {
+  fieldTypes: [],
+  sourceTypes: [],
+  aggregateTypes: [],
+  rowTypes: [],
+  positions: [],
+  sectionTypes: [],
+  taxTypes: [],
+};
+
 const PRIMARY = "bg-[#23C4C1] text-white hover:bg-[#1ea8a6]";
 const wizardSteps = ["Template", "Mappings", "Rows", "Review"];
 
@@ -143,14 +193,6 @@ const SECTION_TYPE_LABELS: Record<string, string> = {
   per_product: "Theo san pham",
 };
 
-function toReadableToken(value: string): string {
-  return value
-    .split("_")
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
-}
-
 function parseVisibleFieldCodes(raw: string): string[] {
   if (!raw.trim()) return [];
   try {
@@ -167,38 +209,6 @@ function parseVisibleFieldCodes(raw: string): string[] {
   }
 }
 
-function renderS2aLabel(
-  row: {
-    rowType: string;
-    rowLabel: string;
-    taxType: string;
-  },
-  groupIndex: number,
-): string {
-  const baseLabel = row.rowLabel || ROW_TYPE_LABELS[row.rowType] || "";
-  const withGroup = baseLabel
-    .replaceAll("{groupIndex}", String(groupIndex))
-    .replaceAll("{businessTypeName}", "Nganh nghe ....");
-
-  if (row.rowType === "industry_header") {
-    return withGroup || `${groupIndex}. Nganh nghe ....`;
-  }
-  if (row.rowType === "data_placeholder") {
-    return "....";
-  }
-  if (row.rowType === "subtotal") {
-    return withGroup || `Tong cong (${groupIndex})`;
-  }
-  if (row.rowType === "tax_line") {
-    if (withGroup) return withGroup;
-    if (row.taxType === "VAT") return "Thue GTGT";
-    if (row.taxType === "PIT") return "Thue TNCN";
-    return "Dong thue";
-  }
-
-  return withGroup || "";
-}
-
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   return value as Record<string, unknown>;
@@ -212,7 +222,7 @@ function asArray(value: unknown): Array<Record<string, unknown>> {
   );
 }
 
-function asOptionList(value: unknown): Array<{ value: string; label: string }> {
+function asReferenceHelpList(value: unknown): ReferenceHelpItem[] {
   if (!Array.isArray(value)) return [];
 
   return value
@@ -222,9 +232,23 @@ function asOptionList(value: unknown): Array<{ value: string; label: string }> {
       const optionValue = String(record.value ?? "").trim();
       if (!optionValue) return null;
       const optionLabel = String(record.label ?? optionValue).trim();
-      return { value: optionValue, label: optionLabel || optionValue };
+      return {
+        value: optionValue,
+        label: optionLabel || optionValue,
+        description: String(record.description ?? "").trim(),
+        example: String(record.example ?? "").trim(),
+      };
     })
-    .filter((option): option is { value: string; label: string } => !!option);
+    .filter((option): option is ReferenceHelpItem => !!option);
+}
+
+function toOptionList(
+  options: ReferenceHelpItem[],
+): Array<{ value: string; label: string }> {
+  return options.map((option) => ({
+    value: option.value,
+    label: option.label,
+  }));
 }
 
 function asString(value: unknown): string {
@@ -254,6 +278,19 @@ function toNullableNumber(value: string): number | undefined {
   if (!value.trim()) return undefined;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function parseCsvStrings(value: string): string[] {
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function parseGroupNumbers(value: string): number[] {
+  return parseCsvStrings(value)
+    .map((item) => Number(item))
+    .filter((item) => Number.isInteger(item) && item > 0);
 }
 
 function deriveMappingDraft(
@@ -372,39 +409,74 @@ function MetricCard({
   );
 }
 
-function CollapsibleSection({
-  title,
-  icon: Icon,
-  count,
-  children,
+function ReferenceHelpLabel({
+  label,
+  items,
 }: {
-  title: string;
-  icon: ElementType;
-  count: number;
-  children: ReactNode;
+  label: string;
+  items: ReferenceHelpItem[];
 }) {
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(false);
+  const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleMouseEnter = () => {
+    if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
+    hoverTimerRef.current = setTimeout(() => {
+      setOpen(true);
+      hoverTimerRef.current = null;
+    }, 300);
+  };
+
+  const handleMouseLeave = () => {
+    if (hoverTimerRef.current) {
+      clearTimeout(hoverTimerRef.current);
+      hoverTimerRef.current = null;
+    }
+    setOpen(false);
+  };
 
   return (
-    <Card>
+    <div className="relative inline-flex items-center gap-1">
+      <label className="block text-xs font-medium text-gray-600">{label}</label>
       <button
         type="button"
-        onClick={() => setOpen((prev) => !prev)}
-        className="flex w-full items-center gap-2 px-5 py-4 text-left text-sm font-medium text-gray-800 hover:bg-gray-50"
+        // title={`Giải thích ${label}`}
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
+        onFocus={handleMouseEnter}
+        onBlur={handleMouseLeave}
+        className="inline-flex h-4 w-4 items-center justify-center rounded-full text-[#15918f] transition hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#23C4C1]/60"
       >
-        {open ? (
-          <ChevronDown className="h-4 w-4" />
-        ) : (
-          <ChevronRight className="h-4 w-4" />
-        )}
-        <Icon className="h-4 w-4 text-[#15918f]" />
-        {title}
-        <Badge variant="secondary" className="ml-auto text-xs">
-          {count}
-        </Badge>
+        <CircleHelp className="h-3.5 w-3.5" />
       </button>
-      {open ? <div className="border-t">{children}</div> : null}
-    </Card>
+
+      {open ? (
+        <div className="pointer-events-none absolute left-0 top-full z-50 mt-1 w-80 rounded-md bg-white px-3 py-2 text-[11px] leading-relaxed text-gray-700 shadow-lg ring-1 ring-[#23C4C1]/35">
+          {items.length === 0 ? (
+            <p className="text-gray-500">Chưa có reference cho trường này.</p>
+          ) : (
+            <ul className="list-disc space-y-1 pl-4 marker:text-[#15918f]">
+              {items.map((item) => {
+                const description = item.description
+                  ? `: ${item.description}`
+                  : "";
+                const example = item.example ? ` (vd: ${item.example})` : "";
+                return (
+                  <li key={item.value}>
+                    <span className="font-semibold text-[#0f766e]">
+                      {item.value}
+                    </span>{" "}
+                    - {item.label}
+                    {description}
+                    {example}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -433,6 +505,69 @@ export default function VersionTab(props: VersionTabProps) {
   const isLoaded = hasResult && templateVersionId !== null;
   const isDraft = isLoaded && isActive === false;
   const isActiveVersion = isLoaded && isActive === true;
+
+  const sampleBookColumns = useMemo(() => {
+    return [...fieldMappings]
+      .sort((a, b) => {
+        const aSort = asNumber(a.sortOrder) ?? Number.MAX_SAFE_INTEGER;
+        const bSort = asNumber(b.sortOrder) ?? Number.MAX_SAFE_INTEGER;
+        return aSort - bSort;
+      })
+      .map((mapping) => ({
+        fieldCode: asString(mapping.fieldCode),
+        label: asString(mapping.fieldLabel) || asString(mapping.fieldCode),
+        fieldType: asString(mapping.fieldType) || "text",
+        exportColumn: asString(mapping.exportColumn),
+      }))
+      .filter((column) => column.fieldCode);
+  }, [fieldMappings]);
+
+  const sampleBookRows = useMemo(() => {
+    return [...rowDefinitions]
+      .sort((a, b) => {
+        const aSort = asNumber(a.sortOrder) ?? Number.MAX_SAFE_INTEGER;
+        const bSort = asNumber(b.sortOrder) ?? Number.MAX_SAFE_INTEGER;
+        return aSort - bSort;
+      })
+      .map((row) => ({
+        ...row,
+        rowType: asString(row.rowType),
+        rowLabel: asString(row.rowLabel),
+        position: asString(row.position),
+        sortOrder: asNumber(row.sortOrder) ?? 0,
+      }));
+  }, [rowDefinitions]);
+
+  const [renderPreviewResult, setRenderPreviewResult] = useState<Record<
+    string,
+    unknown
+  > | null>(null);
+  const [renderPreviewBusy, setRenderPreviewBusy] = useState(false);
+  const [renderPreviewError, setRenderPreviewError] = useState("");
+
+  const renderPreviewSummaryMeta = useMemo(() => {
+    const root = asRecord(renderPreviewResult);
+    return asRecord(root?.summary);
+  }, [renderPreviewResult]);
+
+  const renderPreviewRows = useMemo(() => {
+    const root = asRecord(renderPreviewResult);
+    const rows = asRecord(root?.rows);
+    return asArray(rows?.items).map((row) => ({
+      ...row,
+      rowType: asString(row.rowType || row.lineType) || "data",
+    }));
+  }, [renderPreviewResult]);
+
+  const renderPreviewFormulaValues = useMemo(() => {
+    const summary = renderPreviewSummaryMeta;
+    const formulaValues = asRecord(summary?.formulaValues);
+    if (!formulaValues) return [];
+    return Object.entries(formulaValues).map(([code, value]) => ({
+      code,
+      value,
+    }));
+  }, [renderPreviewSummaryMeta]);
 
   const linkedFormulaIds = useMemo(() => {
     const ids = new Set<number>();
@@ -479,6 +614,27 @@ export default function VersionTab(props: VersionTabProps) {
   const [wizardError, setWizardError] = useState("");
   const [previewLoadedForVersionId, setPreviewLoadedForVersionId] =
     useState("");
+  const [createTemplateModalOpen, setCreateTemplateModalOpen] = useState(false);
+  const [createVersionModalOpen, setCreateVersionModalOpen] = useState(false);
+  const [createTemplateBusy, setCreateTemplateBusy] = useState(false);
+  const [createVersionBusy, setCreateVersionBusy] = useState(false);
+  const [createTemplateError, setCreateTemplateError] = useState("");
+  const [createVersionError, setCreateVersionError] = useState("");
+  const [createTemplateForm, setCreateTemplateForm] = useState({
+    templateCode: "",
+    name: "",
+    description: "",
+    applicableGroups: "1",
+    applicableMethods: "method_1",
+    dataSourceType: "revenues",
+    initialVersionLabel: "v1-draft",
+  });
+  const [createVersionForm, setCreateVersionForm] = useState({
+    templateId: "",
+    versionLabel: "",
+    effectiveFrom: "",
+    changeNotes: "",
+  });
   const [mappingFieldTypeOptions, setMappingFieldTypeOptions] = useState<
     Array<{ value: string; label: string }>
   >([
@@ -507,6 +663,44 @@ export default function VersionTab(props: VersionTabProps) {
   const [mappingEntityFieldOptions, setMappingEntityFieldOptions] = useState<
     Array<{ value: string; label: string }>
   >([]);
+  const [rowTypeOptions, setRowTypeOptions] = useState<
+    Array<{ value: string; label: string }>
+  >(
+    Object.entries(ROW_TYPE_LABELS).map(([value, label]) => ({
+      value,
+      label,
+    })),
+  );
+  const [rowPositionOptions, setRowPositionOptions] = useState<
+    Array<{ value: string; label: string }>
+  >(
+    Object.entries(POSITION_LABELS).map(([value, label]) => ({
+      value,
+      label,
+    })),
+  );
+  const [rowSectionTypeOptions, setRowSectionTypeOptions] = useState<
+    Array<{ value: string; label: string }>
+  >(
+    Object.entries(SECTION_TYPE_LABELS).map(([value, label]) => ({
+      value,
+      label,
+    })),
+  );
+  const [rowTaxTypeOptions, setRowTaxTypeOptions] = useState<
+    Array<{ value: string; label: string }>
+  >([
+    { value: "VAT", label: "VAT" },
+    { value: "PIT_METHOD_1", label: "PIT_METHOD_1" },
+  ]);
+  const [rowTaxRateHints, setRowTaxRateHints] = useState<RowTaxRateHint[]>([]);
+  const [referenceHelpCatalog, setReferenceHelpCatalog] = useState<
+    Record<ReferenceHelpCategory, ReferenceHelpItem[]>
+  >(EMPTY_REFERENCE_HELP_CATALOG);
+  const [previewReferenceData, setPreviewReferenceData] = useState<Record<
+    string,
+    unknown
+  > | null>(null);
 
   const [linkedFormulas, setLinkedFormulas] = useState<
     Array<Record<string, unknown>>
@@ -552,18 +746,18 @@ export default function VersionTab(props: VersionTabProps) {
     [linkedEntities, selectedEntityId],
   );
 
-  const reviewColumns = useMemo(() => {
-    return [...fieldMappings]
-      .sort((a, b) => {
-        const aSort = asNumber(a.sortOrder) ?? Number.MAX_SAFE_INTEGER;
-        const bSort = asNumber(b.sortOrder) ?? Number.MAX_SAFE_INTEGER;
-        return aSort - bSort;
+  const rowVisibleFieldOptions = useMemo(() => {
+    return fieldMappings
+      .map((mapping) => {
+        const fieldCode = asString(mapping.fieldCode).trim();
+        if (!fieldCode) return null;
+        const fieldLabel = asString(mapping.fieldLabel).trim();
+        return {
+          value: fieldCode,
+          label: fieldLabel ? `${fieldCode} - ${fieldLabel}` : fieldCode,
+        };
       })
-      .map((mapping) => ({
-        fieldCode: asString(mapping.fieldCode),
-        fieldLabel: asString(mapping.fieldLabel) || asString(mapping.fieldCode),
-        fieldType: asString(mapping.fieldType),
-      }));
+      .filter((option): option is { value: string; label: string } => !!option);
   }, [fieldMappings]);
 
   const reviewRows = useMemo(() => {
@@ -591,179 +785,6 @@ export default function VersionTab(props: VersionTabProps) {
   const normalizedTemplateCode = templateCode.trim().toLowerCase();
   const isS2aTemplate = normalizedTemplateCode === "s2a";
 
-  const orderedReviewRows = useMemo(() => {
-    const positionWeight: Record<string, number> = {
-      start_of_book: 0,
-      per_section: 1,
-      per_group: 2,
-      end_of_book: 3,
-    };
-
-    return [...reviewRows].sort((a, b) => {
-      const weightDiff =
-        (positionWeight[a.position] ?? 9) - (positionWeight[b.position] ?? 9);
-      if (weightDiff !== 0) return weightDiff;
-
-      if (a.position === "per_section") {
-        const sectionDiff = a.sectionType.localeCompare(b.sectionType);
-        if (sectionDiff !== 0) return sectionDiff;
-      }
-
-      return a.sortOrder - b.sortOrder;
-    });
-  }, [reviewRows]);
-
-  const previewColumns = useMemo(
-    () =>
-      reviewColumns.length
-        ? reviewColumns
-        : [
-            { fieldCode: "col_1", fieldLabel: "Cot 1", fieldType: "text" },
-            { fieldCode: "col_2", fieldLabel: "Cot 2", fieldType: "text" },
-            {
-              fieldCode: "col_3",
-              fieldLabel: "Cot 3",
-              fieldType: "decimal",
-            },
-          ],
-    [reviewColumns],
-  );
-
-  const displayColumns = useMemo(() => {
-    if (!isS2aTemplate) return previewColumns;
-
-    return [
-      { fieldCode: "ngay_thang", fieldLabel: "Ngay thang", fieldType: "date" },
-      { fieldCode: "dien_giai", fieldLabel: "Dien giai", fieldType: "text" },
-      { fieldCode: "so_tien", fieldLabel: "So tien", fieldType: "decimal" },
-    ];
-  }, [isS2aTemplate, previewColumns]);
-
-  const startRows = orderedReviewRows.filter(
-    (row) => row.position === "start_of_book",
-  );
-  const perGroupRows = orderedReviewRows.filter(
-    (row) => row.position === "per_group",
-  );
-  const endRows = orderedReviewRows.filter(
-    (row) => row.position === "end_of_book",
-  );
-
-  const perSectionGroups = useMemo(() => {
-    const groups = new Map<string, typeof orderedReviewRows>();
-    orderedReviewRows
-      .filter((row) => row.position === "per_section")
-      .forEach((row) => {
-        const sectionKey = row.sectionType || "default_section";
-        const bucket = groups.get(sectionKey) ?? [];
-        bucket.push(row);
-        groups.set(sectionKey, bucket);
-      });
-    return groups;
-  }, [orderedReviewRows]);
-
-  const lastColumnIndex = Math.max(displayColumns.length - 1, 0);
-  const labelColumnCode =
-    isS2aTemplate && displayColumns.some((col) => col.fieldCode === "dien_giai")
-      ? "dien_giai"
-      : displayColumns[Math.max(lastColumnIndex - 1, 0)]?.fieldCode || "";
-  const metaColumnCode =
-    isS2aTemplate && displayColumns.some((col) => col.fieldCode === "so_tien")
-      ? "so_tien"
-      : displayColumns[lastColumnIndex]?.fieldCode || "";
-
-  const s2aPerGroupRows = useMemo(
-    () =>
-      perGroupRows
-        .filter((row) =>
-          [
-            "industry_header",
-            "data_placeholder",
-            "subtotal",
-            "tax_line",
-          ].includes(row.rowType),
-        )
-        .sort((a, b) => a.sortOrder - b.sortOrder),
-    [perGroupRows],
-  );
-
-  const s2aEndRows = useMemo(() => {
-    const normalized = [...endRows].sort((a, b) => a.sortOrder - b.sortOrder);
-    const hasVat = normalized.some((row) => row.taxType === "VAT");
-    const hasPit = normalized.some((row) => row.taxType === "PIT");
-    const hasCombined = normalized.some(
-      (row) => row.rowLabel.trim().toLowerCase() === "tong cong = gtgt + tncn",
-    );
-
-    if (hasVat && hasPit && !hasCombined) {
-      normalized.push({
-        rowDefId: null,
-        rowType: "grand_total",
-        rowLabel: "Tong cong = GTGT + TNCN",
-        position: "end_of_book",
-        sortOrder: 999,
-        sectionType: "",
-        taxType: "",
-        formulaId: null,
-        groupByField: "",
-        visibleFieldCodes: "",
-      });
-    }
-    return normalized;
-  }, [endRows]);
-
-  const s2aDataPlaceholderCount = useMemo(() => {
-    const placeholder = s2aPerGroupRows.find(
-      (row) => row.rowType === "data_placeholder",
-    );
-    return placeholder ? 6 : 0;
-  }, [s2aPerGroupRows]);
-
-  function renderTemplateLikeRow(
-    row: (typeof orderedReviewRows)[number],
-    key: string,
-  ) {
-    const visibleCodes = parseVisibleFieldCodes(row.visibleFieldCodes);
-    const metaBadges = [
-      row.sectionType
-        ? `Section: ${SECTION_TYPE_LABELS[row.sectionType] ?? toReadableToken(row.sectionType)}`
-        : "",
-      row.taxType ? `Tax: ${row.taxType}` : "",
-      row.groupByField ? `GroupBy: ${row.groupByField}` : "",
-      row.formulaId !== null ? `Formula #${row.formulaId}` : "",
-      visibleCodes.length ? `Visible: ${visibleCodes.join(", ")}` : "",
-    ].filter(Boolean);
-
-    const label =
-      row.rowLabel ||
-      ROW_TYPE_LABELS[row.rowType] ||
-      toReadableToken(row.rowType);
-
-    return (
-      <tr key={key}>
-        {displayColumns.map((col) => {
-          const isLabelCell = col.fieldCode === labelColumnCode;
-          const isMetaCell = col.fieldCode === metaColumnCode;
-          return (
-            <td
-              key={`${key}-${col.fieldCode}`}
-              className="h-9 border border-gray-700 px-2 py-1 align-top"
-            >
-              {isLabelCell ? (
-                <div className="font-semibold text-gray-900">{label}</div>
-              ) : null}
-              {isMetaCell && metaBadges.length ? (
-                <div className="text-[11px] text-gray-600">
-                  {metaBadges.join(" | ")}
-                </div>
-              ) : null}
-            </td>
-          );
-        })}
-      </tr>
-    );
-  }
-
   const [mappingDraft, setMappingDraft] = useState<MappingDraftState>(
     deriveMappingDraft(null),
   );
@@ -774,6 +795,23 @@ export default function VersionTab(props: VersionTabProps) {
   const [entityDraft, setEntityDraft] = useState<EntityDraftState>(
     deriveEntityDraft(null),
   );
+
+  const selectedRowTaxRateHints = useMemo(() => {
+    const taxType = rowDraft.taxType.trim().toUpperCase();
+    if (!taxType) return rowTaxRateHints;
+    return rowTaxRateHints.filter((item) => item.taxType === taxType);
+  }, [rowDraft.taxType, rowTaxRateHints]);
+
+  useEffect(() => {
+    if (createVersionForm.templateId) return;
+    const firstTemplateId = props.templateOptions[0]?.value;
+    if (!firstTemplateId) return;
+
+    setCreateVersionForm((prev) => ({
+      ...prev,
+      templateId: firstTemplateId,
+    }));
+  }, [createVersionForm.templateId, props.templateOptions]);
 
   useEffect(() => {
     const nextMappingId = asNumber(fieldMappings[0]?.mappingId);
@@ -827,13 +865,15 @@ export default function VersionTab(props: VersionTabProps) {
       try {
         const versionId = toNullableNumber(selectedVersionId);
         if (!versionId) return;
+        const rulesetId = asNumber(result?.rulesetId) ?? 1;
 
         const [
           formulaResults,
           entityResults,
-          versionFormulas,
+          overview,
           entities,
           reference,
+          businessTypeRates,
         ] = await Promise.all([
           Promise.all(
             linkedFormulaIds.map((formulaId) => getFormulaDetail(formulaId)),
@@ -843,11 +883,14 @@ export default function VersionTab(props: VersionTabProps) {
               getMappableEntityDetail(entityId),
             ),
           ),
-          getTemplateVersionFormulas(versionId),
+          getAccountingOverview(),
           getMappableEntities(true),
           getAccountingReference(),
+          getBusinessTypesWithRates(rulesetId).catch(() => []),
         ]);
         if (disposed) return;
+
+        setPreviewReferenceData(reference as Record<string, unknown>);
 
         setLinkedFormulas(formulaResults);
         setLinkedEntities(entityResults);
@@ -855,7 +898,7 @@ export default function VersionTab(props: VersionTabProps) {
         setSelectedEntityId(asNumber(entityResults[0]?.entityId));
 
         setMappingFormulaOptions(
-          versionFormulas
+          overview.formulas
             .map((formula) => {
               const formulaId = String(formula.formulaId ?? "").trim();
               if (!formulaId) return null;
@@ -889,19 +932,88 @@ export default function VersionTab(props: VersionTabProps) {
             ),
         );
 
-        const fieldTypes = asOptionList(reference.fieldTypes);
-        if (fieldTypes.length > 0) setMappingFieldTypeOptions(fieldTypes);
+        const fieldTypeReferences = asReferenceHelpList(reference.fieldTypes);
+        if (fieldTypeReferences.length > 0) {
+          setMappingFieldTypeOptions(toOptionList(fieldTypeReferences));
+        }
 
-        const sourceTypes = asOptionList(reference.sourceTypes);
-        if (sourceTypes.length > 0) setMappingSourceTypeOptions(sourceTypes);
+        const sourceTypeReferences = asReferenceHelpList(reference.sourceTypes);
+        if (sourceTypeReferences.length > 0) {
+          setMappingSourceTypeOptions(toOptionList(sourceTypeReferences));
+        }
 
-        const aggregationTypes = asOptionList(reference.aggregateTypes);
-        if (aggregationTypes.length > 0) {
+        const aggregateTypeReferences = asReferenceHelpList(
+          reference.aggregateTypes,
+        );
+        if (aggregateTypeReferences.length > 0) {
           setMappingAggregationOptions([
             { value: "none", label: "none" },
-            ...aggregationTypes,
+            ...toOptionList(aggregateTypeReferences),
           ]);
         }
+
+        const rowTypeReferences = asReferenceHelpList(reference.rowTypes);
+        if (rowTypeReferences.length > 0) {
+          setRowTypeOptions(toOptionList(rowTypeReferences));
+        }
+
+        const positionReferences = asReferenceHelpList(reference.positions);
+        if (positionReferences.length > 0) {
+          setRowPositionOptions(toOptionList(positionReferences));
+        }
+
+        const sectionTypeReferences = asReferenceHelpList(
+          reference.sectionTypes,
+        );
+        if (sectionTypeReferences.length > 0) {
+          setRowSectionTypeOptions(toOptionList(sectionTypeReferences));
+        }
+
+        const taxTypeReferences = asReferenceHelpList(reference.taxTypes);
+        const taxTypesFromRates = businessTypeRates
+          .flatMap((item) => asArray(item.taxRates))
+          .map((rate) => asString(rate.taxType).trim().toUpperCase())
+          .filter(Boolean);
+        const mergedTaxTypes = Array.from(
+          new Set([
+            ...taxTypeReferences.map((item) => item.value.toUpperCase()),
+            ...taxTypesFromRates,
+          ]),
+        ).map((value) => {
+          const refMatch = taxTypeReferences.find(
+            (item) => item.value.toUpperCase() === value,
+          );
+          return {
+            value,
+            label: refMatch?.label || value,
+            description: refMatch?.description || "",
+            example: refMatch?.example || "",
+          };
+        });
+        if (mergedTaxTypes.length > 0) {
+          setRowTaxTypeOptions(toOptionList(mergedTaxTypes));
+        }
+
+        setReferenceHelpCatalog({
+          fieldTypes: fieldTypeReferences,
+          sourceTypes: sourceTypeReferences,
+          aggregateTypes: aggregateTypeReferences,
+          rowTypes: rowTypeReferences,
+          positions: positionReferences,
+          sectionTypes: sectionTypeReferences,
+          taxTypes: mergedTaxTypes,
+        });
+
+        setRowTaxRateHints(
+          businessTypeRates.flatMap((businessType) =>
+            asArray(businessType.taxRates).map((rate) => ({
+              taxType: asString(rate.taxType).trim().toUpperCase(),
+              businessTypeCode: asString(businessType.code),
+              businessTypeName: asString(businessType.name),
+              taxRate: asNumber(rate.taxRate) ?? 0,
+            })),
+          ),
+        );
       } catch (error) {
         if (!disposed) {
           setWizardError(
@@ -928,6 +1040,34 @@ export default function VersionTab(props: VersionTabProps) {
     linkedEntityIdsKey,
     selectedVersionId,
   ]);
+
+  useEffect(() => {
+    if (!selectedVersionId) {
+      setPreviewReferenceData(null);
+      return;
+    }
+
+    let disposed = false;
+
+    async function loadReferenceForPreview() {
+      try {
+        const reference = await getAccountingReference();
+        if (!disposed) {
+          setPreviewReferenceData(reference as Record<string, unknown>);
+        }
+      } catch {
+        if (!disposed) {
+          setPreviewReferenceData(null);
+        }
+      }
+    }
+
+    void loadReferenceForPreview();
+
+    return () => {
+      disposed = true;
+    };
+  }, [selectedVersionId]);
 
   useEffect(() => {
     const entityId = toNullableNumber(mappingDraft.sourceEntityId);
@@ -977,8 +1117,93 @@ export default function VersionTab(props: VersionTabProps) {
   }, [templateVersionId]);
 
   async function refreshCurrentStructure() {
-    await loadDetail(selectedVersionId);
+    if (!selectedVersionId) return;
+    await loadFullStructure(selectedVersionId);
+    setPreviewLoadedForVersionId(selectedVersionId);
   }
+
+  useEffect(() => {
+    if (!selectedVersionId || previewLoadedForVersionId === selectedVersionId) {
+      return;
+    }
+
+    let disposed = false;
+
+    async function loadMainPreviewStructure() {
+      try {
+        await loadFullStructure(selectedVersionId);
+        if (!disposed) {
+          setPreviewLoadedForVersionId(selectedVersionId);
+        }
+      } catch {
+        // Keep currently loaded detail data if full structure call fails.
+      }
+    }
+
+    void loadMainPreviewStructure();
+
+    return () => {
+      disposed = true;
+    };
+  }, [loadFullStructure, previewLoadedForVersionId, selectedVersionId]);
+
+  useEffect(() => {
+    const versionId = toNullableNumber(selectedVersionId);
+    if (!versionId) {
+      setRenderPreviewResult(null);
+      setRenderPreviewError("");
+      return;
+    }
+    const resolvedVersionId = Number(versionId);
+
+    let disposed = false;
+
+    async function loadRenderPreviewData() {
+      setRenderPreviewBusy(true);
+      setRenderPreviewError("");
+      try {
+        const rulesetId = asNumber(result?.rulesetId) ?? 1;
+        const businessTypeIds = (
+          await getBusinessTypesWithRates(rulesetId).catch(() => [])
+        )
+          .map((item) => String(item.businessTypeId ?? "").trim())
+          .filter(Boolean)
+          .slice(0, 5);
+
+        const preview = await runAccountingPreview({
+          businessLocationId: 6,
+          periodId: 1,
+          templateVersionId: resolvedVersionId,
+          groupNumber: 1,
+          taxMethod: "method_1",
+          rulesetId,
+          businessTypeIds,
+          batchSize: 10,
+        });
+
+        if (!disposed) {
+          setRenderPreviewResult(preview);
+        }
+      } catch (error) {
+        if (!disposed) {
+          setRenderPreviewResult(null);
+          setRenderPreviewError(
+            error instanceof Error
+              ? error.message
+              : "Không tải được preview data.",
+          );
+        }
+      } finally {
+        if (!disposed) setRenderPreviewBusy(false);
+      }
+    }
+
+    void loadRenderPreviewData();
+
+    return () => {
+      disposed = true;
+    };
+  }, [selectedVersionId, result?.rulesetId]);
 
   useEffect(() => {
     if (!wizardOpen || wizardStep !== 3 || !selectedVersionId) return;
@@ -1019,6 +1244,106 @@ export default function VersionTab(props: VersionTabProps) {
     wizardOpen,
     wizardStep,
   ]);
+
+  async function handleCreateTemplate() {
+    setCreateTemplateBusy(true);
+    setCreateTemplateError("");
+
+    try {
+      const templateCode = createTemplateForm.templateCode.trim();
+      const name = createTemplateForm.name.trim();
+      if (!templateCode) {
+        throw new Error("Template Code không được để trống.");
+      }
+      if (!name) {
+        throw new Error("Template Name không được để trống.");
+      }
+
+      const applicableGroups = parseGroupNumbers(
+        createTemplateForm.applicableGroups,
+      );
+      if (applicableGroups.length === 0) {
+        throw new Error("Applicable Groups phải có ít nhất 1 số nguyên dương.");
+      }
+
+      const applicableMethods = parseCsvStrings(
+        createTemplateForm.applicableMethods,
+      );
+
+      const payload: CreateTemplateRequest = {
+        templateCode,
+        name,
+        description: createTemplateForm.description.trim() || undefined,
+        applicableGroups,
+        applicableMethods:
+          applicableMethods.length > 0 ? applicableMethods : undefined,
+        dataSourceType:
+          createTemplateForm.dataSourceType as CreateTemplateRequest["dataSourceType"],
+        initialVersionLabel:
+          createTemplateForm.initialVersionLabel.trim() || undefined,
+      };
+
+      const createdVersionId = await props.onCreateTemplate(payload);
+      if (createdVersionId) {
+        setCreateTemplateForm((prev) => ({
+          ...prev,
+          templateCode: "",
+          name: "",
+          description: "",
+          initialVersionLabel: "v1-draft",
+        }));
+      }
+      setCreateTemplateModalOpen(false);
+    } catch (error) {
+      setCreateTemplateError(
+        error instanceof Error ? error.message : "Không tạo được template.",
+      );
+    } finally {
+      setCreateTemplateBusy(false);
+    }
+  }
+
+  async function handleCreateVersion() {
+    setCreateVersionBusy(true);
+    setCreateVersionError("");
+
+    try {
+      const templateId = Number(createVersionForm.templateId);
+      if (!Number.isInteger(templateId) || templateId <= 0) {
+        throw new Error("Vui lòng chọn Template để tạo version.");
+      }
+
+      const versionLabel = createVersionForm.versionLabel.trim();
+      if (!versionLabel) {
+        throw new Error("Version Label không được để trống.");
+      }
+
+      const payload: CreateTemplateVersionRequest = {
+        versionLabel,
+        effectiveFrom: createVersionForm.effectiveFrom.trim() || undefined,
+        changeNotes: createVersionForm.changeNotes.trim() || undefined,
+      };
+
+      const createdVersionId = await props.onCreateVersion(templateId, payload);
+      if (createdVersionId) {
+        setCreateVersionForm((prev) => ({
+          ...prev,
+          versionLabel: "",
+          effectiveFrom: "",
+          changeNotes: "",
+        }));
+      }
+      setCreateVersionModalOpen(false);
+    } catch (error) {
+      setCreateVersionError(
+        error instanceof Error
+          ? error.message
+          : "Không tạo được draft version.",
+      );
+    } finally {
+      setCreateVersionBusy(false);
+    }
+  }
 
   async function handleCloneAndOpenFlow() {
     setWizardBusy(true);
@@ -1092,6 +1417,21 @@ export default function VersionTab(props: VersionTabProps) {
     } finally {
       setWizardBusy(false);
     }
+  }
+
+  function toggleRowVisibleFieldCode(fieldCode: string) {
+    setRowDraft((prev) => {
+      const selected = new Set(parseVisibleFieldCodes(prev.visibleFieldCodes));
+      if (selected.has(fieldCode)) {
+        selected.delete(fieldCode);
+      } else {
+        selected.add(fieldCode);
+      }
+      return {
+        ...prev,
+        visibleFieldCodes: JSON.stringify(Array.from(selected)),
+      };
+    });
   }
 
   async function handleSaveRow() {
@@ -1266,9 +1606,304 @@ export default function VersionTab(props: VersionTabProps) {
                 </option>
               ))}
             </select>
+
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                setCreateTemplateError("");
+                setCreateTemplateModalOpen(true);
+              }}
+            >
+              <Save className="mr-1.5 h-3.5 w-3.5" />
+              Tạo template mới
+            </Button>
+            <Button
+              size="sm"
+              className={PRIMARY}
+              onClick={() => {
+                setCreateVersionError("");
+                setCreateVersionModalOpen(true);
+              }}
+            >
+              <Save className="mr-1.5 h-3.5 w-3.5" />
+              Tạo draft version
+            </Button>
           </div>
         </CardContent>
       </Card>
+
+      <Dialog
+        open={createTemplateModalOpen}
+        onOpenChange={(open) => {
+          setCreateTemplateModalOpen(open);
+          if (!open) setCreateTemplateError("");
+        }}
+      >
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Tạo template mới</DialogTitle>
+            <DialogDescription>
+              Tạo accounting template và draft version đầu tiên.
+            </DialogDescription>
+          </DialogHeader>
+
+          {createTemplateError ? (
+            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              {createTemplateError}
+            </div>
+          ) : null}
+
+          <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-gray-600">
+                Template code (VD: S1A)
+              </label>
+              <input
+                value={createTemplateForm.templateCode}
+                onChange={(e) =>
+                  setCreateTemplateForm((prev) => ({
+                    ...prev,
+                    templateCode: e.target.value,
+                  }))
+                }
+                className="w-full rounded-lg border bg-white px-3 py-2 text-sm"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-gray-600">
+                Template name
+              </label>
+              <input
+                value={createTemplateForm.name}
+                onChange={(e) =>
+                  setCreateTemplateForm((prev) => ({
+                    ...prev,
+                    name: e.target.value,
+                  }))
+                }
+                className="w-full rounded-lg border bg-white px-3 py-2 text-sm"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-gray-600">
+                Applicable groups (VD: 1,2)
+              </label>
+              <input
+                value={createTemplateForm.applicableGroups}
+                onChange={(e) =>
+                  setCreateTemplateForm((prev) => ({
+                    ...prev,
+                    applicableGroups: e.target.value,
+                  }))
+                }
+                className="w-full rounded-lg border bg-white px-3 py-2 text-sm"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-gray-600">
+                Applicable methods (VD: method_1)
+              </label>
+              <input
+                value={createTemplateForm.applicableMethods}
+                onChange={(e) =>
+                  setCreateTemplateForm((prev) => ({
+                    ...prev,
+                    applicableMethods: e.target.value,
+                  }))
+                }
+                className="w-full rounded-lg border bg-white px-3 py-2 text-sm"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-gray-600">
+                Data source type
+              </label>
+              <select
+                value={createTemplateForm.dataSourceType}
+                onChange={(e) =>
+                  setCreateTemplateForm((prev) => ({
+                    ...prev,
+                    dataSourceType: e.target.value,
+                  }))
+                }
+                className="w-full rounded-lg border bg-white px-3 py-2 text-sm"
+              >
+                <option value="revenues">revenues</option>
+                <option value="revenue_cost">revenue_cost</option>
+                <option value="gl_entries">gl_entries</option>
+                <option value="stock_movements">stock_movements</option>
+              </select>
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-gray-600">
+                Initial version label
+              </label>
+              <input
+                value={createTemplateForm.initialVersionLabel}
+                onChange={(e) =>
+                  setCreateTemplateForm((prev) => ({
+                    ...prev,
+                    initialVersionLabel: e.target.value,
+                  }))
+                }
+                className="w-full rounded-lg border bg-white px-3 py-2 text-sm"
+              />
+            </div>
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-gray-600">
+              Description
+            </label>
+            <textarea
+              value={createTemplateForm.description}
+              onChange={(e) =>
+                setCreateTemplateForm((prev) => ({
+                  ...prev,
+                  description: e.target.value,
+                }))
+              }
+              rows={3}
+              className="w-full rounded-lg border bg-white px-3 py-2 text-sm"
+            />
+          </div>
+
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setCreateTemplateModalOpen(false)}
+            >
+              Hủy
+            </Button>
+            <Button
+              type="button"
+              className={PRIMARY}
+              onClick={() => void handleCreateTemplate()}
+              disabled={createTemplateBusy}
+            >
+              <Save className="mr-1.5 h-3.5 w-3.5" />
+              {createTemplateBusy ? "Đang tạo..." : "Tạo template"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={createVersionModalOpen}
+        onOpenChange={(open) => {
+          setCreateVersionModalOpen(open);
+          if (!open) setCreateVersionError("");
+        }}
+      >
+        <DialogContent className="sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Tạo draft version mới</DialogTitle>
+            <DialogDescription>
+              Tạo blank draft cho một template đã có.
+            </DialogDescription>
+          </DialogHeader>
+
+          {createVersionError ? (
+            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              {createVersionError}
+            </div>
+          ) : null}
+
+          <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-gray-600">
+                Template
+              </label>
+              <select
+                value={createVersionForm.templateId}
+                onChange={(e) =>
+                  setCreateVersionForm((prev) => ({
+                    ...prev,
+                    templateId: e.target.value,
+                  }))
+                }
+                className="w-full rounded-lg border bg-white px-3 py-2 text-sm"
+              >
+                <option value="">Chọn template</option>
+                {props.templateOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-gray-600">
+                Version label (VD: v2-draft)
+              </label>
+              <input
+                value={createVersionForm.versionLabel}
+                onChange={(e) =>
+                  setCreateVersionForm((prev) => ({
+                    ...prev,
+                    versionLabel: e.target.value,
+                  }))
+                }
+                className="w-full rounded-lg border bg-white px-3 py-2 text-sm"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-gray-600">
+                Effective from
+              </label>
+              <input
+                type="date"
+                value={createVersionForm.effectiveFrom}
+                onChange={(e) =>
+                  setCreateVersionForm((prev) => ({
+                    ...prev,
+                    effectiveFrom: e.target.value,
+                  }))
+                }
+                className="w-full rounded-lg border bg-white px-3 py-2 text-sm"
+              />
+            </div>
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-gray-600">
+              Change notes
+            </label>
+            <textarea
+              value={createVersionForm.changeNotes}
+              onChange={(e) =>
+                setCreateVersionForm((prev) => ({
+                  ...prev,
+                  changeNotes: e.target.value,
+                }))
+              }
+              rows={3}
+              className="w-full rounded-lg border bg-white px-3 py-2 text-sm"
+            />
+          </div>
+
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setCreateVersionModalOpen(false)}
+            >
+              Hủy
+            </Button>
+            <Button
+              type="button"
+              className={PRIMARY}
+              onClick={() => void handleCreateVersion()}
+              disabled={createVersionBusy}
+            >
+              <Save className="mr-1.5 h-3.5 w-3.5" />
+              {createVersionBusy ? "Đang tạo..." : "Tạo draft version"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {!hasResult ? (
         <Card>
@@ -1433,93 +2068,49 @@ export default function VersionTab(props: VersionTabProps) {
             </CardContent>
           </Card>
 
-          <CollapsibleSection
-            title="Cột dữ liệu"
-            icon={Activity}
-            count={fieldMappings.length}
-          >
-            <div className="max-h-80 overflow-auto">
-              <table className="w-full text-sm">
-                <thead className="sticky top-0 bg-gray-50 text-left text-xs uppercase text-gray-500">
-                  <tr>
-                    <th className="px-3 py-2">#</th>
-                    <th className="px-3 py-2">Mã cột</th>
-                    <th className="px-3 py-2">Nhãn</th>
-                    <th className="px-3 py-2">Kiểu</th>
-                    <th className="px-3 py-2">Nguồn</th>
-                    <th className="px-3 py-2">Formula</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {fieldMappings.map((mapping, index) => (
-                    <tr
-                      key={String(mapping.mappingId ?? index)}
-                      className="border-t"
-                    >
-                      <td className="px-3 py-2 text-gray-400">{index + 1}</td>
-                      <td className="px-3 py-2 font-mono text-xs">
-                        {asString(mapping.fieldCode)}
-                      </td>
-                      <td className="px-3 py-2">
-                        {asString(mapping.fieldLabel)}
-                      </td>
-                      <td className="px-3 py-2">
-                        {asString(mapping.fieldType)}
-                      </td>
-                      <td className="px-3 py-2">
-                        {asString(mapping.sourceType) || "—"}
-                      </td>
-                      <td className="px-3 py-2 font-mono text-xs text-gray-500">
-                        {asNumber(mapping.formulaId) ?? "—"}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </CollapsibleSection>
-
-          <CollapsibleSection
-            title="Dòng mẫu"
-            icon={Layers}
-            count={rowDefinitions.length}
-          >
-            <div className="max-h-80 overflow-auto">
-              <table className="w-full text-sm">
-                <thead className="sticky top-0 bg-gray-50 text-left text-xs uppercase text-gray-500">
-                  <tr>
-                    <th className="px-3 py-2">#</th>
-                    <th className="px-3 py-2">Loại dòng</th>
-                    <th className="px-3 py-2">Nhãn</th>
-                    <th className="px-3 py-2">Vị trí</th>
-                    <th className="px-3 py-2">Formula</th>
-                    <th className="px-3 py-2">Sort</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rowDefinitions.map((row, index) => (
-                    <tr
-                      key={String(row.rowDefId ?? index)}
-                      className="border-t"
-                    >
-                      <td className="px-3 py-2 text-gray-400">{index + 1}</td>
-                      <td className="px-3 py-2">{asString(row.rowType)}</td>
-                      <td className="px-3 py-2">
-                        {asString(row.rowLabel) || "—"}
-                      </td>
-                      <td className="px-3 py-2">{asString(row.position)}</td>
-                      <td className="px-3 py-2 font-mono text-xs text-gray-500">
-                        {asNumber(row.formulaId) ?? "—"}
-                      </td>
-                      <td className="px-3 py-2">
-                        {asNumber(row.sortOrder) ?? "—"}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </CollapsibleSection>
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">
+                Sổ mẫu (Full Structure + Preview Data)
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {sampleBookColumns.length === 0 ? (
+                <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 px-4 py-6 text-sm text-gray-500">
+                  Chưa có dữ liệu full structure để dựng sổ mẫu.
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {renderPreviewBusy ? (
+                    <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 px-4 py-6 text-sm text-gray-500">
+                      Đang tải preview data...
+                    </div>
+                  ) : null}
+                  {renderPreviewError ? (
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-700">
+                      {renderPreviewError}
+                    </div>
+                  ) : null}
+                  <BookTemplatePreview
+                    templateCode={templateCode}
+                    templateName={templateName}
+                    versionLabel={versionLabel}
+                    columns={sampleBookColumns}
+                    rows={
+                      renderPreviewRows.length > 0
+                        ? renderPreviewRows
+                        : sampleBookRows
+                    }
+                    rowDefinitions={rowDefinitions}
+                    referenceData={previewReferenceData}
+                    summaryMeta={
+                      renderPreviewSummaryMeta ?? asRecord(result?.summary)
+                    }
+                  />
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </>
       ) : null}
 
@@ -1708,9 +2299,10 @@ export default function VersionTab(props: VersionTabProps) {
                       />
                     </div>
                     <div className="space-y-1">
-                      <label className="block text-xs font-medium text-gray-600">
-                        Kiểu dữ liệu
-                      </label>
+                      <ReferenceHelpLabel
+                        label="Kiểu dữ liệu"
+                        items={referenceHelpCatalog.fieldTypes}
+                      />
                       <select
                         value={mappingDraft.fieldType}
                         onChange={(e) =>
@@ -1730,9 +2322,10 @@ export default function VersionTab(props: VersionTabProps) {
                       </select>
                     </div>
                     <div className="space-y-1">
-                      <label className="block text-xs font-medium text-gray-600">
-                        Nguồn dữ liệu
-                      </label>
+                      <ReferenceHelpLabel
+                        label="Nguồn dữ liệu"
+                        items={referenceHelpCatalog.sourceTypes}
+                      />
                       <select
                         value={mappingDraft.sourceType}
                         onChange={(e) =>
@@ -1822,9 +2415,10 @@ export default function VersionTab(props: VersionTabProps) {
                       </select>
                     </div>
                     <div className="space-y-1">
-                      <label className="block text-xs font-medium text-gray-600">
-                        Kiểu tổng hợp
-                      </label>
+                      <ReferenceHelpLabel
+                        label="Kiểu tổng hợp"
+                        items={referenceHelpCatalog.aggregateTypes}
+                      />
                       <select
                         value={mappingDraft.aggregationType}
                         onChange={(e) =>
@@ -1858,7 +2452,7 @@ export default function VersionTab(props: VersionTabProps) {
                         className="w-full rounded-lg border px-3 py-2 text-sm"
                       />
                     </div>
-                    <div className="space-y-1">
+                    {/* <div className="space-y-1">
                       <label className="block text-xs font-medium text-gray-600">
                         Filter JSON
                       </label>
@@ -1873,7 +2467,7 @@ export default function VersionTab(props: VersionTabProps) {
                         rows={3}
                         className="w-full rounded-lg border px-3 py-2 font-mono text-xs"
                       />
-                    </div>
+                    </div> */}
                     <Button
                       className={PRIMARY}
                       onClick={() => void handleSaveMapping()}
@@ -1949,10 +2543,11 @@ export default function VersionTab(props: VersionTabProps) {
                       />
                     </div>
                     <div className="space-y-1">
-                      <label className="block text-xs font-medium text-gray-600">
-                        Loại dòng
-                      </label>
-                      <input
+                      <ReferenceHelpLabel
+                        label="Loại dòng"
+                        items={referenceHelpCatalog.rowTypes}
+                      />
+                      <select
                         value={rowDraft.rowType}
                         onChange={(e) =>
                           setRowDraft((prev) => ({
@@ -1961,7 +2556,13 @@ export default function VersionTab(props: VersionTabProps) {
                           }))
                         }
                         className="w-full rounded-lg border px-3 py-2 text-sm"
-                      />
+                      >
+                        {rowTypeOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
                     </div>
                     <div className="space-y-1">
                       <label className="block text-xs font-medium text-gray-600">
@@ -1980,10 +2581,11 @@ export default function VersionTab(props: VersionTabProps) {
                     </div>
                     <div className="grid grid-cols-2 gap-2">
                       <div className="space-y-1">
-                        <label className="block text-xs font-medium text-gray-600">
-                          Position
-                        </label>
-                        <input
+                        <ReferenceHelpLabel
+                          label="Position"
+                          items={referenceHelpCatalog.positions}
+                        />
+                        <select
                           value={rowDraft.position}
                           onChange={(e) =>
                             setRowDraft((prev) => ({
@@ -1992,7 +2594,13 @@ export default function VersionTab(props: VersionTabProps) {
                             }))
                           }
                           className="w-full rounded-lg border px-3 py-2 text-sm"
-                        />
+                        >
+                          {rowPositionOptions.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
                       </div>
                       <div className="space-y-1">
                         <label className="block text-xs font-medium text-gray-600">
@@ -2014,7 +2622,7 @@ export default function VersionTab(props: VersionTabProps) {
                       <label className="block text-xs font-medium text-gray-600">
                         Formula ID
                       </label>
-                      <input
+                      <select
                         value={rowDraft.formulaId}
                         onChange={(e) =>
                           setRowDraft((prev) => ({
@@ -2023,13 +2631,21 @@ export default function VersionTab(props: VersionTabProps) {
                           }))
                         }
                         className="w-full rounded-lg border px-3 py-2 text-sm"
-                      />
+                      >
+                        <option value="">Chọn formula</option>
+                        {mappingFormulaOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
                     </div>
                     <div className="space-y-1">
-                      <label className="block text-xs font-medium text-gray-600">
-                        Section type
-                      </label>
-                      <input
+                      <ReferenceHelpLabel
+                        label="Section type"
+                        items={referenceHelpCatalog.sectionTypes}
+                      />
+                      <select
                         value={rowDraft.sectionType}
                         onChange={(e) =>
                           setRowDraft((prev) => ({
@@ -2038,7 +2654,14 @@ export default function VersionTab(props: VersionTabProps) {
                           }))
                         }
                         className="w-full rounded-lg border px-3 py-2 text-sm"
-                      />
+                      >
+                        <option value="">Không chọn section</option>
+                        {rowSectionTypeOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
                     </div>
                     <div className="space-y-1">
                       <label className="block text-xs font-medium text-gray-600">
@@ -2071,10 +2694,11 @@ export default function VersionTab(props: VersionTabProps) {
                       />
                     </div>
                     <div className="space-y-1">
-                      <label className="block text-xs font-medium text-gray-600">
-                        Tax type
-                      </label>
-                      <input
+                      <ReferenceHelpLabel
+                        label="Tax type"
+                        items={referenceHelpCatalog.taxTypes}
+                      />
+                      <select
                         value={rowDraft.taxType}
                         onChange={(e) =>
                           setRowDraft((prev) => ({
@@ -2083,7 +2707,56 @@ export default function VersionTab(props: VersionTabProps) {
                           }))
                         }
                         className="w-full rounded-lg border px-3 py-2 text-sm"
-                      />
+                      >
+                        <option value="">Không chọn tax type</option>
+                        {rowTaxTypeOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    {selectedRowTaxRateHints.length > 0 ? (
+                      <div className="max-h-28 overflow-auto rounded-lg border border-sky-100 bg-sky-50 p-2 text-xs text-sky-700">
+                        {selectedRowTaxRateHints.map((item, index) => (
+                          <div
+                            key={`${item.businessTypeCode}-${item.taxType}-${index}`}
+                          >
+                            {item.businessTypeCode} - {item.businessTypeName}:{" "}
+                            {(item.taxRate * 100).toFixed(2)}%
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                    <div className="space-y-1">
+                      <label className="block text-xs font-medium text-gray-600">
+                        Visible field codes (quick pick)
+                      </label>
+                      <div className="max-h-28 overflow-auto rounded-lg border border-gray-200 bg-gray-50 p-2">
+                        <div className="flex flex-wrap gap-1.5">
+                          {rowVisibleFieldOptions.map((option) => {
+                            const selected = parseVisibleFieldCodes(
+                              rowDraft.visibleFieldCodes,
+                            ).includes(option.value);
+                            return (
+                              <button
+                                key={option.value}
+                                type="button"
+                                onClick={() =>
+                                  toggleRowVisibleFieldCode(option.value)
+                                }
+                                className={`rounded-full border px-2 py-1 text-[11px] ${
+                                  selected
+                                    ? "border-[#23C4C1]/40 bg-[#23C4C1]/10 text-[#15918f]"
+                                    : "border-gray-200 bg-white text-gray-600"
+                                }`}
+                              >
+                                {option.value}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
                     </div>
                     <div className="space-y-1">
                       <label className="block text-xs font-medium text-gray-600">
@@ -2494,265 +3167,81 @@ export default function VersionTab(props: VersionTabProps) {
                 <Card>
                   <CardHeader>
                     <CardTitle className="text-base">
-                      Mẫu sổ preview (Full Structure)
+                      Mẫu sổ preview (Full Structure + Preview Data)
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-4">
-                    <div className="rounded-lg border border-gray-300 bg-white p-4 text-gray-900">
-                      <div className="flex flex-wrap items-start justify-between gap-4 border-b border-gray-300 pb-4">
-                        <div className="space-y-1 text-sm">
-                          <p className="font-semibold uppercase">
-                            HO, CA NHAN KINH DOANH: ........
-                          </p>
-                          <p>Dia chi: .........................</p>
-                          <p>Ma so thue: .......................</p>
-                        </div>
-                        <div className="text-right text-sm">
-                          <p className="font-semibold">
-                            Mau so {templateCode || "S1a"}-HKD
-                          </p>
-                          <p className="italic text-gray-600">
-                            (
-                            {templateName ||
-                              "So doanh thu ban hang hoa, dich vu"}
-                            )
-                          </p>
-                          <p className="text-xs text-gray-500">
-                            Version: {props.tvLabel || versionLabel || "-"}
-                          </p>
-                        </div>
+                    {sampleBookColumns.length === 0 ? (
+                      <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 px-4 py-6 text-sm text-gray-500">
+                        Chưa có dữ liệu full structure để dựng sổ mẫu.
                       </div>
-
-                      <div className="mt-4 space-y-2 text-sm">
-                        <p className="text-base font-bold uppercase">
-                          SO DOANH THU BAN HANG HOA, DICH VU
-                        </p>
-                        <p>Dia diem kinh doanh: ............................</p>
-                        <p>Ky ke khai: ....................................</p>
-                        <p className="italic">
-                          Don vi tinh: ...................................
-                        </p>
-                      </div>
-
-                      <div className="mt-3 overflow-x-auto">
-                        <table className="min-w-full border-collapse text-sm">
-                          <thead>
-                            {isS2aTemplate ? (
-                              <>
-                                <tr>
-                                  <th className="border border-gray-700 bg-gray-100 px-2 py-1 text-left font-semibold">
-                                    Chung tu
-                                  </th>
-                                  <th
-                                    rowSpan={2}
-                                    className="border border-gray-700 bg-gray-100 px-2 py-1 text-left font-semibold"
-                                  >
-                                    Dien giai
-                                  </th>
-                                  <th
-                                    rowSpan={2}
-                                    className="border border-gray-700 bg-gray-100 px-2 py-1 text-left font-semibold"
-                                  >
-                                    So tien
-                                  </th>
-                                </tr>
-                                <tr>
-                                  <th className="border border-gray-700 bg-gray-50 px-2 py-1 text-left text-xs font-medium text-gray-700">
-                                    So hieu
-                                  </th>
-                                  <th className="border border-gray-700 bg-gray-50 px-2 py-1 text-left text-xs font-medium text-gray-700">
-                                    Ngay, thang
-                                  </th>
-                                </tr>
-                                <tr>
-                                  <th className="border border-gray-700 px-2 py-1 text-left text-xs italic">
-                                    A
-                                  </th>
-                                  <th className="border border-gray-700 px-2 py-1 text-left text-xs italic">
-                                    B
-                                  </th>
-                                  <th className="border border-gray-700 px-2 py-1 text-left text-xs italic">
-                                    C
-                                  </th>
-                                </tr>
-                              </>
-                            ) : (
-                              <>
-                                <tr>
-                                  {displayColumns.map((col) => (
-                                    <th
-                                      key={col.fieldCode || col.fieldLabel}
-                                      className="border border-gray-700 bg-gray-100 px-2 py-1 text-left font-semibold"
-                                    >
-                                      {col.fieldLabel || "Cot"}
-                                    </th>
-                                  ))}
-                                </tr>
-                                <tr>
-                                  {displayColumns.map((col) => (
-                                    <th
-                                      key={`${col.fieldCode}-type`}
-                                      className="border border-gray-700 px-2 py-1 text-left text-xs font-medium text-gray-600"
-                                    >
-                                      {col.fieldCode || "-"} ·{" "}
-                                      {col.fieldType || "text"}
-                                    </th>
-                                  ))}
-                                </tr>
-                              </>
-                            )}
-                          </thead>
-                          <tbody>
-                            {startRows.map((row, index) =>
-                              renderTemplateLikeRow(row, `start-${index}`),
-                            )}
-
-                            {perSectionGroups.size > 0
-                              ? Array.from(perSectionGroups.entries()).map(
-                                  ([sectionKey, sectionRows]) => (
-                                    <>
-                                      <tr key={`section-title-${sectionKey}`}>
-                                        <td
-                                          colSpan={displayColumns.length}
-                                          className="border border-gray-700 bg-gray-50 px-2 py-1 text-xs font-semibold uppercase tracking-wide text-gray-700"
-                                        >
-                                          Phan:{" "}
-                                          {SECTION_TYPE_LABELS[sectionKey] ??
-                                            toReadableToken(sectionKey)}
-                                        </td>
-                                      </tr>
-                                      {sectionRows.map((row, index) =>
-                                        renderTemplateLikeRow(
-                                          row,
-                                          `section-${sectionKey}-${index}`,
-                                        ),
-                                      )}
-                                    </>
-                                  ),
-                                )
-                              : null}
-
-                            {isS2aTemplate && s2aPerGroupRows.length > 0 ? (
-                              <tr>
-                                <td
-                                  colSpan={displayColumns.length}
-                                  className="border border-gray-700 bg-gray-50 px-2 py-1 text-xs font-semibold uppercase tracking-wide text-gray-700"
-                                >
-                                  Nhom lap lai theo nghiep vu (per_group)
-                                </td>
-                              </tr>
-                            ) : null}
-                            {isS2aTemplate
-                              ? [1, 2, 3].flatMap((groupIndex) =>
-                                  s2aPerGroupRows.map((row, rowIndex) => {
-                                    const displayLabel =
-                                      row.rowType === "industry_header"
-                                        ? row.rowLabel
-                                            .replaceAll(
-                                              "{groupIndex}",
-                                              String(groupIndex),
-                                            )
-                                            .replaceAll(
-                                              "{businessTypeName}",
-                                              "Nganh nghe ....",
-                                            ) ||
-                                          `${groupIndex}. Nganh nghe ....`
-                                        : row.rowType === "data_placeholder"
-                                          ? ""
-                                          : row.rowType === "subtotal"
-                                            ? row.rowLabel.replaceAll(
-                                                "{groupIndex}",
-                                                String(groupIndex),
-                                              ) || `Tong cong (${groupIndex})`
-                                            : row.rowType === "tax_line"
-                                              ? row.taxType === "VAT"
-                                                ? "Thue GTGT"
-                                                : "Thue TNCN"
-                                              : renderS2aLabel(row, groupIndex);
-
-                                    return (
-                                      <tr
-                                        key={`s2a-group-${groupIndex}-${rowIndex}`}
-                                      >
-                                        <td className="h-8 border border-gray-700 px-2 py-1" />
-                                        <td className="h-8 border border-gray-700 px-2 py-1" />
-                                        <td className="h-8 border border-gray-700 px-2 py-1 font-semibold">
-                                          {displayLabel}
-                                        </td>
-                                      </tr>
-                                    );
-                                  }),
-                                )
-                              : perGroupRows.map((row, index) =>
-                                  renderTemplateLikeRow(row, `group-${index}`),
-                                )}
-
-                            {isS2aTemplate
-                              ? Array.from({
-                                  length: s2aDataPlaceholderCount || 6,
-                                }).map((_, index) => (
-                                  <tr key={`s2a-data-${index}`}>
-                                    <td className="h-8 border border-gray-700 px-2 py-1" />
-                                    <td className="h-8 border border-gray-700 px-2 py-1" />
-                                    <td className="h-8 border border-gray-700 px-2 py-1">
-                                      {index === 0
-                                        ? "... data rows from query ..."
-                                        : ""}
-                                    </td>
-                                  </tr>
-                                ))
-                              : perGroupRows.some(
-                                    (row) => row.rowType === "data_placeholder",
-                                  )
-                                ? Array.from({ length: 4 }).map((_, index) => (
-                                    <tr key={`data-area-${index}`}>
-                                      {displayColumns.map((col, colIndex) => (
-                                        <td
-                                          key={`data-area-${index}-${col.fieldCode}`}
-                                          className="h-8 border border-gray-700 px-2 py-1"
-                                        >
-                                          {index === 0 && colIndex === 0
-                                            ? "... data rows from query ..."
-                                            : null}
-                                        </td>
-                                      ))}
-                                    </tr>
-                                  ))
-                                : null}
-
-                            {isS2aTemplate
-                              ? s2aEndRows.map((row, index) => (
-                                  <tr key={`s2a-end-${index}`}>
-                                    <td className="h-8 border border-gray-700 px-2 py-1" />
-                                    <td className="h-8 border border-gray-700 px-2 py-1" />
-                                    <td className="h-8 border border-gray-700 px-2 py-1 font-semibold">
-                                      {row.rowLabel ||
-                                        ROW_TYPE_LABELS[row.rowType] ||
-                                        toReadableToken(row.rowType)}
-                                    </td>
-                                  </tr>
-                                ))
-                              : endRows.map((row, index) =>
-                                  renderTemplateLikeRow(row, `end-${index}`),
-                                )}
-                          </tbody>
-                        </table>
-                      </div>
-
-                      {isS2aTemplate ? null : (
-                        <div className="mt-4 flex justify-end text-sm">
-                          <div className="w-full max-w-xs text-center">
-                            <p>Ngay ... thang ... nam ...</p>
-                            <p className="font-semibold uppercase">
-                              NGUOI DAI DIEN HO KINH DOANH
-                            </p>
-                            <p className="italic text-gray-600">
-                              (Ky, ghi ro ho ten, dong dau neu co)
-                            </p>
+                    ) : (
+                      <div className="space-y-3 rounded-lg border border-gray-300 bg-white p-4 text-gray-900">
+                        {renderPreviewBusy ? (
+                          <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 px-4 py-4 text-sm text-gray-500">
+                            Đang tải preview data...
                           </div>
-                        </div>
-                      )}
-                    </div>
+                        ) : null}
+                        {renderPreviewError ? (
+                          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-700">
+                            {renderPreviewError}
+                          </div>
+                        ) : null}
+
+                        <BookTemplatePreview
+                          templateCode={templateCode}
+                          templateName={templateName}
+                          versionLabel={props.tvLabel || versionLabel}
+                          columns={sampleBookColumns}
+                          rows={
+                            renderPreviewRows.length > 0
+                              ? renderPreviewRows
+                              : sampleBookRows
+                          }
+                          rowDefinitions={rowDefinitions}
+                          referenceData={previewReferenceData}
+                          summaryMeta={
+                            renderPreviewSummaryMeta ??
+                            asRecord(result?.summary)
+                          }
+                        />
+
+                        {renderPreviewFormulaValues.length > 0 ? (
+                          <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
+                            <table className="w-full min-w-120 border-collapse text-xs">
+                              <thead>
+                                <tr className="bg-gray-50 text-gray-700">
+                                  <th className="border border-gray-200 px-2 py-1 text-left font-semibold">
+                                    Formula
+                                  </th>
+                                  <th className="border border-gray-200 px-2 py-1 text-left font-semibold">
+                                    Giá trị
+                                  </th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {renderPreviewFormulaValues.map((formula) => (
+                                  <tr key={formula.code}>
+                                    <td className="border border-gray-200 px-2 py-1 font-mono">
+                                      {formula.code}
+                                    </td>
+                                    <td className="border border-gray-200 px-2 py-1">
+                                      {formula.value == null
+                                        ? "-"
+                                        : typeof formula.value === "number"
+                                          ? formula.value.toLocaleString(
+                                              "vi-VN",
+                                            )
+                                          : String(formula.value)}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        ) : null}
+                      </div>
+                    )}
 
                     {!isS2aTemplate ? (
                       <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">

@@ -1,6 +1,7 @@
 import { authFetch } from "@/lib/auth/tokenManager";
 import type {
   ApiResponse,
+  AccountingBookSections,
   CashFlowReport,
   CostPagination,
   CostFilters,
@@ -32,22 +33,6 @@ const DEFAULT_EMPTY_REVENUE: RevenuePagination = {
   pageNumber: 1,
   pageSize: 10,
   totalPages: 0,
-};
-
-const DEFAULT_EMPTY_TEMPLATE_RESPONSE: ApiResponse<AccountingTemplate[]> = {
-  data: [],
-  success: true,
-  messageCode: "COMMON_DATA_RETRIEVED",
-  message: "Data retrieved successfully",
-  timestamp: new Date().toISOString(),
-};
-
-const DEFAULT_EMPTY_BOOK_RESPONSE: ApiResponse<AccountingBook[]> = {
-  data: [],
-  success: true,
-  messageCode: "COMMON_DATA_RETRIEVED",
-  message: "Data retrieved successfully",
-  timestamp: new Date().toISOString(),
 };
 
 const DEFAULT_GL_VIEW_MODE: GLViewMode = "effective";
@@ -408,6 +393,47 @@ export async function getAccountingPeriods(
   return parseApiResponse<AccountingPeriod[]>(response);
 }
 
+export async function getAccountingPeriodDetail(
+  locationId: number,
+  periodId: number,
+): Promise<ApiResponse<AccountingPeriod>> {
+  const response = await authFetch(
+    `/api/locations/${locationId}/accounting/periods/${periodId}`,
+    {
+      method: "GET",
+      headers: { "Content-Type": "application/json" },
+      cache: "no-store",
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      `Failed to fetch accounting period detail: ${response.status}`,
+    );
+  }
+
+  return parseApiResponse<AccountingPeriod>(response);
+}
+
+export async function deleteAccountingPeriod(
+  locationId: number,
+  periodId: number,
+): Promise<ApiResponse<unknown>> {
+  const response = await authFetch(
+    `/api/locations/${locationId}/accounting/periods/${periodId}`,
+    {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(`Failed to delete accounting period: ${response.status}`);
+  }
+
+  return parseApiResponse<unknown>(response);
+}
+
 export async function createAccountingPeriod(
   locationId: number,
   data: CreatePeriodRequest,
@@ -549,15 +575,14 @@ export async function getAccountingTemplates(): Promise<
       templateId: 1,
       templateCode: "S1a",
       name: "Sổ chi tiết bán hàng hóa, dịch vụ — TT152",
-      applicableGroups: [1, 2, 3, 4],
-      applicableMethods: ["exempt", "method_1", "method_2"],
+      applicableGroups: [1],
       isActive: true,
     },
     {
       templateId: 2,
       templateCode: "S2a",
       name: "Sổ doanh thu bán hàng hóa, dịch vụ (Cách 1) — TT152",
-      applicableGroups: [2, 3, 4],
+      applicableGroups: [2],
       applicableMethods: ["method_1"],
       isActive: true,
     },
@@ -701,5 +726,41 @@ export async function getBookSummary(locationId: number, bookId: number) {
     },
   );
   if (!response.ok) throw new Error("Không thể tải summary sổ kế toán");
-  return (await response.json()) as ApiResponse<any>;
+  return (await response.json()) as ApiResponse<Record<string, unknown>>;
+}
+
+export async function getBookSections(
+  locationId: number,
+  bookId: number,
+): Promise<ApiResponse<AccountingBookSections>> {
+  const response = await authFetch(
+    `/api/locations/${locationId}/accounting/books/${bookId}/sections`,
+    {
+      method: "GET",
+      headers: { "Content-Type": "application/json" },
+      cache: "no-store",
+    },
+  );
+
+  if (!response.ok) throw new Error("Không thể tải cấu trúc sổ kế toán");
+  return parseApiResponse<AccountingBookSections>(response);
+}
+
+export async function deleteAccountingBook(
+  locationId: number,
+  bookId: number,
+): Promise<ApiResponse<unknown>> {
+  const response = await authFetch(
+    `/api/locations/${locationId}/accounting/books/${bookId}`,
+    {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error("Không thể xóa sổ kế toán");
+  }
+
+  return parseApiResponse<unknown>(response);
 }

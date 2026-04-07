@@ -246,7 +246,7 @@ export default function LoginPage() {
     setError("");
     const api = window.google?.accounts?.id;
     if (!api || !isGoogleSdkReady) {
-      setError("Google SDK chưa khởi tạo xong. Hãy thử lại sau 1-2 giây.");
+      setError("Hãy thử lại sau 1 lát.");
       return;
     }
     api.prompt();

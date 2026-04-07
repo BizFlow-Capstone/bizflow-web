@@ -132,6 +132,12 @@ export interface CreateOrderRequest {
   items: CreateOrderItemRequest[];
 }
 
+export interface CreateOrderResult {
+  requiresConfirmation: boolean;
+  warnings: string[];
+  order: OrderRecord | null;
+}
+
 // --- Update Order Request ---
 
 export interface UpdateOrderRequest extends CreateOrderRequest {
@@ -152,6 +158,26 @@ export interface CompleteOrderRequest {
   confirmLowStock?: boolean;
   excessAmount?: number;
   excessDebtorId?: number;
+}
+
+export interface AIDraftOrderItem {
+  productId: number | null;
+  saleItemId: number | null;
+  productName: string;
+  matched: boolean;
+  quantity: number;
+  unit: string;
+  unitPrice: number | null;
+  lineTotal: number | null;
+  customerName?: string | null;
+  isDebt?: boolean;
+}
+
+export interface AIDraftOrderData {
+  items: AIDraftOrderItem[];
+  rawTranscript: string;
+  confidence?: string | number | null;
+  totalAmount?: number | null;
 }
 
 // --- Draft Order (localStorage "treo đơn") ---
