@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 import {
   ArrowLeft,
   Search,
@@ -36,9 +37,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useDebtors, useCreateDebtor } from "@/hooks/useDebtors";
-import { useCreateOrder, useCompleteOrder } from "@/hooks/useOrders";
+import { useCreateDebtor, useDebtors } from "@/hooks/useDebtors";
+import { useCreateOrder } from "@/hooks/useOrders";
+import { useCreateAIDraftOrder } from "@/hooks/useOrders";
 import type { PaymentType } from "@/lib/types/order";
+import type { AIDraftOrderItem } from "@/lib/types/order";
+import type { CreateOrderRequest } from "@/lib/types/order";
 import type { DebtorFilters, DebtorRecord } from "@/lib/types/debtor";
 import { saveDraftOrder } from "@/lib/draftOrderStorage";
 import {
@@ -74,33 +78,6 @@ interface CartItem {
 
 type CreateMethod = "upload" | "voice" | "manual";
 
-// --- Mock AI transcription results ---
-
-const MOCK_AI_RESULTS: CartItem[] = [
-  {
-    productId: 1,
-    saleItemId: 1,
-    name: "Xi măng Hà Tiên PCB40",
-    unit: "Bao (50kg)",
-    price: 95000,
-    discount: 0,
-    quantity: 30,
-    stock: 450,
-    trackInventory: true,
-  },
-  {
-    productId: 3,
-    saleItemId: 3,
-    name: "Sắt thép Pomina D10",
-    unit: "Cây (11.7m)",
-    price: 150000,
-    discount: 0,
-    quantity: 10,
-    stock: 120,
-    trackInventory: true,
-  },
-];
-
 // --- Waveform bars component ---
 
 const WAVE_HEIGHTS = Array.from({ length: 40 }, () => Math.random() * 80 + 20);
@@ -128,52 +105,161 @@ function WaveformBars({ isActive }: { isActive: boolean }) {
 
 function AIResultPanel({
   transcribedText,
-  aiCartItems,
+  aiItems,
+  confidence,
   formatCurrency,
   onConfirm,
   onRetry,
 }: {
   transcribedText: string;
-  aiCartItems: CartItem[];
+  aiItems: AIDraftOrderItem[];
+  confidence?: string | number | null;
   formatCurrency: (amount: number) => string;
   onConfirm: () => void;
   onRetry: () => void;
 }) {
-  const total = aiCartItems.reduce(
-    (sum, item) => sum + item.price * item.quantity,
+  const confidenceMeta = useMemo(() => {
+    if (confidence === null || confidence === undefined || confidence === "") {
+      return null;
+    }
+
+    if (typeof confidence === "number") {
+      const normalized = confidence > 1 ? confidence / 100 : confidence;
+      if (normalized >= 0.8) {
+        return {
+          level: "high",
+          label: `Độ tin cậy cao (${Math.round(normalized * 100)}%)`,
+          className:
+            "bg-emerald-100 text-emerald-700 border border-emerald-300 ring-1 ring-emerald-200",
+        };
+      }
+
+      if (normalized >= 0.5) {
+        return {
+          level: "medium",
+          label: `Độ tin cậy trung bình (${Math.round(normalized * 100)}%)`,
+          className:
+            "bg-amber-100 text-amber-700 border border-amber-300 ring-1 ring-amber-200",
+        };
+      }
+
+      return {
+        level: "low",
+        label: `Độ tin cậy thấp (${Math.round(normalized * 100)}%)`,
+        className:
+          "bg-rose-100 text-rose-700 border border-rose-300 ring-1 ring-rose-200",
+      };
+    }
+
+    const normalized = String(confidence).trim().toLowerCase();
+    if (normalized === "high") {
+      return {
+        level: "high",
+        label: "Độ tin cậy cao",
+        className:
+          "bg-emerald-100 text-emerald-700 border border-emerald-300 ring-1 ring-emerald-200",
+      };
+    }
+
+    if (normalized === "medium") {
+      return {
+        level: "medium",
+        label: "Độ tin cậy trung bình",
+        className:
+          "bg-amber-100 text-amber-700 border border-amber-300 ring-1 ring-amber-200",
+      };
+    }
+
+    if (normalized === "low") {
+      return {
+        level: "low",
+        label: "Độ tin cậy thấp",
+        className:
+          "bg-rose-100 text-rose-700 border border-rose-300 ring-1 ring-rose-200",
+      };
+    }
+
+    return {
+      level: "custom",
+      label: `Độ tin cậy: ${String(confidence)}`,
+      className: "bg-slate-100 text-slate-700 border border-slate-300",
+    };
+  }, [confidence]);
+
+  const matchedCount = aiItems.filter(
+    (item) =>
+      item.matched &&
+      !!item.saleItemId &&
+      !!item.productId &&
+      item.unitPrice !== null,
+  ).length;
+
+  const unresolvedCount = aiItems.length - matchedCount;
+
+  const total = aiItems.reduce(
+    (sum, item) =>
+      sum +
+      (item.lineTotal ?? (item.unitPrice ?? 0) * Math.max(0, item.quantity)),
     0,
   );
 
   return (
     <div className="space-y-4 mt-4">
       <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
-        <p className="text-sm font-medium text-blue-800 mb-1">
-          AI đã nhận diện:
-        </p>
+        <div className="flex items-center justify-between gap-3 mb-1">
+          <p className="text-sm font-medium text-blue-800">AI đã nhận diện:</p>
+          {confidenceMeta ? (
+            <Badge
+              className={`text-xs font-semibold ${confidenceMeta.className}`}
+            >
+              {confidenceMeta.label}
+            </Badge>
+          ) : null}
+        </div>
         <p className="text-sm text-blue-700">&ldquo;{transcribedText}&rdquo;</p>
       </div>
 
       <div className="border border-gray-200 rounded-xl overflow-hidden">
         <div className="bg-gray-50 px-4 py-3 border-b border-gray-200">
           <p className="font-semibold text-gray-800">
-            Sản phẩm AI đề xuất ({aiCartItems.length} sản phẩm)
+            Sản phẩm AI đề xuất ({aiItems.length} sản phẩm)
           </p>
+          {unresolvedCount > 0 ? (
+            <p className="text-xs text-amber-600 mt-1">
+              {unresolvedCount} sản phẩm chưa match, bạn cần thêm thủ công ở
+              phần Nhập Thủ Công.
+            </p>
+          ) : null}
         </div>
         <div className="divide-y divide-gray-100">
-          {aiCartItems.map((item) => (
+          {aiItems.map((item, index) => (
             <div
-              key={item.productId}
+              key={`${item.productName}-${index}`}
               className="flex items-center justify-between px-4 py-3"
             >
               <div>
-                <p className="font-medium text-gray-900 text-sm">{item.name}</p>
+                <p className="font-medium text-gray-900 text-sm">
+                  {item.productName}
+                </p>
                 <p className="text-xs text-gray-500">
-                  {item.quantity} {item.unit} × {formatCurrency(item.price)}
+                  {item.quantity} {item.unit}
+                  {item.unitPrice !== null
+                    ? ` × ${formatCurrency(item.unitPrice)}`
+                    : " · Chưa có giá"}
                 </p>
               </div>
-              <span className="font-semibold text-gray-800 text-sm">
-                {formatCurrency(item.price * item.quantity)}
-              </span>
+              <div className="text-right">
+                <span className="font-semibold text-gray-800 text-sm">
+                  {item.lineTotal !== null || item.unitPrice !== null
+                    ? formatCurrency(
+                        item.lineTotal ?? item.quantity * (item.unitPrice ?? 0),
+                      )
+                    : "Chưa xác định"}
+                </span>
+                {!item.matched ? (
+                  <p className="text-[11px] text-amber-600">Chưa match</p>
+                ) : null}
+              </div>
             </div>
           ))}
         </div>
@@ -192,8 +278,9 @@ function AIResultPanel({
         <Button
           className="flex-1 bg-[#23C4C1] hover:bg-[#1da8a5] text-white"
           onClick={onConfirm}
+          disabled={matchedCount === 0}
         >
-          Xác nhận & Thêm vào giỏ
+          Xác nhận & Thêm {matchedCount} SP vào giỏ
         </Button>
       </div>
     </div>
@@ -214,6 +301,10 @@ export default function CreateOrderClient() {
   const [transcribedText, setTranscribedText] = useState("");
   const [isTranscribing, setIsTranscribing] = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const [recordedFile, setRecordedFile] = useState<File | null>(null);
 
   // Upload states
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
@@ -221,7 +312,14 @@ export default function CreateOrderClient() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // AI result state
-  const [aiCartItems, setAiCartItems] = useState<CartItem[]>([]);
+  const [aiDraftItems, setAiDraftItems] = useState<AIDraftOrderItem[]>([]);
+  const [aiConfidence, setAiConfidence] = useState<string | number | null>(
+    null,
+  );
+  const [aiDetectedCustomerName, setAiDetectedCustomerName] = useState("");
+  const [aiMappedDebtorName, setAiMappedDebtorName] = useState<string | null>(
+    null,
+  );
   const [showAiResult, setShowAiResult] = useState(false);
 
   // Product search (manual)
@@ -243,11 +341,16 @@ export default function CreateOrderClient() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
   const [showLeaveDialog, setShowLeaveDialog] = useState(false);
-  const [showConfirmDebt, setShowConfirmDebt] = useState(false);
-  const [lastCreatedOrderId, setLastCreatedOrderId] = useState<number | null>(null);
+  const [showLowStockDialog, setShowLowStockDialog] = useState(false);
+  const [pendingOrderPayload, setPendingOrderPayload] =
+    useState<CreateOrderRequest | null>(null);
+  const [confirmationWarnings, setConfirmationWarnings] = useState<string[]>(
+    [],
+  );
 
   const createOrderMutation = useCreateOrder();
-  const completeMutation = useCompleteOrder();
+  const createAIDraftMutation = useCreateAIDraftOrder();
+  const createDebtorMutation = useCreateDebtor();
 
   const { selectedLocationId } = useDashboardLocation();
 
@@ -265,56 +368,337 @@ export default function CreateOrderClient() {
     () => debtorPage?.items ?? [],
     [debtorPage?.items],
   );
+  const [createdDebtorOverride, setCreatedDebtorOverride] =
+    useState<DebtorRecord | null>(null);
+
+  const availableDebtorOptions = useMemo(() => {
+    if (!createdDebtorOverride) return debtorOptions;
+    if (
+      debtorOptions.some((d) => d.debtorId === createdDebtorOverride.debtorId)
+    ) {
+      return debtorOptions;
+    }
+    return [createdDebtorOverride, ...debtorOptions];
+  }, [createdDebtorOverride, debtorOptions]);
 
   useEffect(() => {
     if (!selectedDebtorId || isLoadingDebtors) return;
-    const exists = debtorOptions.some(
+    const exists = availableDebtorOptions.some(
       (debtor) => debtor.debtorId === Number(selectedDebtorId),
     );
     if (!exists) {
       setSelectedDebtorId("");
     }
-  }, [selectedDebtorId, debtorOptions, isLoadingDebtors]);
+  }, [selectedDebtorId, availableDebtorOptions, isLoadingDebtors]);
+
+  const normalizeName = useCallback((value: string) => {
+    return value
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .trim();
+  }, []);
+
+  useEffect(() => {
+    if (!aiDetectedCustomerName || availableDebtorOptions.length === 0) {
+      return;
+    }
+
+    if (selectedDebtorId) {
+      return;
+    }
+
+    const target = normalizeName(aiDetectedCustomerName);
+    if (!target) return;
+
+    const exact = availableDebtorOptions.find(
+      (debtor) => normalizeName(debtor.name) === target,
+    );
+    const partial =
+      exact ||
+      availableDebtorOptions.find((debtor) => {
+        const debtorName = normalizeName(debtor.name);
+        return debtorName.includes(target) || target.includes(debtorName);
+      });
+
+    const matchedDebtor = exact || partial;
+    if (!matchedDebtor) {
+      setAiMappedDebtorName(null);
+      return;
+    }
+
+    setSelectedDebtorId(String(matchedDebtor.debtorId));
+    setAiMappedDebtorName(matchedDebtor.name);
+  }, [
+    aiDetectedCustomerName,
+    availableDebtorOptions,
+    normalizeName,
+    selectedDebtorId,
+    setSelectedDebtorId,
+  ]);
+
+  const handleCreateDebtorFromAIName = useCallback(async () => {
+    const debtorName = aiDetectedCustomerName.trim();
+    if (!debtorName) {
+      setSubmitError("Không có tên khách để tạo công nợ.");
+      return;
+    }
+
+    if (!selectedLocationId || selectedLocationId <= 0) {
+      setSubmitError("Vui lòng chọn địa điểm trước khi tạo khách nợ.");
+      return;
+    }
+
+    setSubmitError("");
+
+    try {
+      const result = await createDebtorMutation.mutateAsync({
+        businessLocationId: selectedLocationId,
+        name: debtorName,
+      });
+
+      setCreatedDebtorOverride(result.data);
+      setSelectedDebtorId(String(result.data.debtorId));
+      setAiMappedDebtorName(result.data.name);
+    } catch (error) {
+      setSubmitError(
+        error instanceof Error
+          ? error.message
+          : "Không thể tạo khách nợ từ tên AI.",
+      );
+    }
+  }, [
+    aiDetectedCustomerName,
+    createDebtorMutation,
+    selectedLocationId,
+    setSelectedDebtorId,
+  ]);
 
   // Toggle accordion section
   const toggleMethod = (method: CreateMethod) => {
     setActiveMethod((prev) => (prev === method ? null : method));
   };
 
+  const resetAIResult = useCallback(() => {
+    setTranscribedText("");
+    setAiDraftItems([]);
+    setAiConfidence(null);
+    setAiDetectedCustomerName("");
+    setAiMappedDebtorName(null);
+    setCreatedDebtorOverride(null);
+    setShowAiResult(false);
+  }, []);
+
+  const mergeCartItems = useCallback(
+    (existing: CartItem[], incoming: CartItem[]) => {
+      const merged = [...existing];
+      incoming.forEach((item) => {
+        const targetIndex = merged.findIndex(
+          (entry) => entry.saleItemId === item.saleItemId,
+        );
+
+        if (targetIndex < 0) {
+          merged.push(item);
+          return;
+        }
+
+        merged[targetIndex] = {
+          ...merged[targetIndex],
+          quantity: merged[targetIndex].quantity + item.quantity,
+        };
+      });
+      return merged;
+    },
+    [],
+  );
+
+  const createDraftFromAudio = useCallback(
+    async (audioFile: File) => {
+      if (!selectedLocationId || selectedLocationId <= 0) {
+        setSubmitError("Vui lòng chọn địa điểm trước khi tạo đơn bằng AI.");
+        return;
+      }
+
+      setSubmitError("");
+      setIsTranscribing(true);
+
+      try {
+        const result = await createAIDraftMutation.mutateAsync({
+          locationId: selectedLocationId,
+          audioFile,
+        });
+
+        const detectedCustomerName =
+          (result.items || [])
+            .map((item) => item.customerName?.trim())
+            .find((name) => !!name) || "";
+
+        setTranscribedText(result.rawTranscript || "");
+        setAiDraftItems(result.items || []);
+        setAiConfidence(result.confidence ?? null);
+        setAiDetectedCustomerName(detectedCustomerName);
+        setAiMappedDebtorName(null);
+        setShowAiResult(true);
+      } catch (error) {
+        setSubmitError(
+          error instanceof Error
+            ? error.message
+            : "Không thể tạo draft order từ âm thanh.",
+        );
+      } finally {
+        setIsTranscribing(false);
+      }
+    },
+    [createAIDraftMutation, selectedLocationId],
+  );
+
   // --- Voice Recording ---
 
-  const startRecording = () => {
-    setIsRecording(true);
-    setRecordingTime(0);
-    setTranscribedText("");
-    setShowAiResult(false);
-    timerRef.current = setInterval(() => {
-      setRecordingTime((prev) => prev + 1);
-    }, 1000);
+  const startRecording = async () => {
+    if (
+      typeof navigator === "undefined" ||
+      !navigator.mediaDevices ||
+      !navigator.mediaDevices.getUserMedia
+    ) {
+      setSubmitError("Thiết bị không hỗ trợ ghi âm trực tiếp.");
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaStreamRef.current = stream;
+
+      const recorder = new MediaRecorder(stream);
+      audioChunksRef.current = [];
+
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      recorder.onstop = () => {
+        const mimeType = recorder.mimeType || "audio/webm";
+        const blob = new Blob(audioChunksRef.current, { type: mimeType });
+        const extension = mimeType.includes("wav")
+          ? "wav"
+          : mimeType.includes("mp4")
+            ? "m4a"
+            : "webm";
+        const file = new File(
+          [blob],
+          `voice-order-${Date.now()}.${extension}`,
+          { type: mimeType },
+        );
+
+        setRecordedFile(file);
+        void createDraftFromAudio(file);
+
+        if (mediaStreamRef.current) {
+          mediaStreamRef.current.getTracks().forEach((track) => track.stop());
+          mediaStreamRef.current = null;
+        }
+      };
+
+      recorder.start();
+      mediaRecorderRef.current = recorder;
+
+      setRecordingTime(0);
+      setIsRecording(true);
+      resetAIResult();
+      setSubmitError("");
+
+      timerRef.current = setInterval(() => {
+        setRecordingTime((prev) => prev + 1);
+      }, 1000);
+    } catch {
+      setSubmitError(
+        "Không thể truy cập microphone. Vui lòng cấp quyền ghi âm.",
+      );
+    }
   };
 
   const stopRecording = () => {
+    const recorder = mediaRecorderRef.current;
+    if (!recorder) return;
+
     setIsRecording(false);
     if (timerRef.current) {
       clearInterval(timerRef.current);
       timerRef.current = null;
     }
-    setIsTranscribing(true);
-    setTimeout(() => {
-      setTranscribedText(
-        "Cho anh 30 bao xi măng Hà Tiên với 10 cây sắt Pomina D10, tính tiền mặt nhé.",
-      );
-      setIsTranscribing(false);
-    }, 1500);
+
+    if (recorder.state !== "inactive") {
+      recorder.stop();
+    }
   };
 
-  const handleCreateFromVoice = () => {
-    setAiCartItems(MOCK_AI_RESULTS);
-    setShowAiResult(true);
+  const handleCreateFromVoice = async () => {
+    if (!recordedFile) {
+      setSubmitError("Bạn chưa có bản ghi âm để xử lý.");
+      return;
+    }
+
+    await createDraftFromAudio(recordedFile);
   };
 
   const confirmAiItems = () => {
-    setCart(aiCartItems);
+    const matchedItems = aiDraftItems.flatMap((item): CartItem[] => {
+      if (!item.matched || item.unitPrice === null) {
+        return [];
+      }
+
+      const productId = Number(item.productId);
+      const saleItemId = Number(item.saleItemId);
+      const price = Number(item.unitPrice);
+      const quantity = Number(item.quantity);
+
+      if (
+        !Number.isFinite(productId) ||
+        productId <= 0 ||
+        !Number.isFinite(saleItemId) ||
+        saleItemId <= 0 ||
+        !Number.isFinite(price) ||
+        price < 0 ||
+        !Number.isFinite(quantity) ||
+        quantity <= 0
+      ) {
+        return [];
+      }
+
+      return [
+        {
+          productId,
+          saleItemId,
+          name: item.productName,
+          unit: item.unit,
+          price,
+          discount: 0,
+          quantity: Math.max(1, Math.round(quantity)),
+          stock: 9999,
+          trackInventory: false,
+        },
+      ];
+    });
+
+    if (matchedItems.length === 0) {
+      setSubmitError(
+        "AI chưa match được sản phẩm hợp lệ. Vui lòng thêm sản phẩm ở phần Nhập Thủ Công.",
+      );
+      return;
+    }
+
+    setCart((previous) => mergeCartItems(previous, matchedItems));
+
+    const unresolvedCount = aiDraftItems.length - matchedItems.length;
+    if (unresolvedCount > 0) {
+      setSubmitError(
+        `AI chưa match ${unresolvedCount} sản phẩm. Bạn có thể bổ sung ở phần Nhập Thủ Công.`,
+      );
+    } else {
+      setSubmitError("");
+    }
+
     setShowAiResult(false);
     setActiveMethod(null);
   };
@@ -324,26 +708,35 @@ export default function CreateOrderClient() {
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    setSubmitError("");
+    resetAIResult();
     setUploadedFile(file);
   };
 
-  const processUploadedFile = () => {
+  const processUploadedFile = async () => {
     if (!uploadedFile) return;
     setIsProcessingFile(true);
-    setTimeout(() => {
-      setTranscribedText(
-        "Cho anh 30 bao xi măng Hà Tiên với 10 cây sắt Pomina D10, tính tiền mặt nhé.",
-      );
-      setAiCartItems(MOCK_AI_RESULTS);
-      setShowAiResult(true);
+    try {
+      await createDraftFromAudio(uploadedFile);
+    } finally {
       setIsProcessingFile(false);
-    }, 2000);
+    }
   };
 
   // Timer Cleanup
   useEffect(() => {
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
+
+      const recorder = mediaRecorderRef.current;
+      if (recorder && recorder.state !== "inactive") {
+        recorder.stop();
+      }
+
+      if (mediaStreamRef.current) {
+        mediaStreamRef.current.getTracks().forEach((track) => track.stop());
+      }
     };
   }, []);
 
@@ -370,9 +763,8 @@ export default function CreateOrderClient() {
   const { data: searchResults = [] } = useQuickSearchProducts(
     selectedLocationId ?? 0,
     productSearch,
-    activeMethod === "manual"
+    activeMethod === "manual",
   );
-
 
   const cartSubTotal = useMemo(
     () =>
@@ -410,8 +802,11 @@ export default function CreateOrderClient() {
 
   // Selected debtor
   const selectedDebtor = useMemo(
-    () => debtorOptions.find((d) => d.debtorId === Number(selectedDebtorId)),
-    [debtorOptions, selectedDebtorId],
+    () =>
+      availableDebtorOptions.find(
+        (d) => d.debtorId === Number(selectedDebtorId),
+      ),
+    [availableDebtorOptions, selectedDebtorId],
   );
 
   // Cart operations
@@ -479,25 +874,83 @@ export default function CreateOrderClient() {
     setCart((prev) => prev.filter((item) => item.saleItemId !== saleItemId));
   }, []);
 
-  const setItemDiscount = useCallback((saleItemId: number, discount: number) => {
-    setSubmitError("");
-    setCart((prev) =>
-      prev.map((item) => {
-        if (item.saleItemId !== saleItemId) return item;
-        const lineSubTotal = item.price * item.quantity;
-        return {
-          ...item,
-          discount: Math.max(0, Math.min(discount, lineSubTotal)),
-        };
-      }),
-    );
-  }, []);
+  const setItemDiscount = useCallback(
+    (saleItemId: number, discount: number) => {
+      setSubmitError("");
+      setCart((prev) =>
+        prev.map((item) => {
+          if (item.saleItemId !== saleItemId) return item;
+          const lineSubTotal = item.price * item.quantity;
+          return {
+            ...item,
+            discount: Math.max(0, Math.min(discount, lineSubTotal)),
+          };
+        }),
+      );
+    },
+    [],
+  );
 
   const formatCurrency = (amount: number) =>
     new Intl.NumberFormat("vi-VN", {
       style: "currency",
       currency: "VND",
     }).format(amount);
+
+  const routeAfterCreate = useCallback(
+    (orderId: number, payload: CreateOrderRequest) => {
+      const isDebtOnly =
+        payload.debtAmount > 0 &&
+        payload.cashAmount === 0 &&
+        payload.bankAmount === 0;
+
+      if (isDebtOnly) {
+        router.push(`/dashboard/orders/${orderId}`);
+        return;
+      }
+
+      router.push(`/dashboard/orders/${orderId}/payment`);
+    },
+    [router],
+  );
+
+  const submitCreateOrder = useCallback(
+    async (payload: CreateOrderRequest) => {
+      setIsSubmitting(true);
+      try {
+        const result = await createOrderMutation.mutateAsync(payload);
+        if (result.data.requiresConfirmation && !payload.confirmLowStock) {
+          const warnings =
+            (result.warnings && result.warnings.length > 0
+              ? result.warnings
+              : result.data.warnings) ?? [];
+
+          setPendingOrderPayload(payload);
+          setConfirmationWarnings(warnings);
+          setShowLowStockDialog(true);
+          return;
+        }
+
+        if (!result.data.order) {
+          throw new Error(result.message || "Không nhận được dữ liệu đơn hàng");
+        }
+
+        setShowLowStockDialog(false);
+        setPendingOrderPayload(null);
+        setConfirmationWarnings([]);
+        routeAfterCreate(result.data.order.orderId, payload);
+      } catch (error) {
+        setSubmitError(
+          error instanceof Error
+            ? error.message
+            : "Không thể tạo đơn hàng. Vui lòng thử lại.",
+        );
+      } finally {
+        setIsSubmitting(false);
+      }
+    },
+    [createOrderMutation, routeAfterCreate],
+  );
 
   // Submit
   const handleSubmit = async () => {
@@ -526,41 +979,31 @@ export default function CreateOrderClient() {
       return;
     }
 
-    setIsSubmitting(true);
-    try {
-      // USER REQUEST: âm là nợ, dương là trả.
-      // We send negative debt amount to the API as requested.
-      const debtValue = debt > 0 ? -debt : 0;
+    const debtValue = debt > 0 ? debt : 0;
 
-      const result = await createOrderMutation.mutateAsync({
-        businessLocationId: selectedLocationId ?? 0,
-        cashAmount: cash,
-        bankAmount: bank,
-        debtAmount: debtValue,
-        debtorId: selectedDebtorId ? Number(selectedDebtorId) : undefined,
-        note,
-        items: cart.map((item) => ({
-          saleItemId: item.saleItemId,
-          quantity: item.quantity,
-          discount: item.discount,
-        })),
-      });
+    await submitCreateOrder({
+      businessLocationId: selectedLocationId ?? 0,
+      cashAmount: cash,
+      bankAmount: bank,
+      debtAmount: debtValue,
+      debtorId: selectedDebtorId ? Number(selectedDebtorId) : undefined,
+      note,
+      items: cart.map((item) => ({
+        saleItemId: item.saleItemId,
+        quantity: item.quantity,
+        discount: item.discount,
+      })),
+    });
+  };
 
-      if (debt > 0) {
-        setLastCreatedOrderId(result.data.orderId);
-        setShowConfirmDebt(true);
-      } else {
-        router.push(`/dashboard/orders/${result.data.orderId}/payment`);
-      }
-    } catch (error) {
-      setSubmitError(
-        error instanceof Error
-          ? error.message
-          : "Không thể tạo đơn hàng. Vui lòng thử lại.",
-      );
-    } finally {
-      setIsSubmitting(false);
-    }
+  const handleConfirmLowStock = async () => {
+    if (!pendingOrderPayload) return;
+
+    setSubmitError("");
+    await submitCreateOrder({
+      ...pendingOrderPayload,
+      confirmLowStock: true,
+    });
   };
 
   // Save draft ("treo đơn")
@@ -589,20 +1032,6 @@ export default function CreateOrderClient() {
     router.push("/dashboard/orders");
   };
 
-  const handleConfirmDebt = async () => {
-    if (!lastCreatedOrderId) return;
-    setIsSubmitting(true);
-    try {
-      await completeMutation.mutateAsync(lastCreatedOrderId);
-      router.push(`/dashboard/orders/${lastCreatedOrderId}`);
-    } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : "Không thể hoàn tất đơn hàng nợ.");
-    } finally {
-      setIsSubmitting(false);
-      setShowConfirmDebt(false);
-    }
-  };
-
   const handleBack = () => {
     if (cart.length > 0) {
       setShowLeaveDialog(true);
@@ -624,11 +1053,7 @@ export default function CreateOrderClient() {
       {/* Header */}
       <div className="px-8 pt-6">
         <div className="flex items-center gap-4">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={handleBack}
-          >
+          <Button variant="ghost" size="icon" onClick={handleBack}>
             <ArrowLeft className="w-5 h-5" />
           </Button>
         </div>
@@ -724,11 +1149,13 @@ export default function CreateOrderClient() {
 
                   {uploadedFile && !showAiResult && (
                     <Button
-                      onClick={processUploadedFile}
-                      disabled={isProcessingFile}
+                      onClick={() => void processUploadedFile()}
+                      disabled={
+                        isProcessingFile || createAIDraftMutation.isPending
+                      }
                       className="w-full bg-[#23C4C1] hover:bg-[#1da8a5] text-white"
                     >
-                      {isProcessingFile ? (
+                      {isProcessingFile || createAIDraftMutation.isPending ? (
                         <>
                           <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                           Đang xử lý âm thanh...
@@ -745,11 +1172,12 @@ export default function CreateOrderClient() {
                   {showAiResult && activeMethod === "upload" && (
                     <AIResultPanel
                       transcribedText={transcribedText}
-                      aiCartItems={aiCartItems}
+                      aiItems={aiDraftItems}
+                      confidence={aiConfidence}
                       formatCurrency={formatCurrency}
                       onConfirm={confirmAiItems}
                       onRetry={() => {
-                        setShowAiResult(false);
+                        resetAIResult();
                         setUploadedFile(null);
                       }}
                     />
@@ -878,7 +1306,8 @@ export default function CreateOrderClient() {
                             variant="outline"
                             className="flex-1"
                             onClick={() => {
-                              setTranscribedText("");
+                              resetAIResult();
+                              setRecordedFile(null);
                               setRecordingTime(0);
                             }}
                           >
@@ -887,10 +1316,22 @@ export default function CreateOrderClient() {
                           </Button>
                           <Button
                             className="flex-1 bg-[#23C4C1] hover:bg-[#1da8a5] text-white"
-                            onClick={handleCreateFromVoice}
+                            onClick={() => void handleCreateFromVoice()}
+                            disabled={
+                              !recordedFile || createAIDraftMutation.isPending
+                            }
                           >
-                            <ShoppingCart className="w-4 h-4 mr-2" />
-                            Tạo Đơn Hàng
+                            {createAIDraftMutation.isPending ? (
+                              <>
+                                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                Đang tạo draft...
+                              </>
+                            ) : (
+                              <>
+                                <ShoppingCart className="w-4 h-4 mr-2" />
+                                Tạo Đơn Hàng
+                              </>
+                            )}
                           </Button>
                         </div>
                       </div>
@@ -899,12 +1340,13 @@ export default function CreateOrderClient() {
                   {showAiResult && activeMethod === "voice" && (
                     <AIResultPanel
                       transcribedText={transcribedText}
-                      aiCartItems={aiCartItems}
+                      aiItems={aiDraftItems}
+                      confidence={aiConfidence}
                       formatCurrency={formatCurrency}
                       onConfirm={confirmAiItems}
                       onRetry={() => {
-                        setShowAiResult(false);
-                        setTranscribedText("");
+                        resetAIResult();
+                        setRecordedFile(null);
                         setRecordingTime(0);
                       }}
                     />
@@ -991,9 +1433,11 @@ export default function CreateOrderClient() {
                           >
                             <div className="flex-1 min-w-0 flex items-center gap-3">
                               {product.imageUrl && (
-                                <img
+                                <Image
                                   src={product.imageUrl}
                                   alt={product.name}
+                                  width={40}
+                                  height={40}
                                   className="w-10 h-10 object-cover rounded-md border"
                                 />
                               )}
@@ -1006,7 +1450,9 @@ export default function CreateOrderClient() {
                                 <div className="flex items-center gap-3 mt-1 text-sm text-gray-500">
                                   {product.sku && (
                                     <>
-                                      <span className="font-mono">{product.sku}</span>
+                                      <span className="font-mono">
+                                        {product.sku}
+                                      </span>
                                       <span>·</span>
                                     </>
                                   )}
@@ -1291,12 +1737,13 @@ export default function CreateOrderClient() {
                             Đang tải khách hàng...
                           </SelectItem>
                         )}
-                        {!isLoadingDebtors && debtorOptions.length === 0 && (
-                          <SelectItem value="__empty__" disabled>
-                            Không có khách hàng đang hoạt động
-                          </SelectItem>
-                        )}
-                        {debtorOptions.map((debtor) => (
+                        {!isLoadingDebtors &&
+                          availableDebtorOptions.length === 0 && (
+                            <SelectItem value="__empty__" disabled>
+                              Không có khách hàng đang hoạt động
+                            </SelectItem>
+                          )}
+                        {availableDebtorOptions.map((debtor) => (
                           <SelectItem
                             key={debtor.debtorId}
                             value={String(debtor.debtorId)}
@@ -1320,6 +1767,47 @@ export default function CreateOrderClient() {
                       thấy tên khách, vào tab Khách Hàng Thân Thiết để kích hoạt
                       lại.
                     </p>
+
+                    {aiDetectedCustomerName ? (
+                      <div className="mt-2 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-xs">
+                        <p className="text-blue-700">
+                          AI nhận diện khách:{" "}
+                          <strong>{aiDetectedCustomerName}</strong>
+                        </p>
+                        {aiMappedDebtorName ? (
+                          <p className="text-emerald-700 mt-1">
+                            Đã tự chọn khách nợ:{" "}
+                            <strong>{aiMappedDebtorName}</strong>
+                          </p>
+                        ) : (
+                          <div className="mt-1 space-y-2">
+                            <p className="text-amber-700">
+                              Chưa tìm thấy khách nợ trùng tên, vui lòng chọn
+                              thủ công hoặc tạo mới.
+                            </p>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="h-7 text-xs border-amber-300 text-amber-700 hover:bg-amber-100"
+                              onClick={() =>
+                                void handleCreateDebtorFromAIName()
+                              }
+                              disabled={createDebtorMutation.isPending}
+                            >
+                              {createDebtorMutation.isPending ? (
+                                <>
+                                  <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                                  Đang tạo khách nợ...
+                                </>
+                              ) : (
+                                <>Tạo khách nợ từ tên AI</>
+                              )}
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    ) : null}
 
                     {selectedDebtor && selectedDebtor.creditLimit && (
                       <div className="mt-2 text-xs text-gray-500 bg-gray-50 rounded-lg p-2">
@@ -1449,45 +1937,49 @@ export default function CreateOrderClient() {
         </div>
       </main>
 
-      {/* Confirm Debt Modal */}
-      <AlertDialog open={showConfirmDebt} onOpenChange={setShowConfirmDebt}>
+      <AlertDialog
+        open={showLowStockDialog}
+        onOpenChange={(open) => {
+          setShowLowStockDialog(open);
+          if (!open) {
+            setPendingOrderPayload(null);
+            setConfirmationWarnings([]);
+          }
+        }}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Xác nhận tạo đơn ghi nợ</AlertDialogTitle>
+            <AlertDialogTitle>
+              Xác nhận tạo đơn khi thiếu tồn kho
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              Đơn hàng này có số tiền ghi nợ là{" "}
-              <span className="font-bold text-red-600">
-                {formatCurrency(cartTotal - (Number(cashAmount) || 0) - (Number(bankAmount) || 0))}
-              </span>
-              . Bạn có chắc chắn muốn hoàn tất đơn hàng và ghi vào sổ nợ của{" "}
-              <span className="font-bold text-[#23C4C1]">
-                {selectedDebtor?.name}
-              </span>{" "}
-              không?
+              Hệ thống phát hiện một hoặc nhiều sản phẩm không đủ tồn kho. Bạn
+              có muốn tiếp tục tạo đơn không?
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {confirmationWarnings.length > 0 && (
+            <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 space-y-1">
+              {confirmationWarnings.map((warning, index) => (
+                <p key={`${warning}-${index}`}>- {warning}</p>
+              ))}
+            </div>
+          )}
           <AlertDialogFooter>
-            <AlertDialogCancel
-              onClick={() => {
-                if (lastCreatedOrderId) {
-                  router.push(`/dashboard/orders/${lastCreatedOrderId}`);
-                }
-              }}
-            >
-              Xem chi tiết (Chờ thanh toán)
-            </AlertDialogCancel>
+            <AlertDialogCancel disabled={isSubmitting}>Hủy</AlertDialogCancel>
             <AlertDialogAction
               className="bg-[#23C4C1] hover:bg-[#1da8a5] text-white"
-              onClick={handleConfirmDebt}
+              onClick={() => {
+                void handleConfirmLowStock();
+              }}
               disabled={isSubmitting}
             >
               {isSubmitting ? (
                 <>
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Đang xử lý...
+                  Đang tạo đơn...
                 </>
               ) : (
-                "Xác nhận ghi nợ"
+                "Tiếp tục tạo đơn"
               )}
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -1500,7 +1992,9 @@ export default function CreateOrderClient() {
           <AlertDialogHeader>
             <AlertDialogTitle>Hủy bỏ tạo đơn hàng?</AlertDialogTitle>
             <AlertDialogDescription>
-              Bạn đang có {cart.length} sản phẩm trong giỏ hàng. Nếu bạn thoát, đơn hàng sẽ không được tạo. Bạn muốn lưu nháp (treo đơn) hay thoát luôn?
+              Bạn đang có {cart.length} sản phẩm trong giỏ hàng. Nếu bạn thoát,
+              đơn hàng sẽ không được tạo. Bạn muốn lưu nháp (treo đơn) hay thoát
+              luôn?
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="flex-col sm:flex-row gap-2">

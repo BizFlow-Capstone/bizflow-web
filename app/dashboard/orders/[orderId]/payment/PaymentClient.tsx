@@ -88,7 +88,11 @@ export default function PaymentClient() {
   const [newDebtorName, setNewDebtorName] = useState("");
   const [newDebtorPhone, setNewDebtorPhone] = useState("");
 
-  const { data: debtorsPage } = useDebtors({ isActive: true, page: 1, pageSize: 100 });
+  const { data: debtorsPage } = useDebtors({
+    isActive: true,
+    page: 1,
+    pageSize: 100,
+  });
   const debtors = debtorsPage?.items ?? [];
   const createDebtorMutation = useCreateDebtor();
 
@@ -149,7 +153,7 @@ export default function PaymentClient() {
       const result = await createDebtorMutation.mutateAsync({
         name: newDebtorName,
         phone: newDebtorPhone,
-        businessLocationId: selectedLocationId || 1, 
+        businessLocationId: selectedLocationId || 1,
       });
       setExcessDebtorId(String(result.data.debtorId));
       setIsCreatingDebtor(false);
@@ -236,7 +240,7 @@ export default function PaymentClient() {
             </div>
 
             {/* Payment Tab Toggle */}
-            <div className="bg-white rounded-xl border border-gray-200 p-1.5 flex gap-1">
+            {/* <div className="bg-white rounded-xl border border-gray-200 p-1.5 flex gap-1">
               <button
                 type="button"
                 onClick={() => setPaymentTab("qr")}
@@ -247,7 +251,7 @@ export default function PaymentClient() {
                 }`}
               >
                 <QrCode className="w-5 h-5" />
-                Mã QR
+                Chuyển Khoản
               </button>
               <button
                 type="button"
@@ -261,312 +265,12 @@ export default function PaymentClient() {
                 <Banknote className="w-5 h-5" />
                 Tiền mặt
               </button>
-            </div>
+            </div> */}
 
-            {/* QR Code Tab */}
-            {paymentTab === "qr" && (
-              <Card>
-                <CardContent className="p-6 space-y-6">
-                  {/* QR Code Image */}
-                  <div className="flex justify-center">
-                    <div className="bg-white border-2 border-gray-200 rounded-2xl p-4">
-                      {/* Mock QR Code using SVG */}
-                      <div className="w-52 h-52 bg-gray-100 rounded-xl flex items-center justify-center relative">
-                        <svg
-                          viewBox="0 0 200 200"
-                          className="w-full h-full"
-                          xmlns="http://www.w3.org/2000/svg"
-                        >
-                          {/* QR Code mock pattern */}
-                          <rect width="200" height="200" fill="white" />
-                          {/* Top-left finder */}
-                          <rect
-                            x="10"
-                            y="10"
-                            width="50"
-                            height="50"
-                            fill="#1a1a1a"
-                          />
-                          <rect
-                            x="15"
-                            y="15"
-                            width="40"
-                            height="40"
-                            fill="white"
-                          />
-                          <rect
-                            x="22"
-                            y="22"
-                            width="26"
-                            height="26"
-                            fill="#1a1a1a"
-                          />
-                          {/* Top-right finder */}
-                          <rect
-                            x="140"
-                            y="10"
-                            width="50"
-                            height="50"
-                            fill="#1a1a1a"
-                          />
-                          <rect
-                            x="145"
-                            y="15"
-                            width="40"
-                            height="40"
-                            fill="white"
-                          />
-                          <rect
-                            x="152"
-                            y="22"
-                            width="26"
-                            height="26"
-                            fill="#1a1a1a"
-                          />
-                          {/* Bottom-left finder */}
-                          <rect
-                            x="10"
-                            y="140"
-                            width="50"
-                            height="50"
-                            fill="#1a1a1a"
-                          />
-                          <rect
-                            x="15"
-                            y="145"
-                            width="40"
-                            height="40"
-                            fill="white"
-                          />
-                          <rect
-                            x="22"
-                            y="152"
-                            width="26"
-                            height="26"
-                            fill="#1a1a1a"
-                          />
-                          {/* Data modules (mock pattern) */}
-                          {Array.from({ length: 12 }).map((_, row) =>
-                            Array.from({ length: 12 }).map((_, col) => {
-                              const x = 70 + col * 6;
-                              const y = 70 + row * 6;
-                              const show =
-                                (row + col) % 3 !== 0 && (row * col) % 2 === 0;
-                              return show ? (
-                                <rect
-                                  key={`${row}-${col}`}
-                                  x={x}
-                                  y={y}
-                                  width="5"
-                                  height="5"
-                                  fill="#1a1a1a"
-                                />
-                              ) : null;
-                            }),
-                          )}
-                        </svg>
-                      </div>
-                    </div>
-                  </div>
+            {/* Shared Payment UI for both tabs */}
 
-                  {/* Bank Transfer Details */}
-                  <div className="space-y-3">
-                    <h3 className="font-semibold text-gray-800">
-                      Thông tin chuyển khoản
-                    </h3>
-
-                    <div className="bg-gray-50 rounded-xl p-4 space-y-3">
-                      {/* Bank Name */}
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="text-xs text-gray-500">Ngân hàng</p>
-                          <p className="font-medium text-gray-800">
-                            {BANK_INFO.bankName}
-                          </p>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => handleCopy(BANK_INFO.bankName, "bank")}
-                          className="text-gray-400 hover:text-[#23C4C1] transition-colors"
-                        >
-                          {copiedField === "bank" ? (
-                            <CheckCircle2 className="w-4 h-4 text-green-500" />
-                          ) : (
-                            <Copy className="w-4 h-4" />
-                          )}
-                        </button>
-                      </div>
-
-                      <div className="border-t border-gray-200" />
-
-                      {/* Account Number */}
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="text-xs text-gray-500">Số tài khoản</p>
-                          <p className="font-mono font-bold text-lg text-gray-900">
-                            {BANK_INFO.accountNumber}
-                          </p>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            handleCopy(
-                              BANK_INFO.accountNumber.replace(/\s/g, ""),
-                              "account",
-                            )
-                          }
-                          className="text-gray-400 hover:text-[#23C4C1] transition-colors"
-                        >
-                          {copiedField === "account" ? (
-                            <CheckCircle2 className="w-4 h-4 text-green-500" />
-                          ) : (
-                            <Copy className="w-4 h-4" />
-                          )}
-                        </button>
-                      </div>
-
-                      <div className="border-t border-gray-200" />
-
-                      {/* Account Holder */}
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="text-xs text-gray-500">Chủ tài khoản</p>
-                          <p className="font-medium text-gray-800">
-                            {BANK_INFO.accountHolder}
-                          </p>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            handleCopy(BANK_INFO.accountHolder, "holder")
-                          }
-                          className="text-gray-400 hover:text-[#23C4C1] transition-colors"
-                        >
-                          {copiedField === "holder" ? (
-                            <CheckCircle2 className="w-4 h-4 text-green-500" />
-                          ) : (
-                            <Copy className="w-4 h-4" />
-                          )}
-                        </button>
-                      </div>
-
-                      <div className="border-t border-gray-200" />
-
-                      {/* Transfer Content */}
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="text-xs text-gray-500">
-                            Nội dung chuyển khoản
-                          </p>
-                          <p className="font-mono font-semibold text-[#23C4C1]">
-                            {order.orderCode}
-                          </p>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => handleCopy(order.orderCode, "content")}
-                          className="text-gray-400 hover:text-[#23C4C1] transition-colors"
-                        >
-                          {copiedField === "content" ? (
-                            <CheckCircle2 className="w-4 h-4 text-green-500" />
-                          ) : (
-                            <Copy className="w-4 h-4" />
-                          )}
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Copy All Button */}
-                    <Button
-                      variant="outline"
-                      className="w-full"
-                      onClick={handleCopyAll}
-                    >
-                      {copiedField === "all" ? (
-                        <>
-                          <CheckCircle2 className="w-4 h-4 mr-2 text-green-500" />
-                          Đã sao chép!
-                        </>
-                      ) : (
-                        <>
-                          <Copy className="w-4 h-4 mr-2" />
-                          Sao chép thông tin chuyển khoản
-                        </>
-                      )}
-                    </Button>
-                  </div>
-
-                  {/* Confirm payment */}
-                  <Button
-                    onClick={handleConfirmPayment}
-                    disabled={isConfirming}
-                    className="w-full bg-[#23C4C1] hover:bg-[#1da8a5] text-white h-12 text-base shadow-lg shadow-[#23C4C1]/20"
-                  >
-                    {isConfirming ? (
-                      <>
-                        <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                        Đang xác nhận...
-                      </>
-                    ) : (
-                      <>
-                        <CheckCircle2 className="w-5 h-5 mr-2" />
-                        Xác nhận đã nhận thanh toán
-                      </>
-                    )}
-                  </Button>
-
-                  {/* Excess handling for bank transfer */}
-                  <div className="mt-6 pt-6 border-t border-gray-100 space-y-4">
-                    <div className="flex items-center space-x-2">
-                        <Checkbox 
-                          id="saveExcessBank" 
-                          checked={isSavingExcess}
-                          onCheckedChange={(checked) => setIsSavingExcess(!!checked)}
-                        />
-                        <label
-                          htmlFor="saveExcessBank"
-                          className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 text-gray-700 cursor-pointer"
-                        >
-                          Lưu tiền dư vào sổ (Trường hợp khách chuyển khoản dư)
-                        </label>
-                      </div>
-
-                      {isSavingExcess && (
-                        <div className="space-y-3 animate-in fade-in slide-in-from-top-2 duration-200">
-                          <Label className="text-xs text-gray-500 uppercase tracking-wider font-semibold">Chọn khách hàng nhận tiền dư</Label>
-                          <div className="flex gap-2">
-                            <div className="flex-1">
-                              <Select value={excessDebtorId} onValueChange={setExcessDebtorId}>
-                                <SelectTrigger className="w-full">
-                                  <SelectValue placeholder="Chọn khách hàng..." />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {debtors.map((d) => (
-                                    <SelectItem key={d.debtorId} value={String(d.debtorId)}>
-                                      {d.name} {d.phone ? `(${d.phone})` : ""}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            </div>
-                            <Button 
-                              variant="outline" 
-                              size="icon" 
-                              onClick={() => setIsCreatingDebtor(true)}
-                              title="Thêm khách hàng mới"
-                            >
-                              <Plus className="w-4 h-4" />
-                            </Button>
-                          </div>
-                        </div>
-                      )}
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-
-            {/* Cash Tab */}
-            {paymentTab === "cash" && (
+            {/* Cash Tab (disabled: both tabs share one UI) */}
+            {(paymentTab === "qr" || paymentTab === "cash") && (
               <Card>
                 <CardContent className="p-6 space-y-6">
                   <div>
@@ -623,8 +327,11 @@ export default function PaymentClient() {
                         </span>
                         <span
                           className={`text-xl font-bold ${
-                            cashChange > 0 ? "text-green-600" : 
-                            cashChange < 0 ? "text-red-600" : "text-gray-800"
+                            cashChange > 0
+                              ? "text-green-600"
+                              : cashChange < 0
+                                ? "text-red-600"
+                                : "text-gray-800"
                           }`}
                         >
                           {formatCurrency(Math.abs(cashChange))}
@@ -634,10 +341,12 @@ export default function PaymentClient() {
                       {cashChange > 0 && (
                         <div className="mt-4 pt-4 border-t border-gray-200 space-y-4">
                           <div className="flex items-center space-x-2">
-                            <Checkbox 
-                              id="saveExcess" 
+                            <Checkbox
+                              id="saveExcess"
                               checked={isSavingExcess}
-                              onCheckedChange={(checked) => setIsSavingExcess(!!checked)}
+                              onCheckedChange={(checked) =>
+                                setIsSavingExcess(!!checked)
+                              }
                             />
                             <label
                               htmlFor="saveExcess"
@@ -651,22 +360,29 @@ export default function PaymentClient() {
                             <div className="space-y-3 animate-in fade-in slide-in-from-top-2 duration-200">
                               <div className="flex gap-2">
                                 <div className="flex-1">
-                                  <Select value={excessDebtorId} onValueChange={setExcessDebtorId}>
+                                  <Select
+                                    value={excessDebtorId}
+                                    onValueChange={setExcessDebtorId}
+                                  >
                                     <SelectTrigger className="w-full">
                                       <SelectValue placeholder="Chọn khách hàng..." />
                                     </SelectTrigger>
                                     <SelectContent>
                                       {debtors.map((d) => (
-                                        <SelectItem key={d.debtorId} value={String(d.debtorId)}>
-                                          {d.name} {d.phone ? `(${d.phone})` : ""}
+                                        <SelectItem
+                                          key={d.debtorId}
+                                          value={String(d.debtorId)}
+                                        >
+                                          {d.name}{" "}
+                                          {d.phone ? `(${d.phone})` : ""}
                                         </SelectItem>
                                       ))}
                                     </SelectContent>
                                   </Select>
                                 </div>
-                                <Button 
-                                  variant="outline" 
-                                  size="icon" 
+                                <Button
+                                  variant="outline"
+                                  size="icon"
                                   onClick={() => setIsCreatingDebtor(true)}
                                   title="Thêm khách hàng mới"
                                 >
@@ -677,7 +393,7 @@ export default function PaymentClient() {
                           )}
                         </div>
                       )}
-                      
+
                       {Number(cashReceived) < order.totalAmount && (
                         <p className="text-xs text-red-500 text-center mt-1">
                           Số tiền chưa đủ
@@ -863,7 +579,10 @@ export default function PaymentClient() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsCreatingDebtor(false)}>
+            <Button
+              variant="outline"
+              onClick={() => setIsCreatingDebtor(false)}
+            >
               Hủy
             </Button>
             <Button

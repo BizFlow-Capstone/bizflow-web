@@ -18,6 +18,7 @@ import {
   confirmOrder,
   cancelOrder,
   completeOrder,
+  createAIDraftOrder,
 } from "@/services/orderService";
 import type {
   OrderFilters,
@@ -27,6 +28,7 @@ import type {
   ConfirmOrderRequest,
   UpdateOrderRequest,
   CompleteOrderRequest,
+  AIDraftOrderData,
 } from "@/lib/types/order";
 
 /**
@@ -188,6 +190,19 @@ export function useCompleteOrder() {
       queryClient.invalidateQueries({
         queryKey: orderKeys.detail(targetOrderId),
       });
+    },
+  });
+}
+
+export function useCreateAIDraftOrder() {
+  return useMutation<
+    AIDraftOrderData,
+    Error,
+    { locationId: number; audioFile: File }
+  >({
+    mutationFn: async ({ locationId, audioFile }) => {
+      const response = await createAIDraftOrder(locationId, audioFile);
+      return response.data;
     },
   });
 }

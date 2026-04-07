@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   Loader2,
@@ -68,6 +68,7 @@ import {
   useAccountingBooks,
   useAccountingPeriods,
   useCreateAccountingBook,
+  useDeleteAccountingBook,
 } from "@/hooks/useAccounting";
 import { BookRowsTable } from "@/components/products/BookRowsTable";
 
@@ -1496,12 +1497,28 @@ function ReportsTab({ locationId }: { locationId: number }) {
 // ─── Tab 3: Sổ kế toán ──────────────────────────────────────────────────────
 
 function BooksTab({ locationId }: { locationId: number }) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const { data: periods, isLoading: periodLoading } =
     useAccountingPeriods(locationId);
   const [selectedPeriodId, setSelectedPeriodId] = useState<number | undefined>(
     undefined,
   );
   const [expandedBookId, setExpandedBookId] = useState<number | null>(null);
+
+  const requestedPeriodId = useMemo(() => {
+    const raw = searchParams.get("periodId");
+    if (!raw) return undefined;
+    const parsed = Number(raw);
+    if (!Number.isFinite(parsed) || parsed <= 0) return undefined;
+    return parsed;
+  }, [searchParams]);
+
+  useEffect(() => {
+    if (!periods || periods.length === 0 || !requestedPeriodId) return;
+    if (!periods.some((p) => p.periodId === requestedPeriodId)) return;
+    setSelectedPeriodId(requestedPeriodId);
+  }, [periods, requestedPeriodId]);
 
   const periodId = useMemo(() => {
     if (selectedPeriodId !== undefined) return selectedPeriodId;
@@ -1518,36 +1535,59 @@ function BooksTab({ locationId }: { locationId: number }) {
   );
   const { mutateAsync: createBook, isPending: creatingBook } =
     useCreateAccountingBook(locationId);
+  const { mutateAsync: deleteBook, isPending: deletingBook } =
+    useDeleteAccountingBook(locationId);
+  const [deletingBookId, setDeletingBookId] = useState<number | null>(null);
+
+  const handlePeriodChange = (value: string) => {
+    const nextPeriodId = Number(value);
+    setSelectedPeriodId(nextPeriodId);
+
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("tab", "books");
+    params.set("periodId", String(nextPeriodId));
+    router.replace(`/dashboard/reports?${params.toString()}`, {
+      scroll: false,
+    });
+  };
 
   const [groupNumber, setGroupNumber] = useState<number>(2);
   const [taxMethod, setTaxMethod] = useState<string>("method_1");
   const [selectedTemplates, setSelectedTemplates] = useState<string[]>([]);
+
+  const getAllowedTaxMethodsByGroup = (group: number): string[] => {
+    if (group === 1) return ["exempt"];
+    if (group === 2) return ["method_1", "method_2"];
+    return ["method_2"];
+  };
+
+  const allowedTaxMethods = getAllowedTaxMethodsByGroup(groupNumber);
 
   const getSuggestedTemplates = (group: number, method: string) =>
     templates
       ?.filter(
         (t) =>
           t.applicableGroups?.includes(group) &&
-          t.applicableMethods?.includes(method),
+          (!t.applicableMethods ||
+            t.applicableMethods.length === 0 ||
+            t.applicableMethods.includes(method)),
       )
       .map((t) => t.templateCode) ?? [];
 
   const handleGroupNumberChange = (val: string) => {
     const group = Number(val);
-    let newMethod = taxMethod;
-    if (group === 1) {
-      newMethod = "exempt";
-    } else if (group === 4 && taxMethod === "exempt") {
-      newMethod = "method_2";
-    } else if (taxMethod === "exempt") {
-      newMethod = "method_1";
-    }
+    const allowedMethods = getAllowedTaxMethodsByGroup(group);
+    const newMethod = allowedMethods.includes(taxMethod)
+      ? taxMethod
+      : allowedMethods[0];
+
     setGroupNumber(group);
     setTaxMethod(newMethod);
     setSelectedTemplates(getSuggestedTemplates(group, newMethod));
   };
 
   const handleTaxMethodChange = (method: string) => {
+    if (!allowedTaxMethods.includes(method)) return;
     setTaxMethod(method);
     setSelectedTemplates(getSuggestedTemplates(groupNumber, method));
   };
@@ -1566,6 +1606,26 @@ function BooksTab({ locationId }: { locationId: number }) {
       alert("Tạo sổ thành công!");
     } catch (err: unknown) {
       alert((err as Error).message || "Lỗi tạo sổ.");
+    }
+  };
+
+  const handleDeleteBook = async (bookId: number) => {
+    const confirmed = window.confirm(
+      "Bạn có chắc muốn xóa sổ này? Chỉ nên xóa khi sổ thuộc kỳ đang mở và chưa từng xuất.",
+    );
+    if (!confirmed) return;
+
+    try {
+      setDeletingBookId(bookId);
+      await deleteBook(bookId);
+      if (expandedBookId === bookId) {
+        setExpandedBookId(null);
+      }
+      alert("Xóa sổ kế toán thành công!");
+    } catch (err: unknown) {
+      alert((err as Error).message || "Không thể xóa sổ kế toán.");
+    } finally {
+      setDeletingBookId(null);
     }
   };
 
@@ -1596,7 +1656,7 @@ function BooksTab({ locationId }: { locationId: number }) {
           </label>
           <Select
             value={periodId ? String(periodId) : ""}
-            onValueChange={(v) => setSelectedPeriodId(Number(v))}
+            onValueChange={handlePeriodChange}
           >
             <SelectTrigger className="w-50 h-9">
               <SelectValue
@@ -1655,23 +1715,25 @@ function BooksTab({ locationId }: { locationId: number }) {
             <Select
               value={taxMethod}
               onValueChange={handleTaxMethodChange}
-              disabled={groupNumber === 1}
+              disabled={allowedTaxMethods.length === 1}
             >
               <SelectTrigger className="bg-white">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {groupNumber === 1 ? (
+                {allowedTaxMethods.includes("exempt") ? (
                   <SelectItem value="exempt">
                     Miễn thuế (Chỉ dành cho Nhóm 1)
                   </SelectItem>
                 ) : null}
-                <SelectItem value="method_1" disabled={groupNumber === 1}>
-                  Cách 1 — Theo % Doanh Thu
-                </SelectItem>
-                <SelectItem value="method_2" disabled={groupNumber === 1}>
-                  Cách 2 — DT trừ CP
-                </SelectItem>
+                {allowedTaxMethods.includes("method_1") ? (
+                  <SelectItem value="method_1">
+                    Cách 1 — Theo % Doanh Thu
+                  </SelectItem>
+                ) : null}
+                {allowedTaxMethods.includes("method_2") ? (
+                  <SelectItem value="method_2">Cách 2 — DT trừ CP</SelectItem>
+                ) : null}
               </SelectContent>
             </Select>
           </div>
@@ -1685,7 +1747,9 @@ function BooksTab({ locationId }: { locationId: number }) {
             {templates?.map((tpl) => {
               const suggested =
                 tpl.applicableGroups?.includes(groupNumber) &&
-                tpl.applicableMethods?.includes(taxMethod);
+                (!tpl.applicableMethods ||
+                  tpl.applicableMethods.length === 0 ||
+                  tpl.applicableMethods.includes(taxMethod));
               const checked = selectedTemplates.includes(tpl.templateCode);
               return (
                 <label
@@ -1826,7 +1890,9 @@ function BooksTab({ locationId }: { locationId: number }) {
                             <Layers className="w-3 h-3" />
                             {book.taxMethod === "method_1"
                               ? "Ấn định"
-                              : "Kê khai"}
+                              : book.taxMethod === "exempt"
+                                ? "Miễn thuế"
+                                : "Kê khai"}
                           </span>
                           <span className="inline-flex items-center gap-1 text-xs text-gray-400">
                             <Calendar className="w-3 h-3" />
@@ -1882,8 +1948,33 @@ function BooksTab({ locationId }: { locationId: number }) {
                                 variant="outline"
                                 size="sm"
                                 className="h-8 text-[10px] uppercase font-bold tracking-wider"
+                                disabled
+                                title="API export đang được hoàn thiện"
                               >
                                 <Download className="w-3 h-3 mr-1" /> Xuất Excel
+                              </Button>
+                              <Button
+                                variant="destructive"
+                                size="sm"
+                                className="h-8 text-[10px] uppercase font-bold tracking-wider"
+                                disabled={
+                                  deletingBook && deletingBookId === book.bookId
+                                }
+                                onClick={() =>
+                                  void handleDeleteBook(book.bookId)
+                                }
+                              >
+                                {deletingBook &&
+                                deletingBookId === book.bookId ? (
+                                  <>
+                                    <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                                    Đang xóa
+                                  </>
+                                ) : (
+                                  <>
+                                    <Trash2 className="w-3 h-3 mr-1" /> Xóa sổ
+                                  </>
+                                )}
                               </Button>
                             </div>
                           </div>
@@ -2491,6 +2582,20 @@ interface BookColumnEntry {
   fieldType: string;
 }
 
+interface BookSummaryData {
+  totalRows?: number;
+  totalRevenue?: number;
+  totalCost?: number;
+  totalTax?: number;
+  startDate?: string;
+  endDate?: string;
+  taxMethod?: string;
+  formulaValues?: Record<string, unknown>;
+  businessTypeTaxes?: BookBtEntry[];
+  formulaDetails?: BookFormulaEntry[];
+  columns?: BookColumnEntry[];
+}
+
 // BookSummaryPanel: show summary, KPIs, formulas for a book
 function BookSummaryPanel({
   locationId,
@@ -2528,7 +2633,7 @@ function BookSummaryPanel({
     );
 
   if (!data?.data) return null;
-  const summary = data.data;
+  const summary = data.data as BookSummaryData;
 
   const fmtValue = (val: unknown) => {
     if (val === null || val === undefined) return "—";
@@ -2633,7 +2738,7 @@ function BookSummaryPanel({
               <span className="w-1.5 h-1.5 rounded-full bg-slate-300" />
               <span className="text-slate-400 font-medium">Kỳ tính:</span>
               <span className="font-bold text-slate-800">
-                {summary.startDate
+                {summary.startDate && summary.endDate
                   ? `${new Date(summary.startDate).toLocaleDateString("vi-VN")} → ${new Date(summary.endDate).toLocaleDateString("vi-VN")}`
                   : "Toàn thời gian"}
               </span>
@@ -2666,7 +2771,7 @@ function BookSummaryPanel({
       </div>
 
       {/* Ngành nghề & Thuế suất */}
-      {summary.businessTypeTaxes?.length > 0 && (
+      {(summary.businessTypeTaxes?.length ?? 0) > 0 && (
         <div className="space-y-4">
           <div className="flex items-center gap-2 text-xs font-bold text-slate-500 uppercase tracking-widest pl-2">
             <Zap className="w-4 h-4 text-amber-500" /> Ngành nghề và thuế suất
@@ -2689,7 +2794,7 @@ function BookSummaryPanel({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {summary.businessTypeTaxes.map((bt: BookBtEntry) => (
+                {(summary.businessTypeTaxes ?? []).map((bt: BookBtEntry) => (
                   <React.Fragment key={bt.businessTypeId}>
                     {bt.taxRates?.map((r: BookTaxRateItem, idx: number) => (
                       <tr
@@ -2724,7 +2829,7 @@ function BookSummaryPanel({
       )}
 
       {/* Công thức ENGINE */}
-      {summary.formulaDetails?.length > 0 && (
+      {(summary.formulaDetails?.length ?? 0) > 0 && (
         <div className="space-y-4">
           <div className="flex items-center gap-2 text-xs font-bold text-slate-500 uppercase tracking-widest pl-2">
             <Terminal className="w-4 h-4 text-slate-400" /> Chi tiết công thức
@@ -2745,7 +2850,7 @@ function BookSummaryPanel({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {summary.formulaDetails.map((f: BookFormulaEntry) => (
+                {(summary.formulaDetails ?? []).map((f: BookFormulaEntry) => (
                   <tr
                     key={f.formulaId}
                     className="hover:bg-slate-50/30 transition-colors"
@@ -2771,7 +2876,7 @@ function BookSummaryPanel({
       )}
 
       {/* Cấu trúc cột */}
-      {summary.columns?.length > 0 && (
+      {(summary.columns?.length ?? 0) > 0 && (
         <div className="space-y-4">
           <div className="flex items-center gap-2 text-xs font-bold text-slate-500 uppercase tracking-widest pl-2">
             <Layers className="w-4 h-4 text-slate-400" /> Bản đồ dữ liệu & Cấu
@@ -2796,7 +2901,7 @@ function BookSummaryPanel({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {summary.columns.map((col: BookColumnEntry) => (
+                {(summary.columns ?? []).map((col: BookColumnEntry) => (
                   <tr
                     key={col.fieldCode}
                     className="hover:bg-slate-50/30 transition-colors"
