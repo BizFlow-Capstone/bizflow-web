@@ -53,6 +53,52 @@ export interface QuickSearchProduct {
   saleItems: SaleItem[];
 }
 
+export type ReorderUrgency = "HIGH" | "MEDIUM" | "LOW";
+
+export interface ReorderSuggestion {
+  productId: string;
+  currentStock: number;
+  daysUntilStockout: number;
+  suggestedQuantity: number;
+  avgDailySales: number;
+  urgency: ReorderUrgency;
+  generatedAt: string;
+}
+
+export type ProductInsightType =
+  | "TOP_SELLER"
+  | "GROWTH_TREND"
+  | "PROMOTE_CANDIDATE";
+
+export interface ProductInsight {
+  productId: string;
+  insightType: ProductInsightType;
+  rank: number;
+  metricValue: number;
+  periodDays: number;
+  generatedAt: string;
+}
+
+export type AnomalyAlertSeverity = "CRITICAL" | "WARNING" | "INFO";
+
+export interface AnomalyAlert {
+  id: string;
+  alertType: string;
+  severity: AnomalyAlertSeverity | string;
+  tier: string;
+  referenceDate: string;
+  description: string;
+  referenceId: string | null;
+  isAcknowledged: boolean;
+  generatedAt: string;
+}
+
+export interface VectorStoreBackfillResult {
+  locationId: string;
+  synced: number;
+  skipped: number;
+}
+
 export interface ProductPricePolicy {
   productPricePolicyId: number;
   saleItemId: number;

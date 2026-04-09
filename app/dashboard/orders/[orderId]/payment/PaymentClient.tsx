@@ -38,15 +38,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Plus } from "lucide-react";
-
-// --- Helpers ---
-
-function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat("vi-VN", {
-    style: "currency",
-    currency: "VND",
-  }).format(amount);
-}
+import { formatVnd as formatCurrency } from "@/lib/format";
 
 // --- Mock bank info ---
 

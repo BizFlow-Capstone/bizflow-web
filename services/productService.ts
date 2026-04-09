@@ -12,6 +12,10 @@ import type {
   AdjustStockRequest,
   AdjustSaleItemPriceRequest,
   QuickSearchProduct,
+  ReorderSuggestion,
+  ProductInsight,
+  AnomalyAlert,
+  VectorStoreBackfillResult,
 } from "@/lib/types/product";
 import { authFetch } from "@/lib/auth/tokenManager";
 
@@ -142,6 +146,159 @@ export async function getQuickSearchProducts(
   }
 
   return response.json();
+}
+
+/**
+ * Fetch AI reorder suggestions (pre-computed nightly).
+ */
+export async function getReorderSuggestions(
+  locationId: number,
+): Promise<ApiResponse<ReorderSuggestion[]>> {
+  const params = new URLSearchParams();
+  params.append("locationId", String(locationId));
+
+  const response = await authFetch(
+    `/api/my-business/ai/reorder?${params.toString()}`,
+    {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      cache: "no-store",
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch reorder suggestions: ${response.status}`);
+  }
+
+  const payload = (await response.json()) as ApiResponse<ReorderSuggestion[]>;
+  return {
+    ...payload,
+    data: (payload.data ?? []).map((item) => ({
+      ...item,
+      productId: String(item.productId),
+    })),
+  };
+}
+
+/**
+ * Fetch AI product insights (pre-computed nightly).
+ */
+export async function getProductInsights(
+  locationId: number,
+): Promise<ApiResponse<ProductInsight[]>> {
+  const params = new URLSearchParams();
+  params.append("locationId", String(locationId));
+
+  const response = await authFetch(
+    `/api/my-business/ai/insights?${params.toString()}`,
+    {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      cache: "no-store",
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch product insights: ${response.status}`);
+  }
+
+  const payload = (await response.json()) as ApiResponse<ProductInsight[]>;
+  return {
+    ...payload,
+    data: (payload.data ?? []).map((item) => ({
+      ...item,
+      productId: String(item.productId),
+    })),
+  };
+}
+
+/**
+ * Fetch AI anomaly alerts. Use acknowledged=false to fetch unacknowledged alerts.
+ */
+export async function getAnomalyAlerts(
+  locationId: number,
+  acknowledged?: boolean,
+): Promise<ApiResponse<AnomalyAlert[]>> {
+  const params = new URLSearchParams();
+  params.append("locationId", String(locationId));
+
+  if (typeof acknowledged === "boolean") {
+    params.append("acknowledged", String(acknowledged));
+  }
+
+  const response = await authFetch(
+    `/api/my-business/ai/anomalies?${params.toString()}`,
+    {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      cache: "no-store",
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch anomaly alerts: ${response.status}`);
+  }
+
+  return (await response.json()) as ApiResponse<AnomalyAlert[]>;
+}
+
+/**
+ * Mark anomaly alert as acknowledged by owner.
+ */
+export async function acknowledgeAnomalyAlert(
+  id: string,
+  locationId: number,
+): Promise<ApiResponse<null>> {
+  const params = new URLSearchParams();
+  params.append("locationId", String(locationId));
+
+  const response = await authFetch(
+    `/api/my-business/ai/anomalies/${encodeURIComponent(id)}/acknowledge?${params.toString()}`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(`Failed to acknowledge anomaly alert: ${response.status}`);
+  }
+
+  return (await response.json()) as ApiResponse<null>;
+}
+
+/**
+ * Backfill all active products of location into vector store.
+ */
+export async function backfillVectorStore(
+  locationId: number,
+): Promise<ApiResponse<VectorStoreBackfillResult>> {
+  const params = new URLSearchParams();
+  params.append("locationId", String(locationId));
+
+  const response = await authFetch(
+    `/api/my-business/ai/vector-store/backfill?${params.toString()}`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(`Failed to backfill vector store: ${response.status}`);
+  }
+
+  return (await response.json()) as ApiResponse<VectorStoreBackfillResult>;
 }
 
 /**

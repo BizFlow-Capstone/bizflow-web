@@ -1,3 +1,4 @@
+import { authFetch } from "@/lib/auth/tokenManager";
 import type {
   ApiResponse,
   DashboardSummary,
@@ -8,115 +9,154 @@ import type {
   ChartPeriod,
 } from "@/lib/types/dashboard";
 
-/**
- * Dashboard Service
- * Mock data — will be replaced by real API calls when backend is ready
- */
+// ---------------------------------------------------------------------------
+// Backend DTO shapes (internal — not exported)
+// ---------------------------------------------------------------------------
 
-// --- Mock data generators ---
+type BackendDashboardSummary = {
+  businessLocationId?: number | null;
+  includedLocationCount: number;
+  fromDate: string;
+  toDate: string;
+  totalRevenue: number;
+  totalCost: number;
+  totalCompletedOrders: number;
+  totalOutstandingDebt: number;
+  outstandingDebtAsOfUtc: string;
+};
 
-function generateRevenueChart(period: ChartPeriod): RevenueChartData {
-  const days = period === "7d" ? 7 : 30;
-  const data = [];
-  const now = new Date();
+type BackendOrderItem = {
+  cashAmount: number;
+  bankAmount: number;
+  debtAmount: number;
+  totalAmount: number;
+  completedAt?: string | null;
+  status: string;
+};
 
-  for (let i = days - 1; i >= 0; i--) {
-    const date = new Date(now);
-    date.setDate(date.getDate() - i);
-    const revenue = Math.floor(Math.random() * 15000000) + 8000000;
-    const cost = Math.floor(revenue * (0.25 + Math.random() * 0.2));
-    data.push({
-      date: date.toISOString().split("T")[0],
-      revenue,
-      cost,
-      profit: revenue - cost,
-    });
+type BackendOrderPage = {
+  items: BackendOrderItem[];
+  totalCount: number;
+  totalPages: number;
+  pageNumber: number;
+  pageSize: number;
+  hasNextPage: boolean;
+};
+
+type BackendProductPage = {
+  items: unknown[];
+  totalCount: number;
+};
+
+// ---------------------------------------------------------------------------
+// Internal fetch helpers
+// ---------------------------------------------------------------------------
+
+async function fetchBackendApiJson<T>(
+  path: string,
+  params: Record<string, string | number>,
+): Promise<T | null> {
+  try {
+    const query = new URLSearchParams();
+    for (const [k, v] of Object.entries(params)) {
+      if (v !== "" && v !== undefined && v !== null) {
+        query.set(k, String(v));
+      }
+    }
+    const url = `${path}?${query.toString()}`;
+    const res = await authFetch(url, { cache: "no-store" });
+    if (!res.ok) return null;
+    const json = (await res.json()) as { data?: T; success?: boolean };
+    return json.data ?? null;
+  } catch {
+    return null;
   }
-
-  return { period, data };
 }
 
-const MOCK_SUMMARY: DashboardSummary = {
-  date: new Date().toISOString().split("T")[0],
-  todayRevenue: 12500000,
-  todayOrders: 8,
-  totalOutstandingDebt: 15000000,
-  lowStockCount: 5,
-  todayCashIn: 8000000,
-  todayBankIn: 3500000,
-  todayCashOut: 2000000,
-  todayBankOut: 0,
-};
+/** ISO date string for N days ago (or today when offset=0). */
+function isoDateOffset(daysAgo: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() - daysAgo);
+  return d.toISOString().split("T")[0];
+}
 
-const MOCK_TOP_PRODUCTS: TopProductsData = {
-  period: "30d",
-  products: [
-    {
-      productId: 10,
-      productName: "Xi măng Hà Tiên",
-      totalQuantity: 500,
-      totalRevenue: 47500000,
-    },
-    {
-      productId: 22,
-      productName: "Sắt phi 12",
-      totalQuantity: 200,
-      totalRevenue: 24000000,
-    },
-    {
-      productId: 5,
-      productName: "Cát xây dựng",
-      totalQuantity: 1500,
-      totalRevenue: 18000000,
-    },
-    {
-      productId: 31,
-      productName: "Gạch ống",
-      totalQuantity: 3000,
-      totalRevenue: 15000000,
-    },
-    {
-      productId: 8,
-      productName: "Tôn lợp mái",
-      totalQuantity: 80,
-      totalRevenue: 12000000,
-    },
-  ],
-};
+/** Fetch ALL completed orders for a date range (handles pagination up to 5 pages). */
+async function fetchCompletedOrders(
+  locationId: number,
+  fromDate: string,
+  toDate: string,
+  maxPages = 5,
+): Promise<BackendOrderItem[]> {
+  const items: BackendOrderItem[] = [];
+  let page = 1;
 
-const MOCK_PAYMENT_RATIO: PaymentRatioData = {
-  period: "30d",
-  cash: { amount: 350000000, percent: 56.5 },
-  bank: { amount: 180000000, percent: 29.0 },
-  debt: { amount: 90000000, percent: 14.5 },
-};
+  while (page <= maxPages) {
+    const data = await fetchBackendApiJson<BackendOrderPage>("/api/orders", {
+      BusinessLocationId: locationId,
+      Status: "completed",
+      FromDate: fromDate,
+      ToDate: toDate,
+      PageNumber: page,
+      PageSize: 200,
+    });
 
-const MOCK_REVENUE_BY_TYPE: RevenueByTypeData = {
-  period: "30d",
-  breakdown: [
-    {
-      businessTypeId: "bt-retail",
-      name: "Bán lẻ hàng hóa",
-      revenue: 500000000,
-      percent: 80.6,
-    },
-    {
-      businessTypeId: "bt-service",
-      name: "Dịch vụ",
-      revenue: 120000000,
-      percent: 19.4,
-    },
-  ],
-};
+    if (!data) break;
+    items.push(...data.items);
+    if (!data.hasNextPage || data.pageNumber >= data.totalPages) break;
+    page++;
+  }
 
-// --- Service functions ---
+  return items;
+}
+
+// ---------------------------------------------------------------------------
+// Service functions
+// ---------------------------------------------------------------------------
 
 export async function getDashboardSummary(
-  _locationId: number,
+  locationId: number,
 ): Promise<ApiResponse<DashboardSummary>> {
-  await new Promise((r) => setTimeout(r, 300));
+  const today = isoDateOffset(0);
+
+  // Run summary + low-stock-count + today's orders in parallel
+  const [summaryData, productPage, todayOrders] = await Promise.all([
+    fetchBackendApiJson<BackendDashboardSummary>(
+      "/api/my-business/dashboard",
+      locationId > 0
+        ? { Period: "day", BusinessLocationId: locationId }
+        : { Period: "day" },
+    ),
+    fetchBackendApiJson<BackendProductPage>("/api/products", {
+      LocationId: locationId,
+      MaxStock: 10,
+      TrackInventory: "true",
+      Status: "active",
+      PageSize: 1,
+    }),
+    fetchCompletedOrders(locationId, today, today),
+  ]);
+
+  const todayCashIn = todayOrders.reduce(
+    (s, o) => s + (Number(o.cashAmount) || 0),
+    0,
+  );
+  const todayBankIn = todayOrders.reduce(
+    (s, o) => s + (Number(o.bankAmount) || 0),
+    0,
+  );
+
   return {
-    data: MOCK_SUMMARY,
+    data: {
+      date: today,
+      todayRevenue: Number(summaryData?.totalRevenue ?? 0),
+      todayOrders: summaryData?.totalCompletedOrders ?? 0,
+      totalOutstandingDebt: Number(summaryData?.totalOutstandingDebt ?? 0),
+      lowStockCount: productPage?.totalCount ?? 0,
+      todayCashIn,
+      todayBankIn,
+      todayCashOut: 0,
+      todayBankOut: 0,
+    },
     success: true,
     messageCode: "SUCCESS",
     message: "OK",
@@ -125,12 +165,44 @@ export async function getDashboardSummary(
 }
 
 export async function getRevenueChart(
-  _locationId: number,
+  locationId: number,
   period: ChartPeriod = "7d",
 ): Promise<ApiResponse<RevenueChartData>> {
-  await new Promise((r) => setTimeout(r, 400));
+  const days = period === "7d" ? 7 : 30;
+  const fromDate = isoDateOffset(days - 1);
+  const toDate = isoDateOffset(0);
+
+  const orders = await fetchCompletedOrders(locationId, fromDate, toDate);
+
+  // Build a map of date → totals
+  const dayMap = new Map<string, { revenue: number }>();
+
+  // Pre-fill all days in range so chart has no gaps
+  for (let i = days - 1; i >= 0; i--) {
+    dayMap.set(isoDateOffset(i), { revenue: 0 });
+  }
+
+  for (const order of orders) {
+    const dateKey = order.completedAt
+      ? order.completedAt.split("T")[0]
+      : toDate;
+    if (dayMap.has(dateKey)) {
+      const existing = dayMap.get(dateKey)!;
+      existing.revenue += Number(order.totalAmount) || 0;
+    }
+  }
+
+  const data = Array.from(dayMap.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([date, { revenue }]) => ({
+      date,
+      revenue,
+      cost: 0,
+      profit: revenue,
+    }));
+
   return {
-    data: generateRevenueChart(period),
+    data: { period, data },
     success: true,
     messageCode: "SUCCESS",
     message: "OK",
@@ -142,9 +214,9 @@ export async function getTopProducts(
   _locationId: number,
   period: ChartPeriod = "30d",
 ): Promise<ApiResponse<TopProductsData>> {
-  await new Promise((r) => setTimeout(r, 300));
+  // No order-item detail in the list endpoint — return empty so UI shows gracefully.
   return {
-    data: { ...MOCK_TOP_PRODUCTS, period },
+    data: { period, products: [] },
     success: true,
     messageCode: "SUCCESS",
     message: "OK",
@@ -153,12 +225,35 @@ export async function getTopProducts(
 }
 
 export async function getPaymentRatio(
-  _locationId: number,
+  locationId: number,
   period: ChartPeriod = "30d",
 ): Promise<ApiResponse<PaymentRatioData>> {
-  await new Promise((r) => setTimeout(r, 250));
+  const days = period === "7d" ? 7 : 30;
+  const fromDate = isoDateOffset(days - 1);
+  const toDate = isoDateOffset(0);
+
+  const orders = await fetchCompletedOrders(locationId, fromDate, toDate);
+
+  let cash = 0;
+  let bank = 0;
+  let debt = 0;
+
+  for (const o of orders) {
+    cash += Number(o.cashAmount) || 0;
+    bank += Number(o.bankAmount) || 0;
+    debt += Number(o.debtAmount) || 0;
+  }
+
+  const total = cash + bank + debt || 1; // avoid division by zero
+  const pct = (v: number) => Math.round((v / total) * 1000) / 10;
+
   return {
-    data: { ...MOCK_PAYMENT_RATIO, period },
+    data: {
+      period,
+      cash: { amount: cash, percent: pct(cash) },
+      bank: { amount: bank, percent: pct(bank) },
+      debt: { amount: debt, percent: pct(debt) },
+    },
     success: true,
     messageCode: "SUCCESS",
     message: "OK",
@@ -170,9 +265,9 @@ export async function getRevenueByType(
   _locationId: number,
   period: ChartPeriod = "30d",
 ): Promise<ApiResponse<RevenueByTypeData>> {
-  await new Promise((r) => setTimeout(r, 250));
+  // No per-business-type breakdown endpoint — return empty so UI shows gracefully.
   return {
-    data: { ...MOCK_REVENUE_BY_TYPE, period },
+    data: { period, breakdown: [] },
     success: true,
     messageCode: "SUCCESS",
     message: "OK",

@@ -17,12 +17,12 @@ import {
   FileText,
   Upload,
   Package,
-  ClipboardList,
   RotateCcw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
 import {
   Table,
   TableBody,
@@ -40,23 +40,41 @@ import {
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { useCreateImport } from "@/hooks/useImports";
-import { useProducts } from "@/hooks/useProducts";
+import {
+  useProducts,
+  useReorderSuggestions,
+  useReorderSuggestionProductLookup,
+} from "@/hooks/useProducts";
 import { useLocations } from "@/hooks/useLocations";
 import { useDashboardLocation } from "@/lib/providers/DashboardLocationProvider";
 import type { ImportItemRequest, ImportType } from "@/lib/types/import";
 import type { Product } from "@/lib/types/product";
+import { formatVnd as formatCurrency } from "@/lib/format";
 
 // --- Helpers ---
 
-function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat("vi-VN", {
-    style: "currency",
-    currency: "VND",
-  }).format(amount);
-}
-
 function formatDateVN(date: Date): string {
   return `Ngày ${date.getDate().toString().padStart(2, "0")} tháng ${(date.getMonth() + 1).toString().padStart(2, "0")} năm ${date.getFullYear()}`;
+}
+
+function getUrgencyMeta(urgency?: string) {
+  switch (urgency) {
+    case "HIGH":
+      return {
+        badgeClass: "bg-red-100 text-red-700 border-red-200",
+        label: "Khẩn cấp cao",
+      };
+    case "MEDIUM":
+      return {
+        badgeClass: "bg-amber-100 text-amber-700 border-amber-200",
+        label: "Khẩn cấp vừa",
+      };
+    default:
+      return {
+        badgeClass: "bg-blue-100 text-blue-700 border-blue-200",
+        label: "Khẩn cấp thấp",
+      };
+  }
 }
 
 // Extended item with product name for display
@@ -222,6 +240,8 @@ export default function ImportFormClient() {
     () => productData?.items ?? [],
     [productData],
   );
+  const { data: reorderSuggestions = [], isLoading: isLoadingReorder } =
+    useReorderSuggestions(businessLocationId ?? 0);
 
   // Form state
   const [importType, setImportType] = useState<ImportType>("INVOICE");
@@ -288,6 +308,112 @@ export default function ImportFormClient() {
     () => new Set(items.map((i) => i.productId).filter((id) => id > 0)),
     [items],
   );
+
+  const reorderSuggestionRows = useMemo(() => {
+    const productMap = new Map<number, Product>();
+    products.forEach((product) => {
+      productMap.set(product.productId, product);
+    });
+
+    return reorderSuggestions
+      .map((item) => Number(item.productId))
+      .filter((id) => Number.isFinite(id) && id > 0)
+      .slice(0, 8)
+      .map((id) => Number(id));
+  }, [reorderSuggestions, products]);
+
+  const { data: reorderProductLookup = {}, isLoading: isLoadingLookup } =
+    useReorderSuggestionProductLookup(
+      reorderSuggestionRows,
+      businessLocationId ?? 0,
+    );
+
+  const normalizedReorderRows = useMemo(() => {
+    const productMap = new Map<number, Product>();
+    products.forEach((product) => {
+      productMap.set(product.productId, product);
+    });
+
+    return reorderSuggestions
+      .map((item) => {
+        const numericId = Number(item.productId);
+        if (!Number.isFinite(numericId) || numericId <= 0) return null;
+
+        const product = productMap.get(numericId);
+        const lookup = reorderProductLookup[numericId];
+
+        return {
+          ...item,
+          numericId,
+          product,
+          productName:
+            product?.productName ||
+            product?.name ||
+            lookup?.productName ||
+            `SP #${item.productId}`,
+          suggestedCostPrice: Math.max(
+            0,
+            Number(product?.costPrice ?? lookup?.costPrice ?? 0),
+          ),
+        };
+      })
+      .filter((item): item is NonNullable<typeof item> => item !== null)
+      .slice(0, 8);
+  }, [reorderSuggestions, products, reorderProductLookup]);
+
+  const applyReorderSuggestion = useCallback(
+    (row: (typeof normalizedReorderRows)[number]) => {
+      const suggestedQuantity = Math.max(
+        1,
+        Math.round(row.suggestedQuantity || 1),
+      );
+      const suggestedCostPrice = Math.max(0, row.suggestedCostPrice || 0);
+
+      setItems((prev) => {
+        const next = [...prev];
+        const existingIndex = next.findIndex(
+          (item) => item.productId === row.numericId,
+        );
+
+        if (existingIndex >= 0) {
+          next[existingIndex] = {
+            ...next[existingIndex],
+            quantity: Math.max(next[existingIndex].quantity, suggestedQuantity),
+            costPrice:
+              next[existingIndex].costPrice > 0
+                ? next[existingIndex].costPrice
+                : suggestedCostPrice,
+          };
+          return next;
+        }
+
+        const emptyRowIndex = next.findIndex(
+          (item) => item.productId === 0 && !item.productName,
+        );
+
+        const newRow: ImportItemRow = {
+          productId: row.numericId,
+          productName: row.productName,
+          quantity: suggestedQuantity,
+          costPrice: suggestedCostPrice,
+        };
+
+        if (emptyRowIndex >= 0) {
+          next[emptyRowIndex] = newRow;
+          return next;
+        }
+
+        return [...next, newRow];
+      });
+    },
+    [],
+  );
+
+  const applyAllHighUrgency = useCallback(() => {
+    normalizedReorderRows
+      .filter((row) => row.urgency === "HIGH")
+      .forEach((row) => applyReorderSuggestion(row));
+  }, [normalizedReorderRows, applyReorderSuggestion]);
 
   // --- Invoice Photo Handling ---
 
@@ -732,7 +858,7 @@ export default function ImportFormClient() {
                         <img
                           src={invoiceImage}
                           alt="Hóa đơn"
-                          className="w-full max-h-[500px] object-contain"
+                          className="w-full max-h-125 object-contain"
                         />
                         <button
                           onClick={removeImage}
@@ -768,7 +894,7 @@ export default function ImportFormClient() {
                         </Button>
 
                         {isScanning && (
-                          <div className="flex-1 min-w-[200px]">
+                          <div className="flex-1 min-w-50">
                             <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
                               <div
                                 className="h-full bg-[#23C4C1] transition-all duration-300 rounded-full"
@@ -803,7 +929,7 @@ export default function ImportFormClient() {
                           <summary className="cursor-pointer text-xs text-gray-500 hover:text-gray-700">
                             Xem văn bản trích xuất từ hóa đơn
                           </summary>
-                          <pre className="mt-2 p-3 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-600 max-h-[200px] overflow-auto whitespace-pre-wrap font-mono">
+                          <pre className="mt-2 p-3 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-600 max-h-50 overflow-auto whitespace-pre-wrap font-mono">
                             {ocrText}
                           </pre>
                         </details>
@@ -857,6 +983,111 @@ export default function ImportFormClient() {
               </div>
 
               {/* Items Table (Invoice mode) */}
+              <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden mb-6">
+                <div className="px-8 py-5">
+                  <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                    <div>
+                      <p className="text-sm font-semibold text-gray-700">
+                        Gợi ý nhập hàng AI
+                      </p>
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        Danh sách được tính sẵn theo nightly job, sắp xếp theo
+                        mức độ khẩn cấp.
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="h-8 text-xs"
+                      onClick={applyAllHighUrgency}
+                      disabled={
+                        normalizedReorderRows.filter(
+                          (item) => item.urgency === "HIGH",
+                        ).length === 0
+                      }
+                    >
+                      Thêm tất cả mức HIGH
+                    </Button>
+                  </div>
+
+                  {isLoadingReorder || isLoadingLookup ? (
+                    <div className="mt-4 text-sm text-gray-500 flex items-center gap-2">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Đang tải gợi ý nhập hàng...
+                    </div>
+                  ) : normalizedReorderRows.length > 0 ? (
+                    <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {normalizedReorderRows.map((row) => {
+                        const urgency = getUrgencyMeta(row.urgency);
+                        const productAlreadySelected = selectedProductIds.has(
+                          row.numericId,
+                        );
+
+                        return (
+                          <div
+                            key={`${row.productId}-${row.generatedAt}`}
+                            className="rounded-lg border border-gray-200 bg-gray-50/60 p-3"
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <p className="text-sm font-medium text-gray-800 line-clamp-1">
+                                {row.productName}
+                              </p>
+                              <Badge
+                                variant="outline"
+                                className={urgency.badgeClass}
+                              >
+                                {urgency.label}
+                              </Badge>
+                            </div>
+
+                            <p className="mt-1 text-xs text-gray-600">
+                              Tồn hiện tại:{" "}
+                              {Math.max(
+                                0,
+                                Math.round(row.currentStock),
+                              ).toLocaleString("vi-VN")}{" "}
+                              · TB bán/ngày:{" "}
+                              {Math.max(
+                                0,
+                                Math.round(row.avgDailySales),
+                              ).toLocaleString("vi-VN")}
+                            </p>
+                            <p className="text-xs text-gray-600">
+                              Gợi ý nhập:{" "}
+                              {Math.max(
+                                0,
+                                Math.round(row.suggestedQuantity),
+                              ).toLocaleString("vi-VN")}{" "}
+                              · Hết hàng sau:{" "}
+                              {Math.max(0, Math.round(row.daysUntilStockout))}{" "}
+                              ngày
+                            </p>
+
+                            <div className="mt-2">
+                              <Button
+                                type="button"
+                                size="sm"
+                                className="h-7 text-xs bg-[#23C4C1] hover:bg-[#1da8a5] text-white"
+                                onClick={() => applyReorderSuggestion(row)}
+                                disabled={productAlreadySelected}
+                              >
+                                {productAlreadySelected
+                                  ? "Đã có trong phiếu"
+                                  : "Thêm vào phiếu"}
+                              </Button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="mt-4 text-sm text-gray-500">
+                      Chưa có dữ liệu gợi ý nhập hàng cho địa điểm này.
+                    </p>
+                  )}
+                </div>
+              </div>
+
               <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
                 <div className="px-8 pt-5 pb-2">
                   <div className="flex items-center justify-between mb-3">
@@ -886,7 +1117,7 @@ export default function ImportFormClient() {
                       <TableHead className="font-bold text-gray-700 text-center text-xs w-14 border-r border-gray-200">
                         STT
                       </TableHead>
-                      <TableHead className="font-bold text-gray-700 text-xs border-r border-gray-200 min-w-[240px]">
+                      <TableHead className="font-bold text-gray-700 text-xs border-r border-gray-200 min-w-60">
                         Sản phẩm <span className="text-red-500">*</span>
                       </TableHead>
                       <TableHead className="font-bold text-gray-700 text-center text-xs border-r border-gray-200 w-28">
@@ -1076,7 +1307,7 @@ export default function ImportFormClient() {
                         placeholder="Nhập tên nhà cung cấp..."
                         value={supplier}
                         onChange={(e) => setSupplier(e.target.value)}
-                        className="h-8 text-sm max-w-[240px]"
+                        className="h-8 text-sm max-w-60"
                       />
                     </div>
                   </div>
@@ -1166,7 +1397,7 @@ export default function ImportFormClient() {
                     <TableHead className="font-bold text-gray-700 text-center text-xs w-14 border-r border-gray-200">
                       STT
                     </TableHead>
-                    <TableHead className="font-bold text-gray-700 text-xs border-r border-gray-200 min-w-[240px]">
+                    <TableHead className="font-bold text-gray-700 text-xs border-r border-gray-200 min-w-60">
                       Tên mặt hàng <span className="text-red-500">*</span>
                     </TableHead>
                     <TableHead className="font-bold text-gray-700 text-center text-xs border-r border-gray-200 w-24">

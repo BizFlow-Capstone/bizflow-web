@@ -89,15 +89,9 @@ import {
   getDraftOrderCount,
 } from "@/lib/draftOrderStorage";
 import { useLocationRole } from "@/hooks/useLocationRole";
+import { formatVnd as formatCurrency } from "@/lib/format";
 
 // --- Helpers ---
-
-function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat("vi-VN", {
-    style: "currency",
-    currency: "VND",
-  }).format(amount);
-}
 
 function formatDate(dateStr?: string): string {
   if (!dateStr) return "—";

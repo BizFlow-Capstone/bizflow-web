@@ -1480,7 +1480,7 @@ export default function AdminNotificationsClient() {
               </p>
             </div>
             <a
-              href="http://localhost:5139/hangfire/"
+              href="http://localhost:8080/hangfire/"
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-1.5 text-sm text-teal-600 hover:text-teal-700 hover:underline"
@@ -1493,7 +1493,7 @@ export default function AdminNotificationsClient() {
           <Card className="border-0 shadow-sm overflow-hidden">
             <CardContent className="p-0">
               <iframe
-                src="http://localhost:5139/hangfire/"
+                src="http://localhost:8080/hangfire/"
                 title="Hangfire Dashboard"
                 className="w-full border-0"
                 style={{ height: "calc(100vh - 220px)", minHeight: "600px" }}

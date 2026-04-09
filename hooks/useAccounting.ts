@@ -9,6 +9,7 @@ import {
   getRevenuesWithFilters,
   createManualRevenue,
   deleteManualRevenue,
+  getRevenueForecast,
   getCashFlowReport,
   getAccountingPeriods,
   getAccountingPeriodDetail,
@@ -51,6 +52,8 @@ export const accountingKeys = {
     [...accountingKeys.all, "revenues", filters] as const,
   cashFlow: (locationId: number, start: string, end: string) =>
     [...accountingKeys.all, "cashflow", locationId, start, end] as const,
+  revenueForecast: (locationId: number) =>
+    [...accountingKeys.all, "revenue-forecast", locationId] as const,
   periods: (locationId: number) =>
     [...accountingKeys.all, "periods", locationId] as const,
   periodDetail: (locationId: number, periodId?: number) =>
@@ -200,6 +203,18 @@ export function useCashFlowReport(
       return result.data;
     },
     enabled: locationId > 0 && !!startDate && !!endDate,
+  });
+}
+
+export function useRevenueForecast(locationId: number) {
+  return useQuery({
+    queryKey: accountingKeys.revenueForecast(locationId),
+    queryFn: async () => {
+      const result = await getRevenueForecast(locationId);
+      if (!result.success) throw new Error(result.message);
+      return result.data;
+    },
+    enabled: locationId > 0,
   });
 }
 

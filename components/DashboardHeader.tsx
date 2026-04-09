@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
+  AlertCircle,
   Bell,
   BellRing,
   Check,
@@ -31,6 +32,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useLocations } from "@/hooks/useLocations";
+import { useAnomalyAlerts } from "@/hooks/useProducts";
 import { useDashboardLocation } from "@/lib/providers/DashboardLocationProvider";
 import type { Location } from "@/lib/types/location";
 import type { AuthAccount, AuthCredentialsData } from "@/lib/types/auth";
@@ -82,6 +84,8 @@ const defaultHeader: HeaderContent = {
   description:
     "Hỗ trợ điều chỉnh thay đổi của mẫu sổ kế toán theo quy định mới nhất.",
 };
+
+const ANOMALIES_ROUTE = "/dashboard/reports?tab=reports&subTab=anomalies";
 
 type LocationWithRole = Location & {
   isOwner?: boolean;
@@ -380,9 +384,17 @@ export default function DashboardHeader() {
 
   const roleLabel = getLocationOwnerRole(activeLocation);
   const locationLabel = activeLocation?.name ?? "Chưa chọn địa điểm";
+  const { data: unackedAnomalies = [] } = useAnomalyAlerts(
+    activeLocation?.id ?? 0,
+    false,
+  );
   const unreadCount = useMemo(
     () => notifications.filter((item) => !item.isRead).length,
     [notifications],
+  );
+  const anomalyUnreadCount = useMemo(
+    () => unackedAnomalies.length,
+    [unackedAnomalies],
   );
 
   const refreshNotifications = () => {
@@ -476,6 +488,16 @@ export default function DashboardHeader() {
     const elapsed = toastTick - toast.createdAt;
     const remaining = Math.max(0, toast.durationMs - elapsed);
     return (remaining / toast.durationMs) * 100;
+  };
+
+  const navigateToAnomaliesRoute = () => {
+    setIsNotificationMenuOpen(false);
+    const currentRoute = `${window.location.pathname}${window.location.search}`;
+    if (currentRoute === ANOMALIES_ROUTE) {
+      window.location.reload();
+      return;
+    }
+    window.location.assign(ANOMALIES_ROUTE);
   };
 
   useEffect(() => {
@@ -693,6 +715,19 @@ export default function DashboardHeader() {
               <Sun className="w-5 h-5 text-gray-600" />
             </Button>
 
+            <Button
+              variant="ghost"
+              className="relative h-9 px-3 gap-1.5 border border-amber-200/70 hover:border-amber-300 bg-amber-50/70 hover:bg-amber-100/70 text-amber-800"
+              onClick={navigateToAnomaliesRoute}
+              title="Mở cảnh báo bất thường"
+            >
+              <AlertCircle className="w-4 h-4" />
+              <span className="text-xs font-semibold">AI</span>
+              <span className="inline-flex min-w-5 h-5 px-1.5 items-center justify-center rounded-full bg-amber-500 text-[10px] font-semibold text-white">
+                {anomalyUnreadCount > 99 ? "99+" : anomalyUnreadCount}
+              </span>
+            </Button>
+
             <DropdownMenu
               open={isNotificationMenuOpen}
               onOpenChange={handleNotificationMenuOpenChange}
@@ -733,6 +768,20 @@ export default function DashboardHeader() {
                     </button>
                   )}
                 </div>
+
+                <button
+                  type="button"
+                  onClick={() => navigateToAnomaliesRoute()}
+                  className="w-full px-4 py-3 border-b border-gray-100 flex items-center justify-between hover:bg-amber-50/70 transition-colors"
+                >
+                  <span className="inline-flex items-center gap-2 text-sm font-medium text-gray-800">
+                    <AlertCircle className="w-4 h-4 text-amber-600" />
+                    Cảnh báo bất thường AI
+                  </span>
+                  <span className="inline-flex items-center justify-center min-w-6 h-6 px-2 rounded-full bg-amber-100 text-xs font-semibold text-amber-700 border border-amber-200">
+                    {anomalyUnreadCount}
+                  </span>
+                </button>
 
                 {notifications.length === 0 ? (
                   <div className="px-4 py-8 text-center text-sm text-gray-500">

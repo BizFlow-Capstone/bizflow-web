@@ -10,7 +10,6 @@ import {
   Package,
   ChevronLeft,
   ChevronRight,
-  MapPin,
   Plus,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -31,6 +30,7 @@ import {
   useUpdateProductStatus,
   useDeleteProduct,
   useAdjustProductStock,
+  useReorderSuggestions,
 } from "@/hooks/useProducts";
 import { useLocations } from "@/hooks/useLocations";
 import { useDashboardLocation } from "@/lib/providers/DashboardLocationProvider";
@@ -96,10 +96,6 @@ export default function ProductsClient() {
     return () => window.clearTimeout(timer);
   }, [searchQuery]);
 
-  useEffect(() => {
-    setPageNumber(1);
-  }, [debouncedSearchQuery]);
-
   // Build filters
   const filters: ProductFilters = useMemo(
     () => ({
@@ -122,6 +118,22 @@ export default function ProductsClient() {
   } = useProducts(filters);
 
   const products = useMemo(() => productData?.items ?? [], [productData]);
+  const { data: reorderSuggestions = [] } = useReorderSuggestions(
+    locationId ?? 0,
+  );
+
+  const reorderSuggestionsByProductId = useMemo(() => {
+    const map = new Map<number, (typeof reorderSuggestions)[number]>();
+
+    reorderSuggestions.forEach((item) => {
+      const id = Number(item.productId);
+      if (!Number.isFinite(id) || id <= 0) return;
+      map.set(id, item);
+    });
+
+    return map;
+  }, [reorderSuggestions]);
+
   const totalCount = productData?.totalCount ?? 0;
   const totalPages = productData?.totalPages ?? 0;
   const hasPreviousPage = productData?.hasPreviousPage ?? false;
@@ -209,7 +221,10 @@ export default function ProductsClient() {
               placeholder="Tìm theo tên sản phẩm hoặc mã SKU..."
               className="pl-10 pr-12 border-0 rounded-none focus:border-0 focus:ring-0 shadow-none bg-transparent"
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setPageNumber(1);
+              }}
             />
             <button
               type="button"
@@ -259,6 +274,7 @@ export default function ProductsClient() {
               isOwner={isOwner}
               statusUpdating={updateStatusMutation.isPending}
               deleteUpdating={deleteProductMutation.isPending}
+              reorderSuggestions={reorderSuggestionsByProductId}
               emptyTitle={
                 products.length === 0
                   ? "Chưa có sản phẩm nào"
