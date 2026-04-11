@@ -9,10 +9,15 @@ import {
 } from "firebase/auth";
 import { firebaseAuth } from "@/lib/firebase/client";
 import {
+  changeAccountPassword,
+  deleteAuthAccount,
   getAuthCredentials,
+  getAuthProfile,
   linkPhone,
   logoutAllAuth,
   setAccountPassword,
+  updateAuthProfile,
+  updateAuthProfileAvatar,
 } from "@/services/authService";
 import { clearLocalAvatarCache } from "@/lib/auth/avatarLocalCache";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -210,6 +215,10 @@ export default function ProfilePage() {
   const [account, setAccount] = useState<AuthAccount | null>(null);
   const [credentials, setCredentials] = useState<AuthAccountCredential[]>([]);
   const [accessToken, setAccessToken] = useState("");
+  const [fullNameInput, setFullNameInput] = useState("");
+  const [taxCodeInput, setTaxCodeInput] = useState("");
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [isUpdatingAvatar, setIsUpdatingAvatar] = useState(false);
 
   const [isLinkingPhone, setIsLinkingPhone] = useState(false);
   const [linkStep, setLinkStep] = useState<LinkStep>("idle");
@@ -221,10 +230,13 @@ export default function ProfilePage() {
   const [isVerifyingOtp, setIsVerifyingOtp] = useState(false);
 
   const [showPasswordForm, setShowPasswordForm] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [isSavingPassword, setIsSavingPassword] = useState(false);
   const [isLoggingOutAll, setIsLoggingOutAll] = useState(false);
+  const [deletePassword, setDeletePassword] = useState("");
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false);
   const [themeColors, setThemeColors] = useState<ThemeColors>(DEFAULT_THEME);
 
   const [error, setError] = useState("");
@@ -233,6 +245,7 @@ export default function ProfilePage() {
   const confirmationResultRef = useRef<ConfirmationResult | null>(null);
   const recaptchaVerifierRef = useRef<RecaptchaVerifier | null>(null);
   const otpRefs = useRef<(HTMLInputElement | null)[]>([]);
+  const avatarInputRef = useRef<HTMLInputElement | null>(null);
 
   const loadAuthState = useCallback(() => {
     if (typeof window === "undefined") return;
@@ -258,9 +271,13 @@ export default function ProfilePage() {
 
       setAccount(parsedAccount);
       setCredentials(merged);
+      setFullNameInput(parsedAccount?.fullName ?? "");
+      setTaxCodeInput(parsedAccount?.taxCode ?? "");
     } catch {
       setAccount(null);
       setCredentials([]);
+      setFullNameInput("");
+      setTaxCodeInput("");
     }
   }, []);
 
@@ -285,6 +302,71 @@ export default function ProfilePage() {
       return () => clearInterval(interval);
     }
   }, [linkStep, timer]);
+
+  useEffect(() => {
+    if (!accessToken) return;
+
+    let isCancelled = false;
+
+    const syncProfile = async () => {
+      try {
+        const [profileResult, credentialsResult] = await Promise.all([
+          getAuthProfile(accessToken),
+          getAuthCredentials(accessToken),
+        ]);
+
+        if (isCancelled) return;
+
+        const nextCredentials = dedupeCredentials([
+          ...(credentialsResult.data?.credentials ?? []),
+        ]);
+
+        setCredentials(nextCredentials);
+        setAccount((prev) => {
+          const nextAccount: AuthAccount = {
+            ...(prev ?? {}),
+            fullName:
+              profileResult.data?.fullName ?? prev?.fullName ?? "Tài khoản BizFlow",
+            avatarUrl: profileResult.data?.avatarUrl ?? prev?.avatarUrl ?? null,
+            taxCode: profileResult.data?.taxCode ?? prev?.taxCode ?? null,
+            mustChangePassword:
+              profileResult.data?.mustChangePassword ??
+              prev?.mustChangePassword ??
+              false,
+            credentials: dedupeCredentials([
+              ...(prev?.credentials ?? []),
+              ...nextCredentials,
+            ]),
+          };
+
+          setFullNameInput(nextAccount.fullName ?? "");
+          setTaxCodeInput(nextAccount.taxCode ?? "");
+
+          if (typeof window !== "undefined") {
+            window.localStorage.setItem(
+              AUTH_ACCOUNT_KEY,
+              JSON.stringify(nextAccount),
+            );
+            window.localStorage.setItem(
+              AUTH_CREDENTIALS_KEY,
+              JSON.stringify({ credentials: nextCredentials }),
+            );
+            window.dispatchEvent(new Event(AUTH_UPDATED_EVENT));
+          }
+
+          return nextAccount;
+        });
+      } catch (syncError) {
+        console.error("Failed to sync account profile:", syncError);
+      }
+    };
+
+    void syncProfile();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [accessToken]);
 
   const phoneCredential = useMemo(
     () => credentials.find((item) => isPhoneCredential(item)),
@@ -507,12 +589,171 @@ export default function ProfilePage() {
     }
   };
 
+  const persistAuthSnapshot = (
+    nextAccount: AuthAccount | null,
+    nextCredentials: AuthAccountCredential[] = credentials,
+  ) => {
+    setAccount(nextAccount);
+    setCredentials(nextCredentials);
+    setFullNameInput(nextAccount?.fullName ?? "");
+    setTaxCodeInput(nextAccount?.taxCode ?? "");
+
+    if (typeof window !== "undefined") {
+      if (nextAccount) {
+        window.localStorage.setItem(
+          AUTH_ACCOUNT_KEY,
+          JSON.stringify(nextAccount),
+        );
+      }
+      window.localStorage.setItem(
+        AUTH_CREDENTIALS_KEY,
+        JSON.stringify({ credentials: nextCredentials }),
+      );
+      window.dispatchEvent(new Event(AUTH_UPDATED_EVENT));
+    }
+  };
+
+  const handleSaveProfile = async () => {
+    setError("");
+    setMessage("");
+
+    if (!accessToken) {
+      setError("Không tìm thấy phiên đăng nhập. Vui lòng đăng nhập lại.");
+      return;
+    }
+
+    const trimmedFullName = fullNameInput.trim();
+    const trimmedTaxCode = taxCodeInput.trim();
+
+    if (!trimmedFullName) {
+      setError("Vui lòng nhập họ và tên.");
+      return;
+    }
+
+    setIsSavingProfile(true);
+    try {
+      const result = await updateAuthProfile(
+        {
+          fullName: trimmedFullName,
+          taxCode: trimmedTaxCode || null,
+        },
+        accessToken,
+      );
+
+      const updatedAccount: AuthAccount = {
+        ...(account ?? {}),
+        fullName: result.data?.fullName ?? trimmedFullName,
+        avatarUrl: result.data?.avatarUrl ?? account?.avatarUrl ?? null,
+        taxCode: result.data?.taxCode ?? (trimmedTaxCode || null),
+        mustChangePassword:
+          result.data?.mustChangePassword ?? account?.mustChangePassword,
+        credentials: dedupeCredentials([
+          ...(account?.credentials ?? []),
+          ...credentials,
+        ]),
+      };
+
+      persistAuthSnapshot(updatedAccount, credentials);
+      setMessage("Cập nhật hồ sơ thành công.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Cập nhật hồ sơ thất bại.");
+    } finally {
+      setIsSavingProfile(false);
+    }
+  };
+
+  const handleAvatarFileChange = async (
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = event.target.files?.[0] ?? null;
+    event.target.value = "";
+
+    if (!file) {
+      return;
+    }
+
+    if (!accessToken) {
+      setError("Không tìm thấy phiên đăng nhập. Vui lòng đăng nhập lại.");
+      return;
+    }
+
+    setError("");
+    setMessage("");
+    setIsUpdatingAvatar(true);
+    try {
+      const result = await updateAuthProfileAvatar({ file }, accessToken);
+      const updatedAccount: AuthAccount = {
+        ...(account ?? {}),
+        fullName: result.data?.fullName ?? account?.fullName,
+        avatarUrl: result.data?.avatarUrl ?? account?.avatarUrl ?? null,
+        taxCode: result.data?.taxCode ?? account?.taxCode ?? null,
+        mustChangePassword:
+          result.data?.mustChangePassword ?? account?.mustChangePassword,
+        credentials: dedupeCredentials([
+          ...(account?.credentials ?? []),
+          ...credentials,
+        ]),
+      };
+
+      persistAuthSnapshot(updatedAccount, credentials);
+      setMessage("Cập nhật ảnh đại diện thành công.");
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Cập nhật ảnh đại diện thất bại.",
+      );
+    } finally {
+      setIsUpdatingAvatar(false);
+    }
+  };
+
+  const handleRemoveAvatar = async () => {
+    setError("");
+    setMessage("");
+
+    if (!accessToken) {
+      setError("Không tìm thấy phiên đăng nhập. Vui lòng đăng nhập lại.");
+      return;
+    }
+
+    setIsUpdatingAvatar(true);
+    try {
+      const result = await updateAuthProfileAvatar(
+        { removeAvatar: true },
+        accessToken,
+      );
+      const updatedAccount: AuthAccount = {
+        ...(account ?? {}),
+        fullName: result.data?.fullName ?? account?.fullName,
+        avatarUrl: result.data?.avatarUrl ?? null,
+        taxCode: result.data?.taxCode ?? account?.taxCode ?? null,
+        mustChangePassword:
+          result.data?.mustChangePassword ?? account?.mustChangePassword,
+        credentials: dedupeCredentials([
+          ...(account?.credentials ?? []),
+          ...credentials,
+        ]),
+      };
+
+      persistAuthSnapshot(updatedAccount, credentials);
+      setMessage("Đã xóa ảnh đại diện.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Không thể xóa ảnh đại diện.");
+    } finally {
+      setIsUpdatingAvatar(false);
+    }
+  };
+
   const handleSavePassword = async () => {
     setError("");
     setMessage("");
 
     if (!accessToken) {
       setError("Không tìm thấy phiên đăng nhập. Vui lòng đăng nhập lại.");
+      return;
+    }
+
+    if (hasPassword && !currentPassword) {
+      setError("Vui lòng nhập mật khẩu hiện tại.");
       return;
     }
 
@@ -528,26 +769,28 @@ export default function ProfilePage() {
 
     setIsSavingPassword(true);
     try {
-      await setAccountPassword(newPassword, accessToken);
+      if (hasPassword) {
+        await changeAccountPassword(currentPassword, newPassword, accessToken);
+      } else {
+        await setAccountPassword(newPassword, accessToken);
+      }
 
       const updatedAccount: AuthAccount = {
         ...(account ?? {}),
         hasPassword: true,
+        mustChangePassword: false,
+        credentials: dedupeCredentials([
+          ...(account?.credentials ?? []),
+          ...credentials,
+        ]),
       };
 
-      setAccount(updatedAccount);
+      persistAuthSnapshot(updatedAccount, credentials);
       setShowPasswordForm(false);
+      setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");
       setMessage("Cập nhật mật khẩu thành công.");
-
-      if (typeof window !== "undefined") {
-        window.localStorage.setItem(
-          AUTH_ACCOUNT_KEY,
-          JSON.stringify(updatedAccount),
-        );
-        window.dispatchEvent(new Event(AUTH_UPDATED_EVENT));
-      }
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Cập nhật mật khẩu thất bại.",
@@ -591,6 +834,41 @@ export default function ProfilePage() {
     }
   };
 
+  const handleDeleteAccount = async () => {
+    setError("");
+    setMessage("");
+
+    if (!accessToken) {
+      setError("Không tìm thấy phiên đăng nhập. Vui lòng đăng nhập lại.");
+      return;
+    }
+
+    if (!deletePassword) {
+      setError("Vui lòng nhập mật khẩu để xác nhận xóa tài khoản.");
+      return;
+    }
+
+    if (
+      typeof window !== "undefined" &&
+      !window.confirm(
+        "Bạn có chắc chắn muốn xóa tài khoản? Hành động này sẽ đăng xuất khỏi toàn bộ thiết bị.",
+      )
+    ) {
+      return;
+    }
+
+    setIsDeletingAccount(true);
+    try {
+      await deleteAuthAccount(deletePassword, accessToken);
+      clearAuthStorage();
+      router.replace("/auth/login");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Xóa tài khoản thất bại.");
+    } finally {
+      setIsDeletingAccount(false);
+    }
+  };
+
   return (
     <div className="p-8 bg-gray-50 min-h-full">
       <div id="profile-phone-recaptcha" />
@@ -608,7 +886,7 @@ export default function ProfilePage() {
           <div className="pointer-events-none absolute top-4 right-10 h-2 w-2 rounded-full bg-white/70 animate-pulse" />
           <div className="pointer-events-none absolute top-12 right-24 h-1.5 w-1.5 rounded-full bg-white/60 animate-pulse" />
 
-          <div className="relative z-10 flex flex-col sm:flex-row sm:items-center gap-5">
+          <div className="relative z-10 flex flex-col gap-5 sm:flex-row sm:items-center">
             <Avatar
               className="h-20 w-20 shrink-0 border border-white/50"
               style={{
@@ -622,7 +900,7 @@ export default function ProfilePage() {
               </AvatarFallback>
             </Avatar>
 
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <p className="text-sm text-white/80">Hồ sơ người dùng</p>
               <h1 className="text-2xl font-bold truncate">{displayName}</h1>
               <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
@@ -633,6 +911,34 @@ export default function ProfilePage() {
                   {emailCredential?.identifier ?? "Chưa liên kết email"}
                 </span>
               </div>
+            </div>
+
+            <div className="flex flex-wrap gap-2 sm:justify-end">
+              <input
+                ref={avatarInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handleAvatarFileChange}
+              />
+              <button
+                type="button"
+                onClick={() => avatarInputRef.current?.click()}
+                disabled={isUpdatingAvatar}
+                className="rounded-lg border border-white/40 bg-white/15 px-4 py-2 text-sm font-medium text-white backdrop-blur-xs hover:bg-white/25 disabled:opacity-60"
+              >
+                {isUpdatingAvatar ? "Đang cập nhật..." : "Đổi ảnh đại diện"}
+              </button>
+              {avatarUrl && (
+                <button
+                  type="button"
+                  onClick={handleRemoveAvatar}
+                  disabled={isUpdatingAvatar}
+                  className="rounded-lg border border-white/25 bg-slate-900/20 px-4 py-2 text-sm font-medium text-white hover:bg-slate-900/30 disabled:opacity-60"
+                >
+                  Xóa ảnh
+                </button>
+              )}
             </div>
           </div>
         </section>
@@ -660,29 +966,53 @@ export default function ProfilePage() {
             </div>
           )}
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="mb-2 block text-sm font-medium text-gray-700">
                 Họ và tên
               </label>
               <input
                 type="text"
-                value={account?.fullName ?? ""}
-                readOnly
-                className="w-full rounded-xl border border-gray-200 px-4 py-3 bg-gray-50 text-gray-700"
+                value={fullNameInput}
+                onChange={(e) => setFullNameInput(e.target.value)}
+                className="w-full rounded-xl border border-gray-200 px-4 py-3 text-gray-700 outline-none focus:border-[#23C4C1]"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="mb-2 block text-sm font-medium text-gray-700">
+                Mã số thuế
+              </label>
+              <input
+                type="text"
+                value={taxCodeInput}
+                onChange={(e) => setTaxCodeInput(e.target.value)}
+                placeholder="Nhập mã số thuế nếu có"
+                className="w-full rounded-xl border border-gray-200 px-4 py-3 text-gray-700 outline-none focus:border-[#23C4C1]"
+              />
+            </div>
+            <div>
+              <label className="mb-2 block text-sm font-medium text-gray-700">
                 Email
               </label>
               <input
                 type="text"
                 value={emailCredential?.identifier ?? "Chưa liên kết"}
                 readOnly
-                className="w-full rounded-xl border border-gray-200 px-4 py-3 bg-gray-50 text-gray-700"
+                className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-gray-700"
               />
             </div>
+          </div>
+
+          <div className="mt-4 flex justify-end">
+            <button
+              type="button"
+              onClick={handleSaveProfile}
+              disabled={isSavingProfile}
+              style={{ backgroundColor: themeColors.primary }}
+              className="rounded-lg px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-60"
+            >
+              {isSavingProfile ? "Đang lưu..." : "Lưu thông tin hồ sơ"}
+            </button>
           </div>
 
           <div className="mt-6 space-y-4">
@@ -813,22 +1143,78 @@ export default function ProfilePage() {
         </section>
 
         <section className="bg-white border border-gray-100 rounded-2xl p-6 shadow-sm">
-          <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center justify-between mb-4 gap-3">
             <div>
               <h3 className="text-lg font-semibold text-gray-900">Bảo mật</h3>
               <p className="text-sm text-gray-500">
                 {hasPassword
-                  ? "Tài khoản đã có mật khẩu"
-                  : "Tài khoản chưa có mật khẩu"}
+                  ? "Tài khoản đã có mật khẩu đăng nhập."
+                  : "Tài khoản chưa có mật khẩu, hãy thiết lập ngay."}
               </p>
             </div>
             <button
+              type="button"
               onClick={() => setShowPasswordForm((prev) => !prev)}
-              className="px-4 py-2 rounded-lg border border-gray-300 text-sm font-medium hover:bg-gray-50"
+              className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium hover:bg-gray-50"
             >
               {hasPassword ? "Đổi mật khẩu" : "Thiết lập mật khẩu"}
             </button>
           </div>
+
+          {account?.mustChangePassword && (
+            <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
+              Tài khoản đang được yêu cầu cập nhật mật khẩu mới để tăng cường bảo mật.
+            </p>
+          )}
+
+          {showPasswordForm && (
+            <div className="mb-6 grid grid-cols-1 gap-3 md:grid-cols-2">
+              {hasPassword && (
+                <div className="md:col-span-2">
+                  <label className="mb-2 block text-sm font-medium text-gray-700">
+                    Mật khẩu hiện tại
+                  </label>
+                  <input
+                    type="password"
+                    value={currentPassword}
+                    onChange={(e) => setCurrentPassword(e.target.value)}
+                    className="w-full rounded-lg border border-gray-200 px-3 py-2 outline-none focus:border-[#23C4C1]"
+                  />
+                </div>
+              )}
+              <div>
+                <label className="mb-2 block text-sm font-medium text-gray-700">
+                  Mật khẩu mới
+                </label>
+                <input
+                  type="password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 outline-none focus:border-[#23C4C1]"
+                />
+              </div>
+              <div>
+                <label className="mb-2 block text-sm font-medium text-gray-700">
+                  Xác nhận mật khẩu mới
+                </label>
+                <input
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 outline-none focus:border-[#23C4C1]"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={handleSavePassword}
+                disabled={isSavingPassword}
+                style={{ backgroundColor: themeColors.primary }}
+                className="md:col-span-2 rounded-lg py-2.5 font-medium text-white disabled:opacity-50"
+              >
+                {isSavingPassword ? "Đang lưu..." : "Lưu mật khẩu"}
+              </button>
+            </div>
+          )}
 
           <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4">
             <div className="flex items-center justify-between gap-3">
@@ -837,45 +1223,51 @@ export default function ProfilePage() {
                   Đăng xuất mọi thiết bị
                 </p>
                 <p className="text-sm text-red-600">
-                  Kết thúc tất cả phiên đăng nhập trên các thiết bị.
+                  Kết thúc toàn bộ phiên đăng nhập đang hoạt động trên các thiết bị khác.
                 </p>
               </div>
               <button
+                type="button"
                 onClick={handleLogoutAllDevices}
                 disabled={isLoggingOutAll}
-                className="px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-medium hover:bg-red-700 disabled:opacity-60"
+                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-60"
               >
                 {isLoggingOutAll ? "Đang xử lý..." : "Đăng xuất tất cả"}
               </button>
             </div>
           </div>
 
-          {showPasswordForm && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <input
-                type="password"
-                placeholder="Mật khẩu mới"
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                className="rounded-lg border border-gray-200 px-3 py-2 outline-none focus:border-[#23C4C1]"
-              />
-              <input
-                type="password"
-                placeholder="Nhập lại mật khẩu"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                className="rounded-lg border border-gray-200 px-3 py-2 outline-none focus:border-[#23C4C1]"
-              />
+          <div className="rounded-xl border border-rose-200 bg-rose-50 p-4">
+            <div className="space-y-3">
+              <div>
+                <p className="text-sm font-semibold text-rose-700">
+                  Xóa tài khoản
+                </p>
+                <p className="text-sm text-rose-600">
+                  Tài khoản sẽ bị vô hiệu hóa và đăng xuất khỏi hệ thống. Hành động này cần mật khẩu để xác nhận.
+                </p>
+              </div>
+              <div>
+                <label className="mb-2 block text-sm font-medium text-rose-800">
+                  Mật khẩu xác nhận xóa tài khoản
+                </label>
+                <input
+                  type="password"
+                  value={deletePassword}
+                  onChange={(e) => setDeletePassword(e.target.value)}
+                  className="w-full rounded-lg border border-rose-200 px-3 py-2 outline-none focus:border-rose-400"
+                />
+              </div>
               <button
-                onClick={handleSavePassword}
-                disabled={isSavingPassword}
-                style={{ backgroundColor: themeColors.primary }}
-                className="md:col-span-2 rounded-lg text-white py-2.5 font-medium disabled:opacity-50"
+                type="button"
+                onClick={handleDeleteAccount}
+                disabled={isDeletingAccount}
+                className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-medium text-white hover:bg-rose-700 disabled:opacity-60"
               >
-                {isSavingPassword ? "Đang lưu..." : "Lưu mật khẩu"}
+                {isDeletingAccount ? "Đang xóa..." : "Xóa tài khoản"}
               </button>
             </div>
-          )}
+          </div>
         </section>
       </div>
     </div>
