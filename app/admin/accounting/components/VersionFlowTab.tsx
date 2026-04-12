@@ -53,6 +53,7 @@ import BookTemplatePreview from "../../../../components/accounting/BookTemplateP
 import type { VersionOption } from "./types";
 
 interface VersionTabProps {
+  mode?: "admin" | "consultant";
   tvId: string;
   tvLabel: string;
   tvEffective: string;
@@ -482,6 +483,7 @@ function ReferenceHelpLabel({
 
 export default function VersionTab(props: VersionTabProps) {
   const selectedVersionId = props.tvId;
+  const isConsultantMode = props.mode === "consultant";
   const loadDetail = props.onDetail;
   const loadFullStructure = props.onFull;
 
@@ -1567,6 +1569,13 @@ export default function VersionTab(props: VersionTabProps) {
   }
 
   async function handleActivateDraft() {
+    if (isConsultantMode) {
+      setWizardError(
+        "Consultant không có quyền activate draft. Vui lòng gửi Admin duyệt.",
+      );
+      return;
+    }
+
     setWizardBusy(true);
     setWizardError("");
     try {
@@ -2009,7 +2018,9 @@ export default function VersionTab(props: VersionTabProps) {
                       <p className="text-xs text-emerald-700">
                         Flow đúng theo BE: clone ra draft mới, mở wizard step,
                         rà soát template, mappings, rows, formulas và entities
-                        rồi mới activate draft.
+                        {isConsultantMode
+                          ? " rồi gửi Admin duyệt và activate."
+                          : " rồi mới activate draft."}
                       </p>
                       <Button
                         size="sm"
@@ -2031,8 +2042,9 @@ export default function VersionTab(props: VersionTabProps) {
                     <Pencil className="mt-0.5 h-5 w-5 text-amber-600" />
                     <div className="flex-1 space-y-3">
                       <p className="text-sm font-medium text-amber-800">
-                        Đây là draft. Bạn có thể chỉnh sửa toàn bộ phụ thuộc
-                        theo flow step trước khi kích hoạt.
+                        {isConsultantMode
+                          ? "Đây là draft. Bạn có thể chỉnh sửa và hoàn thiện template trước khi gửi Admin duyệt."
+                          : "Đây là draft. Bạn có thể chỉnh sửa toàn bộ phụ thuộc theo flow step trước khi kích hoạt."}
                       </p>
                       <div className="flex flex-wrap gap-2">
                         <Button
@@ -2046,14 +2058,20 @@ export default function VersionTab(props: VersionTabProps) {
                           <ArrowRight className="mr-1.5 h-3.5 w-3.5" />
                           Mở flow chỉnh sửa
                         </Button>
-                        <Button
-                          size="sm"
-                          variant="destructive"
-                          onClick={() => void props.onDelete()}
-                        >
-                          <Trash2 className="mr-1.5 h-3.5 w-3.5" />
-                          Xóa draft
-                        </Button>
+                        {!isConsultantMode ? (
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            onClick={() => void props.onDelete()}
+                          >
+                            <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                            Xóa draft
+                          </Button>
+                        ) : (
+                          <Badge className="border border-amber-300 bg-white text-amber-700 hover:bg-white">
+                            Chờ Admin duyệt để publish
+                          </Badge>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -3295,16 +3313,24 @@ export default function VersionTab(props: VersionTabProps) {
                   </CardContent>
                 </Card>
 
-                <div className="flex justify-end">
-                  <Button
-                    className={PRIMARY}
-                    onClick={() => void handleActivateDraft()}
-                    disabled={wizardBusy}
-                  >
-                    <Power className="mr-1.5 h-3.5 w-3.5" />
-                    Activate draft này
-                  </Button>
-                </div>
+                {isConsultantMode ? (
+                  <div className="rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800">
+                    Draft sau khi hoàn thiện sẽ được{" "}
+                    <strong>Admin review và activate</strong>. Consultant không
+                    publish trực tiếp trên màn này.
+                  </div>
+                ) : (
+                  <div className="flex justify-end">
+                    <Button
+                      className={PRIMARY}
+                      onClick={() => void handleActivateDraft()}
+                      disabled={wizardBusy}
+                    >
+                      <Power className="mr-1.5 h-3.5 w-3.5" />
+                      Activate draft này
+                    </Button>
+                  </div>
+                )}
               </div>
             ) : null}
           </div>

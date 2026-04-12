@@ -7,8 +7,6 @@ import {
   Bell,
   Users,
   CreditCard,
-  BarChart3,
-  Settings,
   BookOpen,
 } from "lucide-react";
 
@@ -38,16 +36,6 @@ const adminMenuItems = [
     href: "/admin/subscriptions",
     label: "Gói Đăng Ký",
     icon: CreditCard,
-  },
-  {
-    href: "/admin/analytics",
-    label: "Phân Tích Platform",
-    icon: BarChart3,
-  },
-  {
-    href: "/admin/system",
-    label: "Cấu Hình Hệ Thống",
-    icon: Settings,
   },
 ];
 

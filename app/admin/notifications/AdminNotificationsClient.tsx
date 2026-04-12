@@ -15,8 +15,6 @@ import {
   Plus,
   Send,
   RefreshCw,
-  ToggleLeft,
-  ToggleRight,
   Clock,
   CheckCircle2,
   XCircle,
@@ -25,6 +23,9 @@ import {
   Zap,
   Activity,
   ExternalLink,
+  Ban,
+  MapPin,
+  Users,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -32,6 +33,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -39,7 +41,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
@@ -55,17 +56,27 @@ import type {
   NotificationActionCatalog,
   CreateDispatchRequest,
   PaginatedResponse,
+  RecipientMode,
+  BusinessLocationSummary,
+  NotificationRecipientGroupPreview,
 } from "@/lib/types/adminNotification";
 import {
   getTemplates,
   getTemplateByEventCode,
   getActionCatalog,
+  getRecipientModes,
+  getAllLocationOwnersPreview,
+  getBusinessLocations,
+  getRecipientGroupPreview,
   upsertTemplate,
   toggleTemplate,
   createDispatch,
   getDispatches,
+  cancelDispatch,
   processDueDispatches,
 } from "@/lib/admin-notification-api";
+import { getAdminUsers } from "@/lib/admin-users-api";
+import type { AdminManagedUser } from "@/lib/types/adminUserManagement";
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -92,6 +103,13 @@ function statusConfig(status: string) {
         className: "bg-amber-50 text-amber-700 hover:bg-amber-50",
         icon: Clock,
       };
+    case "CANCELLED":
+      return {
+        label: "Đã hủy",
+        variant: "secondary" as const,
+        className: "bg-slate-100 text-slate-700 hover:bg-slate-100",
+        icon: Ban,
+      };
     default:
       return {
         label: "Thất bại",
@@ -102,8 +120,13 @@ function statusConfig(status: string) {
   }
 }
 
+const DEFAULT_ACTION_TYPE = "NONE";
+
 function normalizeActionType(value?: string | null) {
   const normalized = (value ?? "").trim().toUpperCase();
+  if (!normalized || normalized === DEFAULT_ACTION_TYPE) {
+    return DEFAULT_ACTION_TYPE;
+  }
   return normalized === "NAVIGATE_TO_SCREEN" ? "NAVIGATE" : normalized;
 }
 
@@ -134,34 +157,85 @@ function buildRoutePayloadFromTarget(
   return JSON.stringify({ route: preferredRoute });
 }
 
+const DEFAULT_RECIPIENT_MODE = "ALL_USERS";
+const LOCATION_RECIPIENT_MODES = new Set([
+  "LOCATION_OWNER",
+  "LOCATION_EMPLOYEES",
+  "LOCATION_OWNER_AND_EMPLOYEES",
+]);
+const LOCKED_TEMPLATE_EVENT_CODES = new Set([
+  "EMPLOYEE_INVITE",
+  "INVITE_ACCEPTED",
+  "INVITE_REJECTED",
+  "EMPLOYEE_REMOVED",
+]);
+
+function normalizeRecipientMode(value?: string | null) {
+  return (value ?? DEFAULT_RECIPIENT_MODE).trim().toUpperCase();
+}
+
+function requiresLocationSelection(recipientMode?: string | null) {
+  return LOCATION_RECIPIENT_MODES.has(normalizeRecipientMode(recipientMode));
+}
+
+function canPreviewRecipients(recipientMode?: string | null) {
+  const normalized = normalizeRecipientMode(recipientMode);
+  return (
+    normalized === "ALL_LOCATION_OWNERS" ||
+    requiresLocationSelection(normalized)
+  );
+}
+
+function isLockedTemplate(eventCode?: string | null) {
+  return LOCKED_TEMPLATE_EVENT_CODES.has(
+    (eventCode ?? "").trim().toUpperCase(),
+  );
+}
+
+function canCancelScheduledDispatch(dispatch: NotificationDispatch) {
+  if (dispatch.status !== "PENDING" || !dispatch.scheduledAt) return false;
+  return new Date(dispatch.scheduledAt).getTime() > Date.now();
+}
+
 // ── Defaults ──────────────────────────────────────────────────────────────────
 
 const emptyTemplateForm = {
   notificationType: "",
   titleTemplate: "",
   contentTemplate: "",
-  defaultActionType: "",
+  defaultActionType: DEFAULT_ACTION_TYPE,
   defaultTargetScreen: "",
   defaultActionPayloadJson: "",
   isActive: true,
 };
 
-const emptyCampaignForm: CreateDispatchRequest = {
-  eventCode: "",
-  notificationType: "PROMOTION",
-  priority: "NORMAL",
-  title: "",
-  content: "",
-  actionType: "",
-  targetScreen: "",
-  actionPayloadJson: "",
-  sendToAllUsers: true,
-  scheduledAt: "",
-};
+function createEmptyCampaignForm(): CreateDispatchRequest {
+  return {
+    eventCode: "",
+    notificationType: "PROMOTION",
+    priority: "NORMAL",
+    title: "",
+    content: "",
+    actionType: DEFAULT_ACTION_TYPE,
+    targetScreen: "",
+    actionPayloadJson: "",
+    sendToAllUsers: true,
+    recipientGroupType: DEFAULT_RECIPIENT_MODE,
+    businessLocationId: undefined,
+    recipientUserIds: [],
+    scheduledAt: "",
+  };
+}
 
 // ── Component ──────────────────────────────────────────────────────────────────
 
-export default function AdminNotificationsClient() {
+interface AdminNotificationsClientProps {
+  mode?: "admin" | "consultant";
+}
+
+export default function AdminNotificationsClient({
+  mode = "admin",
+}: AdminNotificationsClientProps) {
   // ── Data ──
   const [templates, setTemplates] = useState<NotificationTemplate[]>([]);
   const [catalog, setCatalog] = useState<NotificationActionCatalog | null>(
@@ -184,13 +258,26 @@ export default function AdminNotificationsClient() {
   const contentTextareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   // ── Campaign form ──
-  const [campaignForm, setCampaignForm] = useState(emptyCampaignForm);
+  const [campaignForm, setCampaignForm] = useState<CreateDispatchRequest>(
+    createEmptyCampaignForm(),
+  );
+  const [recipientModes, setRecipientModes] = useState<RecipientMode[]>([]);
+  const [locations, setLocations] = useState<BusinessLocationSummary[]>([]);
+  const [availableUsers, setAvailableUsers] = useState<AdminManagedUser[]>([]);
+  const [userSearch, setUserSearch] = useState("");
+  const [userRoleFilter, setUserRoleFilter] = useState("ALL");
+  const [recipientPreview, setRecipientPreview] =
+    useState<NotificationRecipientGroupPreview | null>(null);
 
   // ── UI ──
   const [searchTemplate, setSearchTemplate] = useState("");
   const [activeTab, setActiveTab] = useState("templates");
   const [loading, setLoading] = useState(false);
   const [loadingTemplateDetail, setLoadingTemplateDetail] = useState(false);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [cancellingDispatchId, setCancellingDispatchId] = useState<
+    number | null
+  >(null);
   const [message, setMessage] = useState("");
   const [messageType, setMessageType] = useState<"ok" | "error">("ok");
 
@@ -213,6 +300,47 @@ export default function AdminNotificationsClient() {
   const selectedCampaignTarget = useMemo(() => {
     return findTargetByScreenOrAlias(catalog, campaignForm.targetScreen);
   }, [campaignForm.targetScreen, catalog]);
+
+  const selectedCampaignTemplate = useMemo(
+    () =>
+      templates.find(
+        (template) => template.eventCode === (campaignForm.eventCode ?? ""),
+      ) ?? null,
+    [campaignForm.eventCode, templates],
+  );
+
+  const selectedRecipientMode = useMemo(
+    () =>
+      recipientModes.find(
+        (mode) =>
+          mode.id === normalizeRecipientMode(campaignForm.recipientGroupType),
+      ) ?? null,
+    [campaignForm.recipientGroupType, recipientModes],
+  );
+
+  const selectedLocation = useMemo(
+    () =>
+      locations.find(
+        (location) =>
+          location.businessLocationId === campaignForm.businessLocationId,
+      ) ?? null,
+    [campaignForm.businessLocationId, locations],
+  );
+
+  const selectedSpecificUsers = useMemo(() => {
+    const selectedIds = new Set(campaignForm.recipientUserIds ?? []);
+    return availableUsers.filter((user) => selectedIds.has(user.profileId));
+  }, [availableUsers, campaignForm.recipientUserIds]);
+
+  const normalizedRecipientMode = normalizeRecipientMode(
+    campaignForm.recipientGroupType,
+  );
+  const shouldSelectLocation = requiresLocationSelection(
+    normalizedRecipientMode,
+  );
+  const isSpecificUserMode = normalizedRecipientMode === "SPECIFIC_USERS";
+  const isCampaignTemplateInactive =
+    selectedCampaignTemplate?.isActive === false;
 
   // ── Load helpers ──────────────────────────────────────────────────────────────
 
@@ -237,6 +365,38 @@ export default function AdminNotificationsClient() {
       setCatalog(null);
     }
   }, []);
+
+  const loadRecipientModes = useCallback(async () => {
+    try {
+      const data = await getRecipientModes();
+      setRecipientModes(data);
+    } catch {
+      setRecipientModes([]);
+    }
+  }, []);
+
+  const loadLocations = useCallback(async () => {
+    try {
+      const data = await getBusinessLocations();
+      setLocations(data);
+    } catch {
+      setLocations([]);
+    }
+  }, []);
+
+  const loadAvailableUsers = useCallback(async () => {
+    try {
+      const data = await getAdminUsers({
+        pageNumber: 1,
+        pageSize: 100,
+        search: userSearch.trim() || undefined,
+        role: userRoleFilter === "ALL" ? undefined : userRoleFilter,
+      });
+      setAvailableUsers(data.items ?? []);
+    } catch {
+      setAvailableUsers([]);
+    }
+  }, [userRoleFilter, userSearch]);
 
   const loadDispatches = useCallback(async () => {
     try {
@@ -263,10 +423,17 @@ export default function AdminNotificationsClient() {
   useEffect(() => {
     void loadTemplates();
     void loadCatalog();
+    void loadRecipientModes();
+    void loadLocations();
     void loadDispatches();
     void loadFailedDispatches();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (!isSpecificUserMode) return;
+    void loadAvailableUsers();
+  }, [isSpecificUserMode, loadAvailableUsers]);
 
   // Sync template form when selection changes
   useEffect(() => {
@@ -306,13 +473,23 @@ export default function AdminNotificationsClient() {
 
   async function onToggleTemplate() {
     if (!selectedTemplate) return;
+
+    if (isLockedTemplate(selectedTemplate.eventCode)) {
+      setMessage(
+        `Template "${selectedTemplate.eventCode}" là template hệ thống, chỉ được chỉnh nội dung chứ không thể tắt.`,
+      );
+      setMessageType("error");
+      return;
+    }
+
     try {
       setLoading(true);
       setMessage("");
-      await toggleTemplate(
+      const updatedTemplate = await toggleTemplate(
         selectedTemplate.eventCode,
         !selectedTemplate.isActive,
       );
+      setSelectedTemplate(updatedTemplate);
       await loadTemplates();
       setMessage(
         `Đã ${!selectedTemplate.isActive ? "bật" : "tắt"} template "${selectedTemplate.eventCode}".`,
@@ -340,7 +517,7 @@ export default function AdminNotificationsClient() {
         notificationType: code,
         titleTemplate: `Thông báo ${code}`,
         contentTemplate: `Nội dung thông báo cho sự kiện ${code}`,
-        defaultActionType: "",
+        defaultActionType: DEFAULT_ACTION_TYPE,
         defaultTargetScreen: "",
         defaultActionPayloadJson: "",
         isActive: true,
@@ -387,6 +564,14 @@ export default function AdminNotificationsClient() {
       }
 
       const detail = await getTemplateByEventCode(eventCode);
+      if (!detail.isActive) {
+        setMessage(
+          `Template "${eventCode}" đang tắt nên không thể dùng để gửi hoặc lên lịch thông báo.`,
+        );
+        setMessageType("error");
+        return;
+      }
+
       const normalizedActionType = normalizeActionType(
         detail.defaultActionType,
       );
@@ -418,11 +603,103 @@ export default function AdminNotificationsClient() {
     }
   }
 
+  function onRecipientModeChange(value: string) {
+    const normalizedMode = normalizeRecipientMode(value);
+    setRecipientPreview(null);
+    setCampaignForm((prev) => ({
+      ...prev,
+      sendToAllUsers: normalizedMode === DEFAULT_RECIPIENT_MODE,
+      recipientGroupType: normalizedMode,
+      businessLocationId: requiresLocationSelection(normalizedMode)
+        ? prev.businessLocationId
+        : undefined,
+      recipientUserIds:
+        normalizedMode === "SPECIFIC_USERS"
+          ? (prev.recipientUserIds ?? [])
+          : [],
+    }));
+  }
+
+  async function onPreviewRecipients() {
+    try {
+      setPreviewLoading(true);
+      setMessage("");
+
+      if (normalizedRecipientMode === "ALL_LOCATION_OWNERS") {
+        const preview = await getAllLocationOwnersPreview();
+        setRecipientPreview(preview);
+        return;
+      }
+
+      if (shouldSelectLocation && campaignForm.businessLocationId) {
+        const preview = await getRecipientGroupPreview(
+          campaignForm.businessLocationId,
+          normalizedRecipientMode,
+        );
+        setRecipientPreview(preview);
+        return;
+      }
+
+      setMessage(
+        "Chế độ người nhận hiện tại không cần preview hoặc còn thiếu dữ liệu.",
+      );
+      setMessageType("error");
+    } catch (err) {
+      setRecipientPreview(null);
+      setMessage((err as Error).message);
+      setMessageType("error");
+    } finally {
+      setPreviewLoading(false);
+    }
+  }
+
+  async function onCancelDispatch(dispatchId: number) {
+    try {
+      setCancellingDispatchId(dispatchId);
+      setMessage("");
+      await cancelDispatch(dispatchId);
+      setMessage(`Đã hủy lịch gửi cho dispatch #${dispatchId}.`);
+      setMessageType("ok");
+      await loadDispatches();
+      await loadFailedDispatches();
+    } catch (err) {
+      setMessage((err as Error).message);
+      setMessageType("error");
+    } finally {
+      setCancellingDispatchId(null);
+    }
+  }
+
   async function onCreateCampaign(event: FormEvent) {
     event.preventDefault();
     try {
       setLoading(true);
       setMessage("");
+
+      if (campaignForm.eventCode && isCampaignTemplateInactive) {
+        setMessage(
+          `Template "${campaignForm.eventCode}" đang tắt nên không thể dùng để gửi thông báo hay lên lịch.`,
+        );
+        setMessageType("error");
+        return;
+      }
+
+      const specificRecipientIds = campaignForm.recipientUserIds ?? [];
+
+      if (shouldSelectLocation && !campaignForm.businessLocationId) {
+        setMessage("Vui lòng chọn địa điểm kinh doanh trước khi tạo dispatch.");
+        setMessageType("error");
+        return;
+      }
+
+      if (isSpecificUserMode && specificRecipientIds.length === 0) {
+        setMessage(
+          "Vui lòng nhập ít nhất 1 Profile ID cho chế độ người dùng cụ thể.",
+        );
+        setMessageType("error");
+        return;
+      }
+
       const normalizedActionType = normalizeActionType(campaignForm.actionType);
       const payload: CreateDispatchRequest = {
         ...campaignForm,
@@ -431,19 +708,34 @@ export default function AdminNotificationsClient() {
         priority: campaignForm.priority?.trim() || undefined,
         title: campaignForm.title?.trim() || undefined,
         content: campaignForm.content?.trim() || undefined,
-        actionType: normalizedActionType || undefined,
+        actionType:
+          normalizedActionType === DEFAULT_ACTION_TYPE
+            ? undefined
+            : normalizedActionType,
         targetScreen: campaignForm.targetScreen?.trim() || undefined,
         actionPayloadJson: campaignForm.actionPayloadJson?.trim() || undefined,
         scheduledAt: campaignForm.scheduledAt?.trim() || undefined,
+        sendToAllUsers: normalizedRecipientMode === DEFAULT_RECIPIENT_MODE,
+        recipientGroupType:
+          normalizedRecipientMode === DEFAULT_RECIPIENT_MODE
+            ? undefined
+            : normalizedRecipientMode,
+        businessLocationId: shouldSelectLocation
+          ? campaignForm.businessLocationId
+          : undefined,
+        recipientUserIds: isSpecificUserMode ? specificRecipientIds : undefined,
       };
+
       if (!payload.actionType) {
         payload.targetScreen = undefined;
         payload.actionPayloadJson = undefined;
       }
+
       await createDispatch(payload);
       setMessage("Đã tạo chiến dịch thành công.");
       setMessageType("ok");
-      setCampaignForm(emptyCampaignForm);
+      setCampaignForm(createEmptyCampaignForm());
+      setRecipientPreview(null);
       await loadDispatches();
     } catch (err) {
       setMessage((err as Error).message);
@@ -509,9 +801,19 @@ export default function AdminNotificationsClient() {
 
   const dispatchItems = dispatches?.items ?? [];
   const failedItems = failedDispatches?.items ?? [];
+  const isConsultantMode = mode === "consultant";
 
   return (
     <div className="space-y-6">
+      {/* {isConsultantMode && (
+        <Card className="border-amber-200 bg-amber-50 shadow-sm">
+          <CardContent className="p-4 text-sm text-amber-800">
+            Consultant chỉ làm việc với notification template và tạo thông báo
+            liên quan đến cập nhật template / thay đổi quy định. Các tab vận hành
+            hệ thống nâng cao đã được ẩn.
+          </CardContent>
+        </Card>
+      )} */}
       {/* Header */}
       {/* <div>
         <h1 className="text-2xl font-bold text-gray-900">Quản Lý Thông Báo</h1>
@@ -582,20 +884,24 @@ export default function AdminNotificationsClient() {
             <Megaphone className="w-4 h-4" />
             Chiến Dịch
           </TabsTrigger>
-          <TabsTrigger value="delivery-logs" className="gap-1.5">
-            <AlertTriangle className="w-4 h-4" />
-            Nhật Ký Gửi
-          </TabsTrigger>
-          <TabsTrigger value="hangfire" className="gap-1.5">
-            <Activity className="w-4 h-4" />
-            Hiệu Suất
-          </TabsTrigger>
+          {!isConsultantMode && (
+            <TabsTrigger value="delivery-logs" className="gap-1.5">
+              <AlertTriangle className="w-4 h-4" />
+              Nhật Ký Gửi
+            </TabsTrigger>
+          )}
+          {!isConsultantMode && (
+            <TabsTrigger value="hangfire" className="gap-1.5">
+              <Activity className="w-4 h-4" />
+              Hiệu Suất
+            </TabsTrigger>
+          )}
         </TabsList>
 
         {/* ── Templates ── */}
         <TabsContent value="templates" className="mt-4 space-y-4">
           <div className="flex flex-wrap items-center gap-3">
-            <div className="relative flex-1 min-w-[180px] max-w-sm">
+            <div className="relative flex-1 min-w-45 max-w-sm">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
               <Input
                 placeholder="Tìm template..."
@@ -643,7 +949,7 @@ export default function AdminNotificationsClient() {
                   Tạo Mới
                 </Button>
               </div>
-              <CardContent className="space-y-1 max-h-[520px] overflow-y-auto">
+              <CardContent className="space-y-1 max-h-130 overflow-y-auto">
                 {loading && templates.length === 0 && (
                   <p className="text-sm text-gray-400 text-center py-8">
                     Đang tải...
@@ -659,15 +965,20 @@ export default function AdminNotificationsClient() {
                         : "hover:bg-gray-50 border border-transparent"
                     }`}
                   >
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between gap-2">
                       <span className="text-sm font-medium text-gray-800 truncate">
                         {tpl.eventCode}
                       </span>
-                      {tpl.isActive ? (
-                        <ToggleRight className="w-4 h-4 text-emerald-500 shrink-0" />
-                      ) : (
-                        <ToggleLeft className="w-4 h-4 text-gray-300 shrink-0" />
-                      )}
+                      <Badge
+                        variant="secondary"
+                        className={
+                          tpl.isActive
+                            ? "shrink-0 bg-emerald-50 text-emerald-700 hover:bg-emerald-50"
+                            : "shrink-0 bg-slate-100 text-slate-600 hover:bg-slate-100"
+                        }
+                      >
+                        {tpl.isActive ? "Đang bật" : "Đã tắt"}
+                      </Badge>
                     </div>
                     <p className="text-xs text-gray-400 mt-0.5">
                       {tpl.notificationType}
@@ -711,24 +1022,27 @@ export default function AdminNotificationsClient() {
                             Đang tải chi tiết template...
                           </p>
                         )}
+                        {isLockedTemplate(selectedTemplate.eventCode) && (
+                          <p className="mt-1 text-xs text-amber-600">
+                            Template hệ thống: chỉ chỉnh nội dung, không được
+                            tắt.
+                          </p>
+                        )}
                       </div>
-                      <div className="flex items-center gap-2">
-                        <Label
-                          htmlFor="tpl-active"
-                          className="text-sm text-gray-500"
+                      <div className="flex flex-col items-end gap-1">
+                        <Badge
+                          variant="secondary"
+                          className={
+                            templateForm.isActive
+                              ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-50"
+                              : "bg-slate-100 text-slate-600 hover:bg-slate-100"
+                          }
                         >
                           {templateForm.isActive ? "Đang bật" : "Đã tắt"}
-                        </Label>
-                        <Switch
-                          id="tpl-active"
-                          checked={templateForm.isActive}
-                          onCheckedChange={(checked) =>
-                            setTemplateForm((prev) => ({
-                              ...prev,
-                              isActive: checked,
-                            }))
-                          }
-                        />
+                        </Badge>
+                        <span className="text-[11px] text-gray-400">
+                          Đổi trạng thái bằng nút bên dưới
+                        </span>
                       </div>
                     </div>
 
@@ -752,11 +1066,11 @@ export default function AdminNotificationsClient() {
                           Default Action Type
                         </Label>
                         <Select
-                          value={templateForm.defaultActionType || "__none__"}
+                          value={normalizeActionType(
+                            templateForm.defaultActionType,
+                          )}
                           onValueChange={(val) => {
-                            const actualVal = val === "__none__" ? "" : val;
-                            const nextActionType =
-                              normalizeActionType(actualVal);
+                            const nextActionType = normalizeActionType(val);
                             const canNavigate =
                               isNavigateAction(nextActionType);
                             setTemplateForm((prev) => ({
@@ -772,12 +1086,18 @@ export default function AdminNotificationsClient() {
                           }}
                         >
                           <SelectTrigger>
-                            <SelectValue placeholder="(none)" />
+                            <SelectValue placeholder="Chọn action type" />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="__none__">(none)</SelectItem>
+                            <SelectItem value={DEFAULT_ACTION_TYPE}>
+                              {DEFAULT_ACTION_TYPE} – Không điều hướng
+                            </SelectItem>
                             {(catalog?.actionTypes ?? [])
-                              .filter((a) => a.code !== "NAVIGATE_TO_SCREEN")
+                              .filter(
+                                (a) =>
+                                  a.code !== DEFAULT_ACTION_TYPE &&
+                                  a.code !== "NAVIGATE_TO_SCREEN",
+                              )
                               .map((a) => (
                                 <SelectItem key={a.code} value={a.code}>
                                   {a.code} – {a.displayName}
@@ -871,7 +1191,7 @@ export default function AdminNotificationsClient() {
                               defaultActionType: actualVal
                                 ? "NAVIGATE"
                                 : isNavigateAction(prev.defaultActionType)
-                                  ? ""
+                                  ? DEFAULT_ACTION_TYPE
                                   : normalizeActionType(prev.defaultActionType),
                               defaultTargetScreen: actualVal,
                               defaultActionPayloadJson:
@@ -948,7 +1268,10 @@ export default function AdminNotificationsClient() {
                             ? "text-red-600 border-red-200 hover:bg-red-50"
                             : "text-emerald-600 border-emerald-200 hover:bg-emerald-50"
                         }
-                        disabled={loading}
+                        disabled={
+                          loading ||
+                          isLockedTemplate(selectedTemplate.eventCode)
+                        }
                         onClick={onToggleTemplate}
                       >
                         {selectedTemplate.isActive
@@ -1024,12 +1347,23 @@ export default function AdminNotificationsClient() {
                           (không dùng template)
                         </SelectItem>
                         {templates.map((t) => (
-                          <SelectItem key={t.eventCode} value={t.eventCode}>
+                          <SelectItem
+                            key={t.eventCode}
+                            value={t.eventCode}
+                            disabled={!t.isActive}
+                          >
                             {t.eventCode}
+                            {!t.isActive ? " (đã tắt)" : ""}
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
+                    {isCampaignTemplateInactive && (
+                      <p className="text-[11px] text-red-500">
+                        Template đang tắt nên không thể dùng để gửi hoặc lên
+                        lịch.
+                      </p>
+                    )}
                   </div>
 
                   <div className="grid grid-cols-2 gap-3">
@@ -1132,10 +1466,9 @@ export default function AdminNotificationsClient() {
                         Action Type
                       </Label>
                       <Select
-                        value={campaignForm.actionType || "__none__"}
+                        value={normalizeActionType(campaignForm.actionType)}
                         onValueChange={(val) => {
-                          const actualVal = val === "__none__" ? "" : val;
-                          const nextActionType = normalizeActionType(actualVal);
+                          const nextActionType = normalizeActionType(val);
                           const canNavigate = isNavigateAction(nextActionType);
                           setCampaignForm((prev) => ({
                             ...prev,
@@ -1148,12 +1481,18 @@ export default function AdminNotificationsClient() {
                         }}
                       >
                         <SelectTrigger>
-                          <SelectValue placeholder="(none)" />
+                          <SelectValue placeholder="Chọn action type" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="__none__">(none)</SelectItem>
+                          <SelectItem value={DEFAULT_ACTION_TYPE}>
+                            {DEFAULT_ACTION_TYPE} - Không điều hướng
+                          </SelectItem>
                           {(catalog?.actionTypes ?? [])
-                            .filter((a) => a.code !== "NAVIGATE_TO_SCREEN")
+                            .filter(
+                              (a) =>
+                                a.code !== DEFAULT_ACTION_TYPE &&
+                                a.code !== "NAVIGATE_TO_SCREEN",
+                            )
                             .map((a) => (
                               <SelectItem key={a.code} value={a.code}>
                                 {a.code} - {a.displayName}
@@ -1178,7 +1517,7 @@ export default function AdminNotificationsClient() {
                             actionType: actualVal
                               ? "NAVIGATE"
                               : isNavigateAction(prev.actionType)
-                                ? ""
+                                ? DEFAULT_ACTION_TYPE
                                 : normalizeActionType(prev.actionType),
                             targetScreen: actualVal,
                             actionPayloadJson:
@@ -1236,26 +1575,295 @@ export default function AdminNotificationsClient() {
                     )}
                   </div>
 
-                  <div className="flex items-center gap-2 pt-1">
-                    <Switch
-                      id="send-all"
-                      checked={campaignForm.sendToAllUsers}
-                      onCheckedChange={(checked) =>
-                        setCampaignForm((prev) => ({
-                          ...prev,
-                          sendToAllUsers: checked,
-                        }))
-                      }
-                    />
-                    <Label htmlFor="send-all" className="text-sm text-gray-600">
-                      Gửi cho tất cả người dùng
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-gray-500">
+                      Recipient Mode
                     </Label>
+                    <Select
+                      value={normalizedRecipientMode}
+                      onValueChange={onRecipientModeChange}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Chọn đối tượng nhận" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {recipientModes.map((mode) => (
+                          <SelectItem key={mode.id} value={mode.id}>
+                            {mode.id} - {mode.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {selectedRecipientMode && (
+                      <p className="text-[11px] text-gray-500">
+                        {selectedRecipientMode.description}
+                      </p>
+                    )}
                   </div>
+
+                  {shouldSelectLocation && (
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-gray-500">
+                        Business Location
+                      </Label>
+                      <Select
+                        value={
+                          campaignForm.businessLocationId != null
+                            ? String(campaignForm.businessLocationId)
+                            : "__none__"
+                        }
+                        onValueChange={(val) => {
+                          setRecipientPreview(null);
+                          setCampaignForm((prev) => ({
+                            ...prev,
+                            businessLocationId:
+                              val === "__none__" ? undefined : Number(val),
+                          }));
+                        }}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Chọn địa điểm kinh doanh" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__none__">
+                            -- Chọn location --
+                          </SelectItem>
+                          {locations.map((location) => (
+                            <SelectItem
+                              key={location.businessLocationId}
+                              value={String(location.businessLocationId)}
+                            >
+                              [{location.businessLocationId}]{" "}
+                              {location.locationName}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {selectedLocation && (
+                        <p className="inline-flex items-center gap-1 text-[11px] text-gray-500">
+                          <MapPin className="h-3 w-3" />
+                          Đã chọn: {selectedLocation.locationName}
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {isSpecificUserMode && (
+                    <div className="space-y-3">
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <div className="space-y-1.5">
+                          <Label className="text-xs text-gray-500">
+                            Tìm user
+                          </Label>
+                          <div className="relative">
+                            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                            <Input
+                              value={userSearch}
+                              onChange={(e) => setUserSearch(e.target.value)}
+                              className="pl-9"
+                              placeholder="Tên, email, phone..."
+                            />
+                          </div>
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label className="text-xs text-gray-500">Role</Label>
+                          <Select
+                            value={userRoleFilter}
+                            onValueChange={setUserRoleFilter}
+                          >
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="ALL">Tất cả role</SelectItem>
+                              <SelectItem value="user">User</SelectItem>
+
+                              <SelectItem value="consultant">
+                                Accountant
+                              </SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <Label className="text-xs text-gray-500">
+                          Chọn người dùng cụ thể theo Profile ID
+                        </Label>
+                        <div className="max-h-56 space-y-2 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50/60 p-3">
+                          {availableUsers.length === 0 ? (
+                            <p className="text-sm text-gray-500">
+                              Không có người dùng phù hợp với bộ lọc hiện tại.
+                            </p>
+                          ) : (
+                            availableUsers.map((user) => {
+                              const checked = (
+                                campaignForm.recipientUserIds ?? []
+                              ).includes(user.profileId);
+
+                              return (
+                                <label
+                                  key={user.profileId}
+                                  className="flex cursor-pointer items-start gap-3 rounded-lg border border-transparent bg-white px-3 py-2 hover:border-slate-200"
+                                >
+                                  <Checkbox
+                                    checked={checked}
+                                    onCheckedChange={(value) => {
+                                      setCampaignForm((prev) => {
+                                        const currentIds =
+                                          prev.recipientUserIds ?? [];
+                                        const nextIds = value
+                                          ? [...currentIds, user.profileId]
+                                          : currentIds.filter(
+                                              (id) => id !== user.profileId,
+                                            );
+
+                                        return {
+                                          ...prev,
+                                          recipientUserIds: Array.from(
+                                            new Set(nextIds),
+                                          ),
+                                        };
+                                      });
+                                    }}
+                                  />
+                                  <div className="min-w-0 text-sm">
+                                    <p className="font-medium text-slate-800">
+                                      {user.fullName ||
+                                        "Người dùng chưa có tên"}
+                                    </p>
+                                    <p className="text-xs text-slate-500">
+                                      {user.email || user.phone || "--"} ·{" "}
+                                      {user.role}
+                                    </p>
+                                    <p className="font-mono text-[11px] text-slate-400">
+                                      Profile ID: {user.profileId}
+                                    </p>
+                                  </div>
+                                </label>
+                              );
+                            })
+                          )}
+                        </div>
+                      </div>
+
+                      {selectedSpecificUsers.length > 0 && (
+                        <div className="rounded-lg border border-teal-100 bg-teal-50/70 p-3">
+                          <p className="text-xs font-semibold text-teal-800">
+                            Đã chọn {selectedSpecificUsers.length} người nhận
+                          </p>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {selectedSpecificUsers.map((user) => (
+                              <Badge
+                                key={user.profileId}
+                                variant="secondary"
+                                className="bg-white text-slate-700"
+                              >
+                                {user.fullName || user.profileId}
+                              </Badge>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {canPreviewRecipients(normalizedRecipientMode) && (
+                    <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50/70 p-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <div>
+                          <p className="text-sm font-medium text-slate-800">
+                            Preview Recipients
+                          </p>
+                          <p className="text-xs text-slate-500">
+                            Dùng để kiểm tra backend trả đúng user đích trước
+                            khi gửi.
+                          </p>
+                        </div>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => void onPreviewRecipients()}
+                          disabled={
+                            previewLoading ||
+                            (shouldSelectLocation &&
+                              !campaignForm.businessLocationId)
+                          }
+                        >
+                          {previewLoading ? (
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          ) : (
+                            <Users className="mr-2 h-4 w-4" />
+                          )}
+                          Preview Recipients
+                        </Button>
+                      </div>
+
+                      {recipientPreview && (
+                        <div className="rounded-lg border border-slate-200 bg-white p-3">
+                          <p className="text-sm font-semibold text-slate-800">
+                            Preview: {recipientPreview.recipientGroupType} -{" "}
+                            {recipientPreview.totalRecipients} người
+                          </p>
+                          <p className="mt-1 text-sm text-slate-500">
+                            Location: {recipientPreview.locationName}
+                            {recipientPreview.businessLocationId
+                              ? ` (ID: ${recipientPreview.businessLocationId})`
+                              : ""}
+                          </p>
+
+                          <div className="mt-3 overflow-x-auto">
+                            <Table>
+                              <TableHeader>
+                                <TableRow>
+                                  <TableHead>Profile ID</TableHead>
+                                  <TableHead>Họ tên</TableHead>
+                                  <TableHead>Email</TableHead>
+                                  <TableHead>Phone</TableHead>
+                                  <TableHead>Vai trò</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {recipientPreview.recipients.map(
+                                  (recipient) => (
+                                    <TableRow key={recipient.profileId}>
+                                      <TableCell className="font-mono text-xs">
+                                        {recipient.profileId}
+                                      </TableCell>
+                                      <TableCell>
+                                        {recipient.fullName || "--"}
+                                      </TableCell>
+                                      <TableCell>
+                                        {recipient.email || "--"}
+                                      </TableCell>
+                                      <TableCell>
+                                        {recipient.phone || "--"}
+                                      </TableCell>
+                                      <TableCell>
+                                        <Badge
+                                          variant="secondary"
+                                          className="text-xs"
+                                        >
+                                          {recipient.isOwner
+                                            ? "OWNER"
+                                            : "EMPLOYEE"}
+                                        </Badge>
+                                      </TableCell>
+                                    </TableRow>
+                                  ),
+                                )}
+                              </TableBody>
+                            </Table>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   <Button
                     type="submit"
                     className="w-full bg-teal-600 hover:bg-teal-700 gap-1.5"
-                    disabled={loading}
+                    disabled={loading || isCampaignTemplateInactive}
                   >
                     {loading ? (
                       <Loader2 className="w-4 h-4 animate-spin" />
@@ -1305,9 +1913,11 @@ export default function AdminNotificationsClient() {
                         <TableHead className="w-16">ID</TableHead>
                         <TableHead>Tiêu đề</TableHead>
                         <TableHead>Loại</TableHead>
+                        <TableHead>Phạm vi</TableHead>
                         <TableHead>Lịch gửi</TableHead>
                         <TableHead>Đã gửi</TableHead>
                         <TableHead className="text-right">Trạng thái</TableHead>
+                        <TableHead className="text-right">Hành động</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -1320,10 +1930,10 @@ export default function AdminNotificationsClient() {
                               #{d.notificationDispatchId}
                             </TableCell>
                             <TableCell>
-                              <p className="text-sm font-medium text-gray-800 truncate max-w-[200px]">
+                              <p className="text-sm font-medium text-gray-800 truncate max-w-50">
                                 {d.title}
                               </p>
-                              <p className="text-xs text-gray-400 truncate max-w-[200px]">
+                              <p className="text-xs text-gray-400 truncate max-w-50">
                                 {d.content}
                               </p>
                             </TableCell>
@@ -1331,6 +1941,9 @@ export default function AdminNotificationsClient() {
                               <Badge variant="secondary" className="text-xs">
                                 {d.notificationType}
                               </Badge>
+                            </TableCell>
+                            <TableCell className="text-xs text-gray-500">
+                              {d.recipientScope || "--"}
                             </TableCell>
                             <TableCell className="text-xs text-gray-500">
                               {formatDate(d.scheduledAt)}
@@ -1346,6 +1959,39 @@ export default function AdminNotificationsClient() {
                                 <StatusIcon className="w-3 h-3 mr-1" />
                                 {sc.label}
                               </Badge>
+                            </TableCell>
+                            <TableCell className="text-right">
+                              {canCancelScheduledDispatch(d) ? (
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  className="border-red-200 text-red-600 hover:bg-red-50"
+                                  disabled={
+                                    cancellingDispatchId ===
+                                    d.notificationDispatchId
+                                  }
+                                  onClick={() =>
+                                    void onCancelDispatch(
+                                      d.notificationDispatchId,
+                                    )
+                                  }
+                                >
+                                  {cancellingDispatchId ===
+                                  d.notificationDispatchId ? (
+                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                  ) : (
+                                    <>
+                                      <Ban className="mr-1 h-3.5 w-3.5" />
+                                      Hủy lịch
+                                    </>
+                                  )}
+                                </Button>
+                              ) : (
+                                <span className="text-xs text-gray-400">
+                                  --
+                                </span>
+                              )}
                             </TableCell>
                           </TableRow>
                         );
@@ -1447,7 +2093,7 @@ export default function AdminNotificationsClient() {
                             {d.priority}
                           </Badge>
                         </TableCell>
-                        <TableCell className="text-xs text-red-500 max-w-[200px] truncate">
+                        <TableCell className="max-w-50 truncate text-xs text-red-500">
                           {d.errorMessage ?? "—"}
                         </TableCell>
                         <TableCell className="text-xs text-gray-500">

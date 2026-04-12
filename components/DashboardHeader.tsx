@@ -330,17 +330,22 @@ function getHeaderContent(pathname: string): HeaderContent {
     };
   }
 
-  if (pathname.startsWith("/admin/analytics")) {
+  if (
+    pathname === "/consultant" ||
+    pathname.startsWith("/consultant/accounting")
+  ) {
     return {
-      title: "Phân Tích Platform",
-      description: "Phân tích dữ liệu và thống kê toàn nền tảng BizFlow.",
+      title: "Quản Lý Mẫu Sổ",
+      description:
+        "Không gian làm việc cho accountant quản lý template và cấu trúc sổ kế toán.",
     };
   }
 
-  if (pathname.startsWith("/admin/system")) {
+  if (pathname.startsWith("/consultant/notifications")) {
     return {
-      title: "Cấu Hình Hệ Thống",
-      description: "Cấu hình hệ thống, loại hình kinh doanh và thuế suất.",
+      title: "Quản Lý Thông Báo",
+      description:
+        "Theo dõi, tạo và quản lý các thông báo dành cho hệ thống BizFlow.",
     };
   }
 
@@ -363,7 +368,7 @@ export default function DashboardHeader() {
     DashboardNotificationItem[]
   >([]);
   const [floatingToasts, setFloatingToasts] = useState<FloatingToast[]>([]);
-  const [toastTick, setToastTick] = useState(Date.now());
+  const [toastTick, setToastTick] = useState(() => Date.now());
   const [isNotificationMenuOpen, setIsNotificationMenuOpen] = useState(false);
   const floatingTimerRef = useRef<Record<string, number>>({});
   const { selectedLocationId, switchLocation } = useDashboardLocation();
@@ -563,7 +568,9 @@ export default function DashboardHeader() {
   }, [floatingToasts.length]);
 
   useEffect(() => {
-    refreshNotifications();
+    const initialRefreshTimer = window.setTimeout(() => {
+      refreshNotifications();
+    }, 0);
     void fetchNotifications();
 
     void setupWebPushNotifications().catch(() => {
@@ -624,6 +631,7 @@ export default function DashboardHeader() {
         "message",
         handleServiceWorkerMessage,
       );
+      window.clearTimeout(initialRefreshTimer);
       clearFloatingTimer();
       cleanupWebPushForegroundListener();
     };

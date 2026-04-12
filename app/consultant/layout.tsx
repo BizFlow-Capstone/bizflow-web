@@ -2,12 +2,12 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import AdminSidebar from "@/components/admin/AdminSidebar";
+import ConsultantSidebar from "@/components/consultant/ConsultantSidebar";
 import DashboardHeader from "@/components/DashboardHeader";
 import { DashboardLocationProvider } from "@/lib/providers/DashboardLocationProvider";
-import { getValidAccessToken, getRoleFromToken } from "@/lib/auth/tokenManager";
+import { getRoleFromToken, getValidAccessToken } from "@/lib/auth/tokenManager";
 
-export default function AdminLayout({
+export default function ConsultantLayout({
   children,
 }: {
   children: React.ReactNode;
@@ -16,36 +16,35 @@ export default function AdminLayout({
   const [authorized, setAuthorized] = useState(false);
 
   useEffect(() => {
-    async function checkAdmin() {
+    async function checkConsultant() {
       try {
         const token = await getValidAccessToken();
         const role = getRoleFromToken(token);
-        if (role === "consultant") {
-          router.replace("/consultant/accounting");
-          return;
-        }
-        if (role !== "admin") {
+
+        if (role !== "consultant" && role !== "admin") {
           router.replace("/dashboard");
           return;
         }
+
         setAuthorized(true);
       } catch {
         router.replace("/auth/login");
       }
     }
-    checkAdmin();
+
+    void checkConsultant();
   }, [router]);
 
   if (!authorized) return null;
 
   return (
     <div className="flex min-h-screen bg-gray-50">
-      <AdminSidebar />
+      <ConsultantSidebar />
       <DashboardLocationProvider>
-        <main className="flex-1 flex flex-col min-w-0">
+        <main className="flex min-w-0 flex-1 flex-col">
           <DashboardHeader />
           <div className="flex-1 overflow-auto bg-gray-50/50">
-            <div className="p-6  mx-auto">{children}</div>
+            <div className="mx-auto p-6">{children}</div>
           </div>
         </main>
       </DashboardLocationProvider>

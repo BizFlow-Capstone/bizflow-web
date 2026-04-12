@@ -5,10 +5,14 @@ import {
   keepPreviousData,
 } from "@tanstack/react-query";
 import {
+  createAdminConsultant,
   getAdminUsers,
   revokeAdminUserRefreshTokens,
 } from "@/lib/admin-users-api";
-import type { AdminUserQueryParams } from "@/lib/types/adminUserManagement";
+import type {
+  AdminUserQueryParams,
+  CreateAdminConsultantRequest,
+} from "@/lib/types/adminUserManagement";
 
 export const adminUserKeys = {
   all: ["admin-users"] as const,
@@ -31,6 +35,18 @@ export function useRevokeAdminUserRefreshTokens() {
 
   return useMutation({
     mutationFn: (accountId: string) => revokeAdminUserRefreshTokens(accountId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: adminUserKeys.lists() });
+    },
+  });
+}
+
+export function useCreateAdminConsultant() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (payload: CreateAdminConsultantRequest) =>
+      createAdminConsultant(payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: adminUserKeys.lists() });
     },

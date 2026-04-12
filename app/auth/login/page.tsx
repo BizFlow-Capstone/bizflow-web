@@ -124,6 +124,8 @@ export default function LoginPage() {
       const role = getRoleFromToken(token);
       if (role === "admin") {
         router.push("/admin");
+      } else if (role === "consultant") {
+        router.push("/consultant/accounting");
       } else {
         router.push("/dashboard");
       }
@@ -143,7 +145,7 @@ export default function LoginPage() {
           return;
         }
         result = await loginWithPhone(
-          formData.phone,
+          formData.phone.trim(),
           formData.password,
           getDeviceInfo(),
         );
@@ -153,18 +155,37 @@ export default function LoginPage() {
           return;
         }
         result = await loginWithEmail(
-          formData.email,
+          formData.email.trim(),
           formData.password,
           getDeviceInfo(),
         );
       }
       const authData = result.data ?? {};
+      const token = authData.accessToken ?? "";
+      const account = authData.account ?? null;
+      const hasPassword =
+        authData.hasPassword === true || account?.hasPassword === true;
+      const mustChangePassword = account?.mustChangePassword === true;
       const storedAccount = await saveTokens(
-        authData.accessToken ?? "",
+        token,
         authData.refreshToken ?? "",
-        authData.account ?? null,
+        account,
       );
-      await handleAfterAuth(authData.accessToken ?? "", storedAccount);
+
+      setAccessToken(token);
+      setPendingAccount(storedAccount);
+
+      if (!hasPassword || mustChangePassword) {
+        setShowSetPasswordModal(true);
+        setMessage(
+          mustChangePassword
+            ? "Vui lòng đổi mật khẩu trước khi tiếp tục sử dụng tài khoản."
+            : "Hãy thiết lập mật khẩu cho tài khoản của bạn.",
+        );
+        return;
+      }
+
+      await handleAfterAuth(token, storedAccount);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "";
       setError(
@@ -268,10 +289,19 @@ export default function LoginPage() {
       setError("Xác nhận mật khẩu không khớp");
       return;
     }
+    const currentPassword = pendingAccount?.mustChangePassword
+      ? formData.password
+      : "";
+
+    if (pendingAccount?.mustChangePassword && !currentPassword) {
+      setError("Thiếu mật khẩu tạm thời để đổi mật khẩu.");
+      return;
+    }
+
     setIsSettingPassword(true);
     try {
       if (pendingAccount?.mustChangePassword) {
-        await changeAccountPassword("", newPassword, accessToken);
+        await changeAccountPassword(currentPassword, newPassword, accessToken);
       } else {
         await setAccountPassword(newPassword, accessToken);
       }

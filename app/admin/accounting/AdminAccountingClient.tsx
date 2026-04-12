@@ -133,6 +133,10 @@ interface BusinessTypeTaxRateForm {
   description: string;
 }
 
+interface AdminAccountingClientProps {
+  mode?: "admin" | "consultant";
+}
+
 const tabs: Array<{
   key: AccountingTabKey;
   label: string;
@@ -533,10 +537,13 @@ function shouldToastSuccessLog(message: string): boolean {
   return true;
 }
 
-export default function AdminAccountingClient() {
+export default function AdminAccountingClient({
+  mode = "admin",
+}: AdminAccountingClientProps) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const isConsultantMode = mode === "consultant";
   const [overview, setOverview] = useState<AccountingOverviewResponse | null>(
     null,
   );
@@ -1071,19 +1078,30 @@ export default function AdminAccountingClient() {
     return map;
   }, [templates]);
 
-  const coreTabs = useMemo(
-    () => tabs.filter((tab) => tab.group === "core"),
+  const allowedTabKeys = useMemo<AccountingTabKey[]>(
+    () => tabs.map((tab) => tab.key),
     [],
   );
+  const coreTabs = useMemo(
+    () =>
+      tabs.filter(
+        (tab) => tab.group === "core" && allowedTabKeys.includes(tab.key),
+      ),
+    [allowedTabKeys],
+  );
   const supportTabs = useMemo(
-    () => tabs.filter((tab) => tab.group === "support"),
-    [],
+    () =>
+      tabs.filter(
+        (tab) => tab.group === "support" && allowedTabKeys.includes(tab.key),
+      ),
+    [allowedTabKeys],
   );
   const searchParamsString = searchParams.toString();
   const tabParam = searchParams.get("tab");
-  const activeTab: AccountingTabKey = isAccountingTabKey(tabParam)
-    ? tabParam
-    : "overview";
+  const activeTab: AccountingTabKey =
+    isAccountingTabKey(tabParam) && allowedTabKeys.includes(tabParam)
+      ? tabParam
+      : "overview";
 
   const navigateToTab = useCallback(
     (tab: AccountingTabKey) => {
@@ -2460,6 +2478,19 @@ export default function AdminAccountingClient() {
 
   return (
     <main className="space-y-6" aria-labelledby="admin-accounting-title">
+      {/* {isConsultantMode ? (
+        <Card className="rounded-xl border border-amber-200 bg-amber-50 shadow-sm">
+          <CardContent className="flex flex-col gap-1 p-4 text-sm text-amber-800">
+            <p className="font-semibold">Consultant workspace</p>
+            <p>
+              Consultant có thể dùng đầy đủ công cụ accounting như admin để tạo
+              và chỉnh sửa draft. Riêng publish thì Admin sẽ review và
+              activate/deactivate/delete.
+            </p>
+          </CardContent>
+        </Card>
+      ) : null} */}
+
       <Card className="rounded-xl border border-gray-200 bg-white shadow-sm">
         <CardContent className="p-3">
           <nav aria-label="Admin accounting sections" className="space-y-3">
@@ -2486,28 +2517,30 @@ export default function AdminAccountingClient() {
               </div>
             </section>
 
-            <section aria-label="Support tools" className="space-y-2">
-              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                Support Tools
-              </p>
-              <div className="flex flex-wrap gap-2">
-                {supportTabs.map((tab) => (
-                  <button
-                    key={tab.key}
-                    type="button"
-                    onClick={() => navigateToTab(tab.key)}
-                    className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition ${
-                      activeTab === tab.key
-                        ? "border-[#23C4C1]/40 bg-[#23C4C1]/10 text-[#15918f]"
-                        : "border-gray-200 bg-white text-gray-600 hover:border-[#23C4C1]/30 hover:bg-[#23C4C1]/5"
-                    }`}
-                  >
-                    {tab.icon}
-                    {tab.label}
-                  </button>
-                ))}
-              </div>
-            </section>
+            {supportTabs.length > 0 ? (
+              <section aria-label="Support tools" className="space-y-2">
+                <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                  Support Tools
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {supportTabs.map((tab) => (
+                    <button
+                      key={tab.key}
+                      type="button"
+                      onClick={() => navigateToTab(tab.key)}
+                      className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition ${
+                        activeTab === tab.key
+                          ? "border-[#23C4C1]/40 bg-[#23C4C1]/10 text-[#15918f]"
+                          : "border-gray-200 bg-white text-gray-600 hover:border-[#23C4C1]/30 hover:bg-[#23C4C1]/5"
+                      }`}
+                    >
+                      {tab.icon}
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+              </section>
+            ) : null}
           </nav>
         </CardContent>
       </Card>
@@ -2960,6 +2993,7 @@ export default function AdminAccountingClient() {
 
       {activeTab === "version" ? (
         <VersionFlowTab
+          mode={mode}
           tvId={tvId}
           tvLabel={tvLabel}
           tvEffective={tvEffective}
@@ -3585,7 +3619,7 @@ export default function AdminAccountingClient() {
                               <td className="px-3 py-2">
                                 {String(f.displayName ?? "-")}
                               </td>
-                              <td className="max-w-[280px] px-3 py-2 text-gray-600">
+                              <td className="max-w-70 px-3 py-2 text-gray-600">
                                 {String(f.description ?? "-")}
                               </td>
                               <td className="px-3 py-2">
