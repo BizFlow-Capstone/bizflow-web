@@ -13,6 +13,7 @@ export interface PlanFeature {
   featureId: number;
   featureCode: string;
   featureName: string;
+  featureDescription: string;
   usageLimit: number;
 }
 

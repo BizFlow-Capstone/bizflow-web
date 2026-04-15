@@ -17,6 +17,7 @@ export interface PublicPlanFeature {
   featureId: number;
   featureCode: string;
   featureName: string;
+  featureDescription: string;
   usageLimit: number; // -1 = unlimited, 0 = not included
 }
 
