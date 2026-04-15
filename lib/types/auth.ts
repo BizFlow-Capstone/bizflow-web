@@ -16,10 +16,25 @@ export interface AuthAccount {
   accountId?: string;
   profileId?: string;
   fullName?: string;
-  avatarUrl?: string;
+  avatarUrl?: string | null;
+  taxCode?: string | null;
   role?: string;
   hasPassword?: boolean;
+  mustChangePassword?: boolean;
   credentials?: AuthAccountCredential[];
+}
+
+export interface AuthUserProfile {
+  profileId?: string;
+  fullName?: string;
+  avatarUrl?: string | null;
+  taxCode?: string | null;
+  mustChangePassword?: boolean;
+}
+
+export interface FirebaseCustomTokenData {
+  profileId?: string;
+  customToken?: string;
 }
 
 export interface GoogleAuthData {

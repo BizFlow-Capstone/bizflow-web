@@ -58,10 +58,7 @@ import {
 import { useLocations } from "@/hooks/useLocations";
 import type { ProductCostPriceHistoryItem } from "@/lib/types/product";
 import StockAdjustmentDialog from "@/components/products/StockAdjustmentDialog";
-
-function formatVnd(value: number): string {
-  return `${value.toLocaleString("vi-VN")}đ`;
-}
+import { formatVnd } from "@/lib/format";
 
 function formatDateTime(value?: string): string {
   if (!value) return "--";

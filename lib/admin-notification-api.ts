@@ -11,6 +11,9 @@ import type {
   NotificationDispatch,
   CreateDispatchRequest,
   PaginatedResponse,
+  RecipientMode,
+  NotificationRecipientGroupPreview,
+  BusinessLocationSummary,
 } from "@/lib/types/adminNotification";
 
 type ApiEnvelope<T> = {
@@ -29,10 +32,13 @@ function encodePathSegment(value: string): string {
 }
 
 function normalizeActionTypeForApi(value?: string | null): string | undefined {
-  if (value == null) return value ?? undefined;
-  const normalized = value.trim().toUpperCase();
-  if (normalized === "NONE") return "";
-  return value;
+  const normalized = (value ?? "").trim().toUpperCase();
+
+  if (!normalized || normalized === "NONE") {
+    return undefined;
+  }
+
+  return normalized === "NAVIGATE_TO_SCREEN" ? "NAVIGATE" : normalized;
 }
 
 // ── Core request helper ──────────────────────────────────────────────────────
@@ -116,6 +122,34 @@ export async function getActionCatalog(): Promise<NotificationActionCatalog> {
   );
 }
 
+export async function getRecipientModes(): Promise<RecipientMode[]> {
+  return request<RecipientMode[]>("/api/admin/notifications/recipient-modes");
+}
+
+export async function getAllLocationOwnersPreview(): Promise<NotificationRecipientGroupPreview> {
+  return request<NotificationRecipientGroupPreview>(
+    "/api/admin/notifications/recipient-groups/all-location-owners",
+  );
+}
+
+export async function getBusinessLocations(): Promise<
+  BusinessLocationSummary[]
+> {
+  return request<BusinessLocationSummary[]>(
+    "/api/admin/notifications/locations",
+  );
+}
+
+export async function getRecipientGroupPreview(
+  locationId: number,
+  recipientGroupType: string,
+): Promise<NotificationRecipientGroupPreview> {
+  const params = new URLSearchParams({ recipientGroupType });
+  return request<NotificationRecipientGroupPreview>(
+    `/api/admin/notifications/recipient-groups/locations/${locationId}?${params.toString()}`,
+  );
+}
+
 // ── Dispatches ───────────────────────────────────────────────────────────────
 
 export async function createDispatch(
@@ -146,6 +180,18 @@ export async function getDispatches(
   }
   return request<PaginatedResponse<NotificationDispatch>>(
     `/api/admin/notifications/dispatches?${params.toString()}`,
+  );
+}
+
+export async function cancelDispatch(
+  dispatchId: number,
+): Promise<NotificationDispatch> {
+  return request<NotificationDispatch>(
+    `/api/admin/notifications/dispatches/${dispatchId}/cancel`,
+    {
+      method: "POST",
+      body: JSON.stringify({}),
+    },
   );
 }
 

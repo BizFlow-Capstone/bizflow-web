@@ -25,6 +25,7 @@ import type {
   RevenueFilters,
   CreateManualRevenueRequest,
   RevenueRecord,
+  RevenueForecastResponse,
 } from "@/lib/types/accounting";
 
 const DEFAULT_EMPTY_REVENUE: RevenuePagination = {
@@ -234,6 +235,28 @@ export async function getRevenues(
   locationId: number,
 ): Promise<ApiResponse<RevenuePagination>> {
   return getRevenuesWithFilters({ locationId });
+}
+
+export async function getRevenueForecast(
+  locationId: number,
+): Promise<ApiResponse<RevenueForecastResponse>> {
+  const params = new URLSearchParams();
+  params.append("locationId", String(locationId));
+
+  const response = await authFetch(
+    `/api/my-business/ai/forecast?${params.toString()}`,
+    {
+      method: "GET",
+      headers: { "Content-Type": "application/json" },
+      cache: "no-store",
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch revenue forecast: ${response.status}`);
+  }
+
+  return parseApiResponse<RevenueForecastResponse>(response);
 }
 
 export async function getRevenuesWithFilters(

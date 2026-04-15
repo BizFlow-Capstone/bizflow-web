@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import React, { useState, useMemo, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -23,6 +23,7 @@ import {
   Terminal,
   AlertCircle,
   Zap,
+  Check,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -62,6 +63,7 @@ import {
   useCreateManualRevenue,
   useDeleteManualRevenue,
   useCashFlowReport,
+  useRevenueForecast,
 } from "@/hooks/useAccounting";
 import {
   useAccountingTemplates,
@@ -73,11 +75,17 @@ import {
 import { BookRowsTable } from "@/components/products/BookRowsTable";
 
 import { useBookSummary } from "@/hooks/useBookSummary";
+import {
+  useAnomalyAlerts,
+  useAcknowledgeAnomalyAlert,
+  useBackfillVectorStore,
+} from "@/hooks/useProducts";
 import { useLocations } from "@/hooks/useLocations";
 import { useDashboardLocation } from "@/lib/providers/DashboardLocationProvider";
 import NoLocationScreenSkeleton from "@/components/NoLocationScreenSkeleton";
 import OwnerOnlyScreen from "@/components/OwnerOnlyScreen";
 import { useLocationRole } from "@/hooks/useLocationRole";
+import { toast } from "sonner";
 import {
   BarChart,
   Bar,
@@ -98,12 +106,13 @@ import {
 } from "recharts";
 import AccountingPeriodsTab from "./AccountingPeriodsTab";
 import GeneralLedgerTab from "./GeneralLedgerTab";
-
-const fmt = new Intl.NumberFormat("vi-VN", {
-  style: "currency",
-  currency: "VND",
-  maximumFractionDigits: 0,
-});
+import {
+  formatVnd,
+  formatCompactVnd,
+  formatYAxisShort,
+  formatTooltipCurrency,
+  formatDateTimeVi,
+} from "@/lib/format";
 
 // --- Main component ---
 
@@ -227,7 +236,8 @@ function ReportsTab({ locationId }: { locationId: number }) {
       | "revenue"
       | "cost"
       | "cashflow"
-      | "ledger") || "ledger";
+      | "ledger"
+      | "anomalies") || "ledger";
 
   const handleSubTabChange = (key: typeof subTab) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -267,6 +277,9 @@ function ReportsTab({ locationId }: { locationId: number }) {
     useState(false);
   const [manualCostError, setManualCostError] = useState("");
   const [isCostModalOpen, setIsCostModalOpen] = useState(false);
+  const [anomalyFilter, setAnomalyFilter] = useState<
+    "unacked" | "acked" | "all"
+  >("unacked");
   const { data: cashFlow, isLoading: cfLoading } = useCashFlowReport(
     locationId,
     new Date(new Date().getFullYear(), new Date().getMonth(), 1)
@@ -276,6 +289,14 @@ function ReportsTab({ locationId }: { locationId: number }) {
       .toISOString()
       .slice(0, 10), // Last day of current month
   );
+  const { data: revenueForecast, isLoading: forecastLoading } =
+    useRevenueForecast(locationId);
+  const acknowledgedFilter =
+    anomalyFilter === "all" ? undefined : anomalyFilter === "acked";
+  const { data: anomalyAlerts = [], isLoading: anomalyLoading } =
+    useAnomalyAlerts(locationId, acknowledgedFilter, subTab === "anomalies");
+  const acknowledgeAnomalyMutation = useAcknowledgeAnomalyAlert();
+  const backfillVectorStoreMutation = useBackfillVectorStore();
 
   const totalRevenue = revenues?.items.reduce((s, r) => s + r.amount, 0) ?? 0;
   const totalCost = costs?.items.reduce((s, c) => s + c.amount, 0) ?? 0;
@@ -406,6 +427,70 @@ function ReportsTab({ locationId }: { locationId: number }) {
       ? revenueSeries.reduce((sum, month) => sum + month.growth, 0) /
         revenueSeries.length
       : 0;
+
+  const revenueForecastItems = useMemo(
+    () => revenueForecast?.forecasts ?? [],
+    [revenueForecast?.forecasts],
+  );
+
+  const revenueForecastSeries = useMemo(
+    () =>
+      [...revenueForecastItems]
+        .sort((a, b) => a.forecastDate.localeCompare(b.forecastDate))
+        .map((item) => {
+          const parsedDate = new Date(`${item.forecastDate}T00:00:00`);
+          const label = Number.isNaN(parsedDate.getTime())
+            ? item.forecastDate
+            : parsedDate.toLocaleDateString("vi-VN", {
+                day: "2-digit",
+                month: "2-digit",
+              });
+
+          return {
+            label,
+            forecastDate: item.forecastDate,
+            predictedRevenue: item.predictedRevenue,
+            lowerBound: item.lowerBound,
+            upperBound: item.upperBound,
+            generatedAt: item.generatedAt,
+          };
+        }),
+    [revenueForecastItems],
+  );
+
+  const forecastTotalRevenue = revenueForecastSeries.reduce(
+    (sum, item) => sum + item.predictedRevenue,
+    0,
+  );
+  const forecastAverageDailyRevenue =
+    revenueForecastSeries.length > 0
+      ? forecastTotalRevenue / revenueForecastSeries.length
+      : 0;
+  const forecastAverageRange =
+    revenueForecastSeries.length > 0
+      ? revenueForecastSeries.reduce(
+          (sum, item) => sum + Math.max(item.upperBound - item.lowerBound, 0),
+          0,
+        ) / revenueForecastSeries.length
+      : 0;
+  const forecastGeneratedAt = revenueForecastSeries[0]?.generatedAt;
+  const forecastTrendNote = revenueForecastItems.find((item) =>
+    item.trendNote?.trim(),
+  )?.trendNote;
+
+  const anomalyCriticalCount = useMemo(
+    () =>
+      anomalyAlerts.filter(
+        (item) => item.severity?.toUpperCase() === "CRITICAL",
+      ).length,
+    [anomalyAlerts],
+  );
+  const anomalyWarningCount = useMemo(
+    () =>
+      anomalyAlerts.filter((item) => item.severity?.toUpperCase() === "WARNING")
+        .length,
+    [anomalyAlerts],
+  );
 
   const costSeries = useMemo(() => {
     const now = new Date();
@@ -542,6 +627,11 @@ function ReportsTab({ locationId }: { locationId: number }) {
       key: "cashflow" as const,
       label: "Dòng tiền",
       icon: <Banknote className="w-3.5 h-3.5" />,
+    },
+    {
+      key: "anomalies" as const,
+      label: "Bất thường",
+      icon: <AlertCircle className="w-3.5 h-3.5" />,
     },
   ];
   const costTypeOptions = costReferences?.costTypes?.filter(
@@ -681,7 +771,9 @@ function ReportsTab({ locationId }: { locationId: number }) {
       return true;
     } catch (e) {
       setManualCostError(
-        e instanceof Error ? e.message : "Không thể lưu chi phí thủ công.",
+        e instanceof Error
+          ? e.message
+          : "Không thể lưu chi phí thủ công.",
       );
       return false;
     }
@@ -745,27 +837,57 @@ function ReportsTab({ locationId }: { locationId: number }) {
     }
   }
 
+  async function handleAcknowledgeAnomaly(id: string) {
+    try {
+      await acknowledgeAnomalyMutation.mutateAsync({ id, locationId });
+      toast.success("Đã xác nhận cảnh báo");
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Không thể xác nhận cảnh báo",
+      );
+    }
+  }
+
+  async function handleBackfillVectorStore() {
+    try {
+      const response =
+        await backfillVectorStoreMutation.mutateAsync(locationId);
+      const result = response.data;
+      toast.success(
+        `Backfill thành công: synced ${result.synced}, skipped ${result.skipped}`,
+      );
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Không thể backfill vector store",
+      );
+    }
+  }
+
   return (
     <div className="space-y-5">
       {/* Summary KPIs */}
       {/* <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <KpiCard
           label="Tổng doanh thu"
-          value={fmt.format(totalRevenue)}
+          value={formatVnd(totalRevenue)}
           trend="+12.4%"
           icon={<ArrowUpRight className="w-4 h-4 text-emerald-500" />}
           color="emerald"
         />
         <KpiCard
           label="Tổng chi phí"
-          value={fmt.format(totalCost)}
+          value={formatVnd(totalCost)}
           trend="+3.1%"
           icon={<ArrowDownRight className="w-4 h-4 text-red-500" />}
           color="red"
         />
         <KpiCard
           label="Lợi nhuận ròng"
-          value={fmt.format(totalRevenue - totalCost)}
+          value={formatVnd(totalRevenue - totalCost)}
           trend="+18.2%"
           icon={<ArrowUpRight className="w-4 h-4 text-emerald-500" />}
           color="emerald"
@@ -798,7 +920,7 @@ function ReportsTab({ locationId }: { locationId: number }) {
           title="Doanh thu"
           subtitle={
             revenues
-              ? `${revenues.totalCount} giao dịch · Tổng: ${fmt.format(totalRevenue)}`
+              ? `${revenues.totalCount} giao dịch · Tổng: ${formatVnd(totalRevenue)}`
               : undefined
           }
           loading={revLoading}
@@ -810,8 +932,8 @@ function ReportsTab({ locationId }: { locationId: number }) {
                   Tổng quan doanh thu
                 </h4>
                 <p className="text-sm text-gray-500">
-                  Theo dõi xu hướng doanh thu và thêm ghi nhận thủ công bằng
-                  modal.
+                  Theo dõi xu hướng doanh thu và thêm ghi nhận thủ
+                  công bằng modal.
                 </p>
               </div>
               <Button
@@ -855,6 +977,82 @@ function ReportsTab({ locationId }: { locationId: number }) {
               />
             </div>
 
+            <div className="rounded-2xl border p-4 space-y-4 bg-linear-to-br from-slate-50 to-cyan-50/50">
+              <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                <div>
+                  <h5 className="text-xl font-semibold leading-none text-gray-900">
+                    Dự báo doanh thu 7 ngày tới
+                  </h5>
+                  <p className="text-sm text-gray-500 mt-2">
+                    Dữ liệu đã được tính sẵn theo lịch nightly
+                    job, không gọi AI realtime.
+                  </p>
+                </div>
+                <Badge className="w-fit bg-blue-100 text-blue-700 border border-blue-200">
+                  AI Forecast
+                </Badge>
+              </div>
+
+              {forecastLoading ? (
+                <div className="h-56 flex items-center justify-center">
+                  <Loader2 className="w-6 h-6 animate-spin text-[#23C4C1]" />
+                </div>
+              ) : revenueForecastSeries.length > 0 ? (
+                <>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div className="rounded-xl border bg-white p-3">
+                      <p className="text-xs uppercase tracking-wide font-semibold text-gray-500">
+                        Tổng 7 ngày
+                      </p>
+                      <p className="text-lg font-bold text-gray-900 mt-1">
+                        {formatCompactVnd(forecastTotalRevenue)}
+                      </p>
+                    </div>
+                    <div className="rounded-xl border bg-white p-3">
+                      <p className="text-xs uppercase tracking-wide font-semibold text-gray-500">
+                        Trung bình / ngày
+                      </p>
+                      <p className="text-lg font-bold text-gray-900 mt-1">
+                        {formatCompactVnd(forecastAverageDailyRevenue)}
+                      </p>
+                    </div>
+                    <div className="rounded-xl border bg-white p-3">
+                      <p className="text-xs uppercase tracking-wide font-semibold text-gray-500">
+                        Biên độ dự báo TB
+                      </p>
+                      <p className="text-lg font-bold text-gray-900 mt-1">
+                        {formatCompactVnd(forecastAverageRange)}
+                      </p>
+                    </div>
+                  </div>
+
+                  <RevenueForecastChart data={revenueForecastSeries} />
+
+                  {forecastTrendNote && (
+                    <div className="rounded-xl border bg-white/80 p-3">
+                      <p className="text-xs uppercase tracking-wide font-semibold text-gray-500 mb-1">
+                        Nhận định xu hướng
+                      </p>
+                      <p className="text-sm text-gray-700 leading-relaxed">
+                        {forecastTrendNote}
+                      </p>
+                    </div>
+                  )}
+
+                  <p className="text-xs text-gray-500 text-right">
+                    {forecastGeneratedAt
+                      ? `Cập nhật lúc: ${formatDateTimeVi(forecastGeneratedAt)}`
+                      : ""}
+                  </p>
+                </>
+              ) : (
+                <div className="rounded-xl border bg-white p-6 text-sm text-gray-500">
+                  Chưa có dữ liệu dự báo doanh thu cho địa điểm
+                  này.
+                </div>
+              )}
+            </div>
+
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
               <div className="rounded-2xl border p-4">
                 <h5 className="text-xl font-semibold leading-none text-gray-900 mb-4">
@@ -880,7 +1078,9 @@ function ReportsTab({ locationId }: { locationId: number }) {
                 <TableHeader>
                   <TableRow className="bg-gray-50 hover:bg-gray-50">
                     <TableHead>Nguồn Doanh Thu</TableHead>
-                    <TableHead className="text-right">Tổng Doanh Thu</TableHead>
+                    <TableHead className="text-right">
+                      Tổng Doanh Thu
+                    </TableHead>
                     <TableHead className="text-right">% Tổng</TableHead>
                     <TableHead className="text-right">
                       Tỷ Lệ Tăng Trưởng
@@ -965,7 +1165,9 @@ function ReportsTab({ locationId }: { locationId: number }) {
                     <TableHead>Loại</TableHead>
                     <TableHead>Mô tả</TableHead>
                     <TableHead>PTTT</TableHead>
-                    <TableHead className="text-right pr-5">Số tiền</TableHead>
+                    <TableHead className="text-right pr-5">
+                      Số tiền
+                    </TableHead>
                     <TableHead className="text-right pr-5">Thao tác</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -983,7 +1185,9 @@ function ReportsTab({ locationId }: { locationId: number }) {
                               : "bg-gray-100 text-gray-600"
                           }
                         >
-                          {r.revenueType === "sale" ? "Bán hàng" : "Thủ công"}
+                          {r.revenueType === "sale"
+                            ? "Bán hàng"
+                            : "Thủ công"}
                         </Badge>
                       </TableCell>
                       <TableCell className="text-sm max-w-xs truncate text-gray-700">
@@ -993,7 +1197,7 @@ function ReportsTab({ locationId }: { locationId: number }) {
                         <PaymentBadge method={r.paymentMethod} />
                       </TableCell>
                       <TableCell className="text-right pr-5 font-semibold text-emerald-600">
-                        {fmt.format(r.amount)}
+                        {formatVnd(r.amount)}
                       </TableCell>
                       <TableCell className="text-right pr-5">
                         {r.revenueType === "manual" ? (
@@ -1031,7 +1235,8 @@ function ReportsTab({ locationId }: { locationId: number }) {
               <DialogHeader>
                 <DialogTitle>Tạo doanh thu thủ công</DialogTitle>
                 <DialogDescription>
-                  Nhập thông tin giao dịch để ghi nhận doanh thu ngoài đơn hàng.
+                  Nhập thông tin giao dịch để ghi nhận doanh thu
+                  ngoài đơn hàng.
                 </DialogDescription>
               </DialogHeader>
 
@@ -1113,7 +1318,7 @@ function ReportsTab({ locationId }: { locationId: number }) {
           title="Chi phí"
           subtitle={
             costs
-              ? `${costs.totalCount} giao dịch · Tổng: ${fmt.format(totalCost)}`
+              ? `${costs.totalCount} giao dịch · Tổng: ${formatVnd(totalCost)}`
               : undefined
           }
           loading={costLoading}
@@ -1198,7 +1403,9 @@ function ReportsTab({ locationId }: { locationId: number }) {
                     <TableHead>Phân loại</TableHead>
                     <TableHead>Mô tả</TableHead>
                     <TableHead>PTTT</TableHead>
-                    <TableHead className="text-right pr-5">Số tiền</TableHead>
+                    <TableHead className="text-right pr-5">
+                      Số tiền
+                    </TableHead>
                     <TableHead className="text-right pr-5">Thao tác</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -1218,7 +1425,7 @@ function ReportsTab({ locationId }: { locationId: number }) {
                         <PaymentBadge method={c.paymentMethod} />
                       </TableCell>
                       <TableCell className="text-right pr-5 font-semibold text-red-500">
-                        {fmt.format(c.amount)}
+                        {formatVnd(c.amount)}
                       </TableCell>
                       <TableCell className="text-right pr-5">
                         {c.importId == null ? (
@@ -1278,8 +1485,8 @@ function ReportsTab({ locationId }: { locationId: number }) {
                     : "Tạo chi phí thủ công"}
                 </DialogTitle>
                 <DialogDescription>
-                  Điền thông tin để thêm chi phí, hoặc cập nhật bản ghi thủ
-                  công.
+                  Điền thông tin để thêm chi phí, hoặc cập nhật
+                  bản ghi thủ công.
                 </DialogDescription>
               </DialogHeader>
 
@@ -1389,6 +1596,179 @@ function ReportsTab({ locationId }: { locationId: number }) {
         </DataCard>
       )}
 
+      {/* Anomalies */}
+      {subTab === "anomalies" && (
+        <DataCard
+          title="Cảnh báo bất thường"
+          subtitle={`${anomalyAlerts.length} cảnh báo · Filter: ${anomalyFilter === "unacked" ? "Chưa xác nhận" : anomalyFilter === "acked" ? "Đã xác nhận" : "Tất cả"}`}
+          loading={anomalyLoading}
+        >
+          <div className="p-5 space-y-5">
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div>
+                <h4 className="text-base font-semibold text-gray-900">
+                  Cảnh báo theo AI + Rule-based
+                </h4>
+                <p className="text-sm text-gray-500">
+                  Theo dõi bất thường doanh thu, dữ liệu và giao
+                  dịch đáng ngờ.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                {/* <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void handleBackfillVectorStore()}
+                  disabled={backfillVectorStoreMutation.isPending}
+                >
+                  {backfillVectorStoreMutation.isPending ? (
+                    <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+                  ) : null}
+                  Backfill vector store
+                </Button> */}
+                <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-lg w-fit">
+                  {[
+                    { key: "unacked", label: "Chưa xác nhận" },
+                    { key: "acked", label: "Đã xác nhận" },
+                    { key: "all", label: "Tất cả" },
+                  ].map((option) => (
+                    <button
+                      key={option.key}
+                      onClick={() =>
+                        setAnomalyFilter(
+                          option.key as "unacked" | "acked" | "all",
+                        )
+                      }
+                      className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
+                        anomalyFilter === option.key
+                          ? "bg-white text-gray-800 shadow-sm"
+                          : "text-gray-500 hover:text-gray-700"
+                      }`}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="rounded-xl border bg-red-50/50 p-3">
+                <p className="text-xs uppercase tracking-wide font-semibold text-red-600">
+                  Critical
+                </p>
+                <p className="text-2xl font-bold text-red-700 mt-1">
+                  {anomalyCriticalCount}
+                </p>
+              </div>
+              <div className="rounded-xl border bg-amber-50/50 p-3">
+                <p className="text-xs uppercase tracking-wide font-semibold text-amber-600">
+                  Warning
+                </p>
+                <p className="text-2xl font-bold text-amber-700 mt-1">
+                  {anomalyWarningCount}
+                </p>
+              </div>
+              <div className="rounded-xl border bg-slate-50 p-3">
+                <p className="text-xs uppercase tracking-wide font-semibold text-slate-600">
+                  Tổng số
+                </p>
+                <p className="text-2xl font-bold text-slate-700 mt-1">
+                  {anomalyAlerts.length}
+                </p>
+              </div>
+            </div>
+
+            {anomalyAlerts.length > 0 ? (
+              <div className="rounded-2xl border overflow-hidden">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-gray-50/70 hover:bg-gray-50/70">
+                      <TableHead className="pl-5">Mức độ</TableHead>
+                      <TableHead>Loại cảnh báo</TableHead>
+                      <TableHead>Nội dung</TableHead>
+                      <TableHead>Tầng phát hiện</TableHead>
+                      <TableHead>Mốc dữ liệu</TableHead>
+                      <TableHead className="pr-5">Sinh lúc</TableHead>
+                      <TableHead className="pr-5 text-right">
+                        Thao tác
+                      </TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {anomalyAlerts.map((alert) => {
+                      const severityMeta = getAnomalySeverityMeta(
+                        alert.severity,
+                      );
+
+                      return (
+                        <TableRow
+                          key={alert.id}
+                          className="hover:bg-gray-50/50"
+                        >
+                          <TableCell className="pl-5">
+                            <Badge
+                              variant="outline"
+                              className={severityMeta.badgeClass}
+                            >
+                              {severityMeta.label}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-sm font-medium text-gray-800">
+                            {getAnomalyTypeLabel(alert.alertType)}
+                          </TableCell>
+                          <TableCell className="text-sm text-gray-600 max-w-xl">
+                            <p className="line-clamp-2">{alert.description}</p>
+                            <p className="text-[11px] text-gray-500 mt-1">
+                              {alert.isAcknowledged
+                                ? "Đã xác nhận"
+                                : "Chưa xác nhận"}
+                            </p>
+                          </TableCell>
+                          <TableCell className="text-sm text-gray-600">
+                            {alert.tier}
+                          </TableCell>
+                          <TableCell className="text-sm text-gray-600">
+                            {new Date(alert.referenceDate).toLocaleDateString(
+                              "vi-VN",
+                            )}
+                          </TableCell>
+                          <TableCell className="text-sm text-gray-500 pr-5">
+                            {formatDateTimeVi(alert.generatedAt)}
+                          </TableCell>
+                          <TableCell className="text-right pr-5">
+                            {alert.isAcknowledged ? (
+                              <span className="text-xs text-gray-400">-</span>
+                            ) : (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-7 text-xs"
+                                onClick={() =>
+                                  void handleAcknowledgeAnomaly(alert.id)
+                                }
+                                disabled={acknowledgeAnomalyMutation.isPending}
+                              >
+                                <Check className="w-3.5 h-3.5 mr-1" />
+                                Đã xem
+                              </Button>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            ) : (
+              <div className="rounded-xl border bg-white p-6 text-sm text-gray-500">
+                Không có cảnh báo phù hợp với bộ lọc hiện tại.
+              </div>
+            )}
+          </div>
+        </DataCard>
+      )}
+
       {/* Cash Flow */}
       {subTab === "cashflow" &&
         (cfLoading ? (
@@ -1425,20 +1805,20 @@ function ReportsTab({ locationId }: { locationId: number }) {
                     <div className="flex justify-between">
                       <span className="text-gray-500">Vào</span>
                       <span className="font-medium text-emerald-600">
-                        +{fmt.format(ch.totalIn)}
+                        +{formatVnd(ch.totalIn)}
                       </span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-gray-500">Ra</span>
                       <span className="font-medium text-red-500">
-                        -{fmt.format(ch.totalOut)}
+                        -{formatVnd(ch.totalOut)}
                       </span>
                     </div>
                     <Separator />
                     <div className="flex justify-between">
                       <span className="font-medium text-gray-700">Ròng</span>
                       <span className="font-bold text-gray-900">
-                        {fmt.format(ch.net)}
+                        {formatVnd(ch.net)}
                       </span>
                     </div>
                   </div>
@@ -1482,7 +1862,7 @@ function ReportsTab({ locationId }: { locationId: number }) {
                   <div key={item.label}>
                     <p className="text-gray-400 text-xs mb-1">{item.label}</p>
                     <p className={`font-bold text-lg ${item.color}`}>
-                      {fmt.format(item.value)}
+                      {formatVnd(item.value)}
                     </p>
                   </div>
                 ))}
@@ -1593,7 +1973,8 @@ function BooksTab({ locationId }: { locationId: number }) {
   };
 
   const handleCreate = async () => {
-    if (!periodId) return alert("Vui lòng chọn hoặc tạo kỳ kế toán trước.");
+    if (!periodId)
+      return alert("Vui lòng chọn hoặc tạo kỳ kế toán trước.");
     if (selectedTemplates.length === 0)
       return alert("Vui lòng chọn ít nhất 1 mẫu sổ.");
     try {
@@ -1683,8 +2064,8 @@ function BooksTab({ locationId }: { locationId: number }) {
       {/* Tạo Sổ Kế Toán Form */}
       <div className="bg-white rounded-2xl border p-5 shadow-sm">
         <h3 className="font-semibold text-gray-800 mb-4 flex items-center gap-2">
-          <Plus className="w-4 h-4 text-[#23C4C1]" /> Tạo Sổ Kế Toán (Gợi ý tự
-          động)
+          <Plus className="w-4 h-4 text-[#23C4C1]" /> Tạo Sổ Kế Toán
+          (Gợi ý tự động)
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-gray-50/50 p-4 rounded-xl border border-gray-100 mb-4">
           <div>
@@ -1702,8 +2083,12 @@ function BooksTab({ locationId }: { locationId: number }) {
                 <SelectItem value="1">
                   Nhóm 1 — Doanh thu {"<"} 500 triệu
                 </SelectItem>
-                <SelectItem value="2">Nhóm 2 — 500tr đến 3 tỷ</SelectItem>
-                <SelectItem value="3">Nhóm 3 — 3 tỷ đến 50 tỷ</SelectItem>
+                <SelectItem value="2">
+                  Nhóm 2 — 500tr đến 3 tỷ
+                </SelectItem>
+                <SelectItem value="3">
+                  Nhóm 3 — 3 tỷ đến 50 tỷ
+                </SelectItem>
                 <SelectItem value="4">Nhóm 4 — {"≥"} 50 tỷ</SelectItem>
               </SelectContent>
             </Select>
@@ -1732,7 +2117,9 @@ function BooksTab({ locationId }: { locationId: number }) {
                   </SelectItem>
                 ) : null}
                 {allowedTaxMethods.includes("method_2") ? (
-                  <SelectItem value="method_2">Cách 2 — DT trừ CP</SelectItem>
+                  <SelectItem value="method_2">
+                    Cách 2 — DT trừ CP
+                  </SelectItem>
                 ) : null}
               </SelectContent>
             </Select>
@@ -1741,7 +2128,8 @@ function BooksTab({ locationId }: { locationId: number }) {
 
         <div>
           <label className="text-xs font-semibold text-gray-600 uppercase mb-3 block">
-            Mẫu sổ (TT152) — Bạn có thể chọn mở rộng thêm nếu cần
+            Mẫu sổ (TT152) — Bạn có thể chọn mở rộng thêm nếu
+            cần
           </label>
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
             {templates?.map((tpl) => {
@@ -1951,7 +2339,8 @@ function BooksTab({ locationId }: { locationId: number }) {
                                 disabled
                                 title="API export đang được hoàn thiện"
                               >
-                                <Download className="w-3 h-3 mr-1" /> Xuất Excel
+                                <Download className="w-3 h-3 mr-1" /> Xuất
+                                Excel
                               </Button>
                               <Button
                                 variant="destructive"
@@ -1972,7 +2361,8 @@ function BooksTab({ locationId }: { locationId: number }) {
                                   </>
                                 ) : (
                                   <>
-                                    <Trash2 className="w-3 h-3 mr-1" /> Xóa sổ
+                                    <Trash2 className="w-3 h-3 mr-1" /> Xóa
+                                    sổ
                                   </>
                                 )}
                               </Button>
@@ -2007,8 +2397,11 @@ function BooksTab({ locationId }: { locationId: number }) {
             </h3>
             <p className="text-sm text-gray-400 max-w-xs mx-auto leading-relaxed">
               Hãy chọn kì kế toán và bấm{" "}
-              <strong className="text-gray-600 font-bold">Gợi ý tạo sổ</strong>{" "}
-              ở phía trên để hệ thống tự động thiết kế sổ sách theo đúng TT152.
+              <strong className="text-gray-600 font-bold">
+                Gợi ý tạo sổ
+              </strong>{" "}
+              ở phía trên để hệ thống tự động thiết kế sổ
+              sách theo đúng TT152.
             </p>
           </div>
         )}
@@ -2018,6 +2411,44 @@ function BooksTab({ locationId }: { locationId: number }) {
 }
 
 // ─── Shared micro-components ─────────────────────────────────────────────────
+
+function getAnomalySeverityMeta(severity: string) {
+  const normalized = severity.toUpperCase();
+
+  if (normalized === "CRITICAL") {
+    return {
+      label: "Critical",
+      badgeClass: "bg-red-100 text-red-700 border-red-200",
+    };
+  }
+
+  if (normalized === "WARNING") {
+    return {
+      label: "Warning",
+      badgeClass: "bg-amber-100 text-amber-700 border-amber-200",
+    };
+  }
+
+  return {
+    label: "Info",
+    badgeClass: "bg-blue-100 text-blue-700 border-blue-200",
+  };
+}
+
+function getAnomalyTypeLabel(type: string) {
+  switch (type) {
+    case "DATA_QUALITY":
+      return "Chất lượng dữ liệu";
+    case "REVENUE_ANOMALY":
+      return "Bất thường doanh thu";
+    case "SUSPICIOUS_TRANSACTION":
+      return "Giao dịch nghi ngờ";
+    case "INVENTORY_ANOMALY":
+      return "Bất thường tồn kho";
+    default:
+      return type;
+  }
+}
 
 function DataCard({
   title,
@@ -2167,6 +2598,89 @@ function RevenueGrowthDots({
             strokeWidth={2}
             dot={{ r: 4, fill: "#0EA5E9" }}
             activeDot={{ r: 6 }}
+          />
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+function RevenueForecastChart({
+  data,
+}: {
+  data: Array<{
+    label: string;
+    predictedRevenue: number;
+    lowerBound: number;
+    upperBound: number;
+  }>;
+}) {
+  return (
+    <div className="h-72 rounded-xl border bg-white p-3">
+      <ResponsiveContainer width="100%" height="100%">
+        <LineChart
+          data={data}
+          margin={{ top: 8, right: 12, left: 0, bottom: 8 }}
+        >
+          <CartesianGrid
+            strokeDasharray="3 3"
+            vertical={false}
+            stroke="#e5e7eb"
+          />
+          <XAxis
+            dataKey="label"
+            tickLine={false}
+            axisLine={false}
+            fontSize={12}
+          />
+          <YAxis
+            tickFormatter={(value) => formatYAxisShort(value as number)}
+            tickLine={false}
+            axisLine={false}
+            width={56}
+            fontSize={12}
+          />
+          <Tooltip
+            formatter={(value, name) => {
+              const labelMap: Record<string, string> = {
+                predictedRevenue: "Dự báo",
+                lowerBound: "Cận dưới",
+                upperBound: "Cận trên",
+              };
+              return [
+                formatTooltipCurrency(value),
+                labelMap[String(name)] ?? String(name),
+              ];
+            }}
+            contentStyle={{ borderRadius: 12, borderColor: "#d1d5db" }}
+          />
+          <Legend verticalAlign="bottom" wrapperStyle={{ fontSize: 12 }} />
+          <Line
+            type="monotone"
+            dataKey="predictedRevenue"
+            name="Dự báo"
+            stroke="#0EA5E9"
+            strokeWidth={3}
+            dot={{ r: 3, fill: "#0EA5E9" }}
+            activeDot={{ r: 5 }}
+          />
+          <Line
+            type="monotone"
+            dataKey="lowerBound"
+            name="Cận dưới"
+            stroke="#14B8A6"
+            strokeWidth={2}
+            strokeDasharray="5 5"
+            dot={false}
+          />
+          <Line
+            type="monotone"
+            dataKey="upperBound"
+            name="Cận trên"
+            stroke="#6366F1"
+            strokeWidth={2}
+            strokeDasharray="5 5"
+            dot={false}
           />
         </LineChart>
       </ResponsiveContainer>
@@ -2475,25 +2989,6 @@ function CostBudgetCategoryList({
   );
 }
 
-function formatCompactVnd(amount: number) {
-  const abs = Math.abs(amount);
-  const sign = amount < 0 ? "-" : "";
-
-  if (abs >= 1_000_000_000) {
-    return `${sign}₫${(abs / 1_000_000_000).toFixed(3).replace(/\.0+$/, "")}B`;
-  }
-
-  if (abs >= 1_000_000) {
-    return `${sign}₫${(abs / 1_000_000).toFixed(3).replace(/\.0+$/, "")}M`;
-  }
-
-  if (abs >= 1_000) {
-    return `${sign}₫${(abs / 1_000).toFixed(1).replace(/\.0$/, "")}K`;
-  }
-
-  return `${sign}${fmt.format(abs)}`;
-}
-
 const PIE_COLORS = [
   "#14B8A6",
   "#60A5FA",
@@ -2502,21 +2997,6 @@ const PIE_COLORS = [
   "#F97316",
   "#22C55E",
 ];
-
-function formatYAxisShort(value: number) {
-  if (Math.abs(value) >= 1_000_000) {
-    return `${(value / 1_000_000).toFixed(1).replace(/\.0$/, "")}M`;
-  }
-  if (Math.abs(value) >= 1_000) {
-    return `${(value / 1_000).toFixed(0)}K`;
-  }
-  return `${value}`;
-}
-
-function formatTooltipCurrency(value: unknown) {
-  const numeric = Number(value ?? 0);
-  return fmt.format(Number.isFinite(numeric) ? numeric : 0);
-}
 
 const PAYMENT_STYLES: Record<string, { cls: string; label: string }> = {
   cash: { cls: "bg-emerald-100 text-emerald-700", label: "Tiền mặt" },
@@ -2626,8 +3106,9 @@ function BookSummaryPanel({
           Không thể phân xuất dữ liệu
         </p>
         <p className="text-sm text-rose-600/80 max-w-md italic">
-          Hệ thống phân tích đang bảo trì hoặc gặp lỗi kết nối. Hãy thử làm mới
-          trang hoặc liên hệ quản trị viên.
+          Hệ thống phân tích đang bảo trì hoặc gặp lỗi kết
+          nối. Hãy thử làm mới trang hoặc liên hệ quản trị
+          viên.
         </p>
       </div>
     );
@@ -2689,7 +3170,8 @@ function BookSummaryPanel({
       {/* Kết quả công thức */}
       <div className="space-y-4">
         <div className="flex items-center gap-2 text-xs font-bold text-slate-500 uppercase tracking-widest pl-2">
-          <Calculator className="w-4 h-4 text-slate-400" /> Kết quả công thức
+          <Calculator className="w-4 h-4 text-slate-400" /> Kết quả công
+          thức
         </div>
         <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
           <table className="w-full text-sm">
@@ -2727,7 +3209,8 @@ function BookSummaryPanel({
       {/* Thông tin metadata */}
       <div className="space-y-4">
         <div className="flex items-center gap-2 text-xs font-bold text-slate-500 uppercase tracking-widest pl-2">
-          <FileText className="w-4 h-4 text-slate-400" /> Chú thích cách tính
+          <FileText className="w-4 h-4 text-slate-400" /> Chú thích cách
+          tính
         </div>
         <div className="bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm relative overflow-hidden">
           <div className="absolute top-0 right-0 p-4 opacity-[0.03] rotate-12">
@@ -2774,8 +3257,8 @@ function BookSummaryPanel({
       {(summary.businessTypeTaxes?.length ?? 0) > 0 && (
         <div className="space-y-4">
           <div className="flex items-center gap-2 text-xs font-bold text-slate-500 uppercase tracking-widest pl-2">
-            <Zap className="w-4 h-4 text-amber-500" /> Ngành nghề và thuế suất
-            áp dụng
+            <Zap className="w-4 h-4 text-amber-500" /> Ngành nghề và thuế
+            suất áp dụng
           </div>
           <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
             <table className="w-full text-sm">
@@ -2816,7 +3299,8 @@ function BookSummaryPanel({
                           {(Number(r.taxRate) * 100).toLocaleString("vi-VN")}%
                         </td>
                         <td className="px-6 py-4 text-slate-400 text-xs italic">
-                          {r.note || "Hệ thống tự động đồng bộ TT152"}
+                          {r.note ||
+                            "Hệ thống tự động đồng bộ TT152"}
                         </td>
                       </tr>
                     ))}
@@ -2832,8 +3316,8 @@ function BookSummaryPanel({
       {(summary.formulaDetails?.length ?? 0) > 0 && (
         <div className="space-y-4">
           <div className="flex items-center gap-2 text-xs font-bold text-slate-500 uppercase tracking-widest pl-2">
-            <Terminal className="w-4 h-4 text-slate-400" /> Chi tiết công thức
-            (engine)
+            <Terminal className="w-4 h-4 text-slate-400" /> Chi tiết công
+            thức (engine)
           </div>
           <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
             <table className="w-full text-sm">
@@ -2879,8 +3363,8 @@ function BookSummaryPanel({
       {(summary.columns?.length ?? 0) > 0 && (
         <div className="space-y-4">
           <div className="flex items-center gap-2 text-xs font-bold text-slate-500 uppercase tracking-widest pl-2">
-            <Layers className="w-4 h-4 text-slate-400" /> Bản đồ dữ liệu & Cấu
-            trúc cột
+            <Layers className="w-4 h-4 text-slate-400" /> Bản đồ dữ
+            liệu & Cấu trúc cột
           </div>
           <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
             <table className="w-full text-sm">

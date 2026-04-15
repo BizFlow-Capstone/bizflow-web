@@ -48,7 +48,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 // ── Features ─────────────────────────────────────────────────────────────────
 
 export async function getFeatures(): Promise<Feature[]> {
-  return request<Feature[]>("/api/admin/features");
+  return request<Feature[]>("/api/reference/features");
 }
 
 // ── Subscription Plans ───────────────────────────────────────────────────────

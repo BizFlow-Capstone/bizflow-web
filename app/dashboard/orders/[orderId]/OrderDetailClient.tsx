@@ -62,15 +62,9 @@ import type {
   PaymentType,
   PaymentStatus,
 } from "@/lib/types/order";
+import { formatVnd as formatCurrency } from "@/lib/format";
 
 // --- Helpers ---
-
-function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat("vi-VN", {
-    style: "currency",
-    currency: "VND",
-  }).format(amount);
-}
 
 function formatDate(dateStr?: string): string {
   if (!dateStr) return "—";
@@ -667,7 +661,9 @@ export default function OrderDetailClient() {
           </DialogHeader>
 
           <div className="space-y-3 py-4">
-            <label className="text-sm font-medium text-gray-700">Lý do hủy (không bắt buộc)</label>
+            <label className="text-sm font-medium text-gray-700">
+              Lý do hủy (không bắt buộc)
+            </label>
             <Input
               type="text"
               placeholder="Nhập lý do hủy..."
@@ -677,7 +673,9 @@ export default function OrderDetailClient() {
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowCancel(false)}>Đóng</Button>
+            <Button variant="outline" onClick={() => setShowCancel(false)}>
+              Đóng
+            </Button>
             <Button
               onClick={handleCancel}
               className="bg-red-600 hover:bg-red-700 text-white"
@@ -741,7 +739,7 @@ export default function OrderDetailClient() {
               thanh toán: <strong>{formatCurrency(order.totalAmount)}</strong>
             </DialogDescription>
           </DialogHeader>
-          
+
           <div className="flex items-center space-x-2 py-4">
             <input
               type="checkbox"

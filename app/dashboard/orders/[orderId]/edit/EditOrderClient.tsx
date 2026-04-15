@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { formatVnd as formatCurrency } from "@/lib/format";
 import {
   ArrowLeft,
   Search,
@@ -344,12 +345,6 @@ export default function EditOrderClient() {
       }),
     );
   }, []);
-
-  const formatCurrency = (amount: number) =>
-    new Intl.NumberFormat("vi-VN", {
-      style: "currency",
-      currency: "VND",
-    }).format(amount);
 
   // Save draft (update localStorage)
   const handleSaveDraft = () => {

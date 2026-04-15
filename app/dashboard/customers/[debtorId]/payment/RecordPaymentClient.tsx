@@ -17,13 +17,7 @@ import { Label } from "@/components/ui/label";
 import { useDebtorDetail, useRecordPayment } from "@/hooks/useDebtors";
 import { getBalanceStatus } from "@/lib/types/debtor";
 import type { RecordPaymentRequest } from "@/lib/types/debtor";
-
-function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat("vi-VN", {
-    style: "currency",
-    currency: "VND",
-  }).format(amount);
-}
+import { formatVnd as formatCurrency } from "@/lib/format";
 
 export default function RecordPaymentClient() {
   const params = useParams();

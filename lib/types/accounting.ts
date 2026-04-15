@@ -127,6 +127,19 @@ export interface RevenuePagination {
   totalPages: number;
 }
 
+export interface RevenueForecastItem {
+  forecastDate: string;
+  predictedRevenue: number;
+  lowerBound: number;
+  upperBound: number;
+  trendNote?: string;
+  generatedAt: string;
+}
+
+export interface RevenueForecastResponse {
+  forecasts: RevenueForecastItem[];
+}
+
 // ═══ Cash Flow ═══
 
 export interface CashFlowSummary {

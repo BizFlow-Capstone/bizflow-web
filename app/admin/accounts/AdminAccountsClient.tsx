@@ -14,6 +14,7 @@ import {
   RefreshCcw,
   ChevronLeft,
   ChevronRight,
+  UserPlus,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -52,6 +53,7 @@ import {
 import { toast } from "sonner";
 import {
   useAdminUsers,
+  useCreateAdminConsultant,
   useRevokeAdminUserRefreshTokens,
 } from "@/hooks/useAdminUsers";
 import type { AdminManagedUser } from "@/lib/types/adminUserManagement";
@@ -87,6 +89,19 @@ function roleColor(role: string) {
   }
 }
 
+function formatRoleLabel(role: string) {
+  switch (role.toLowerCase()) {
+    case "consultant":
+      return "Accountant";
+    default:
+      return role;
+  }
+}
+
+function canRevokeRefreshTokens(role: string) {
+  return role.toLowerCase() === "user";
+}
+
 export default function AdminAccountsClient() {
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("ALL");
@@ -95,6 +110,12 @@ export default function AdminAccountsClient() {
   const [mountedAt] = useState(() => Date.now());
   const [revokeDialogUser, setRevokeDialogUser] =
     useState<AdminManagedUser | null>(null);
+  const [isCreateConsultantOpen, setIsCreateConsultantOpen] = useState(false);
+  const [consultantForm, setConsultantForm] = useState({
+    email: "",
+    fullName: "",
+  });
+  const [consultantFormError, setConsultantFormError] = useState("");
 
   const pageSize = 10;
 
@@ -130,6 +151,7 @@ export default function AdminAccountsClient() {
   );
 
   const usersQuery = useAdminUsers(queryParams);
+  const createConsultantMutation = useCreateAdminConsultant();
   const revokeTokensMutation = useRevokeAdminUserRefreshTokens();
 
   const users = usersQuery.data?.items ?? [];
@@ -144,6 +166,49 @@ export default function AdminAccountsClient() {
 
   const totalCount = usersQuery.data?.totalCount ?? 0;
   const totalPages = usersQuery.data?.totalPages ?? 1;
+
+  const resetConsultantForm = () => {
+    setConsultantForm({ email: "", fullName: "" });
+    setConsultantFormError("");
+  };
+
+  const handleCreateConsultant = () => {
+    const email = consultantForm.email.trim().toLowerCase();
+    const fullName = consultantForm.fullName.trim();
+
+    if (!email) {
+      setConsultantFormError("Vui lòng nhập email cho accountant.");
+      return;
+    }
+
+    if (!fullName) {
+      setConsultantFormError("Vui lòng nhập họ và tên accountant.");
+      return;
+    }
+
+    setConsultantFormError("");
+    createConsultantMutation.mutate(
+      { email, fullName },
+      {
+        onSuccess: (result) => {
+          toast.success(
+            `Đã tạo tài khoản accountant cho ${result.email} và gửi email hướng dẫn.`,
+          );
+          setIsCreateConsultantOpen(false);
+          resetConsultantForm();
+          setPageNumber(1);
+        },
+        onError: (error) => {
+          const message =
+            error instanceof Error
+              ? error.message
+              : "Không thể tạo tài khoản accountant.";
+          setConsultantFormError(message);
+          toast.error(message);
+        },
+      },
+    );
+  };
 
   const handleRevokeTokens = () => {
     if (!revokeDialogUser) return;
@@ -165,12 +230,27 @@ export default function AdminAccountsClient() {
 
   return (
     <div className="space-y-6">
-      {/* <div>
-        <h1 className="text-2xl font-bold text-gray-900">Quản Lý Người Dùng</h1>
-        <p className="text-sm text-gray-500 mt-1">
-          Xem, tìm kiếm và quản lý tài khoản người dùng trên nền tảng.
-        </p>
-      </div> */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">
+            Quản Lý Người Dùng
+          </h1>
+          <p className="mt-1 text-sm text-gray-500">
+            Xem, tìm kiếm và tạo nhanh tài khoản accountant cho hệ thống.
+          </p>
+        </div>
+        <Button
+          type="button"
+          onClick={() => {
+            resetConsultantForm();
+            setIsCreateConsultantOpen(true);
+          }}
+          className="bg-[#23C4C1] hover:bg-[#1a9b99]"
+        >
+          <UserPlus className="mr-2 h-4 w-4" />
+          Tạo tài khoản kế toán
+        </Button>
+      </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
         {[
@@ -247,7 +327,7 @@ export default function AdminAccountsClient() {
                   <SelectItem value="ALL">Tất cả role</SelectItem>
                   <SelectItem value="User">User</SelectItem>
                   <SelectItem value="Owner">Owner</SelectItem>
-                  <SelectItem value="Consultant">Consultant</SelectItem>
+                  <SelectItem value="Consultant">Accountant</SelectItem>
                   <SelectItem value="Staff">Staff</SelectItem>
                 </SelectContent>
               </Select>
@@ -378,7 +458,7 @@ export default function AdminAccountsClient() {
                         variant="secondary"
                         className={roleColor(user.role)}
                       >
-                        {user.role}
+                        {formatRoleLabel(user.role)}
                       </Badge>
                     </TableCell>
                     <TableCell className="text-xs text-gray-500">
@@ -408,26 +488,30 @@ export default function AdminAccountsClient() {
                       )}
                     </TableCell>
                     <TableCell>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-8 w-8 p-0"
-                          >
-                            <MoreHorizontal className="w-4 h-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem
-                            className="gap-2"
-                            onClick={() => setRevokeDialogUser(user)}
-                          >
-                            <Shield className="w-4 h-4" />
-                            Thu hồi phiên đăng nhập
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
+                      {canRevokeRefreshTokens(user.role) ? (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 w-8 p-0"
+                            >
+                              <MoreHorizontal className="w-4 h-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              className="gap-2"
+                              onClick={() => setRevokeDialogUser(user)}
+                            >
+                              <Shield className="w-4 h-4" />
+                              Thu hồi phiên đăng nhập
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      ) : (
+                        <span className="text-xs text-gray-400">--</span>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -465,6 +549,96 @@ export default function AdminAccountsClient() {
           </div>
         </CardContent>
       </Card>
+
+      <Dialog
+        open={isCreateConsultantOpen}
+        onOpenChange={(open) => {
+          setIsCreateConsultantOpen(open);
+          if (!open) resetConsultantForm();
+        }}
+      >
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Tạo tài khoản accountant</DialogTitle>
+            <DialogDescription>
+              Hệ thống sẽ tạo tài khoản role consultant/accountant và gửi email
+              chào mừng. Khi đăng nhập lần đầu, accountant sẽ được yêu cầu đổi
+              mật khẩu mới.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="consultant-full-name">Họ và tên</Label>
+              <Input
+                id="consultant-full-name"
+                value={consultantForm.fullName}
+                onChange={(e) =>
+                  setConsultantForm((prev) => ({
+                    ...prev,
+                    fullName: e.target.value,
+                  }))
+                }
+                placeholder="Nhập họ và tên accountant"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="consultant-email">Email</Label>
+              <Input
+                id="consultant-email"
+                type="email"
+                value={consultantForm.email}
+                onChange={(e) =>
+                  setConsultantForm((prev) => ({
+                    ...prev,
+                    email: e.target.value,
+                  }))
+                }
+                placeholder="accountant@bizflow.vn"
+              />
+            </div>
+
+            <div className="rounded-lg border border-teal-100 bg-teal-50/70 p-3 text-sm text-teal-800">
+              Sau khi tạo xong, accountant sẽ nhận email hướng dẫn và dùng luồng
+              đặt mật khẩu mới ngay trong màn hình đăng nhập.
+            </div>
+
+            {consultantFormError ? (
+              <p className="text-sm text-red-600">{consultantFormError}</p>
+            ) : null}
+          </div>
+
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setIsCreateConsultantOpen(false)}
+              disabled={createConsultantMutation.isPending}
+            >
+              Hủy
+            </Button>
+            <Button
+              type="button"
+              onClick={handleCreateConsultant}
+              disabled={createConsultantMutation.isPending}
+              className="bg-[#23C4C1] hover:bg-[#1a9b99]"
+            >
+              {createConsultantMutation.isPending ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Đang tạo
+                </>
+              ) : (
+                <>
+                  <UserPlus className="mr-2 h-4 w-4" />
+                  Tạo tài khoản
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={revokeDialogUser != null}

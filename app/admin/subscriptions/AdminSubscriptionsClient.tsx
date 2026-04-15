@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   Plus,
   Pencil,
@@ -13,6 +13,7 @@ import {
   ToggleRight,
   CalendarDays,
   Infinity as InfinityIcon,
+  Eye,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -110,7 +111,10 @@ const EMPTY_FORM: PlanFormData = {
   selectedFeatures: [],
 };
 
-function planToFormData(plan: SubscriptionPlanDetail): PlanFormData {
+function planToFormData(
+  plan: SubscriptionPlanDetail,
+  allFeatures: Feature[],
+): PlanFormData {
   const price = plan.currentPrice;
   const hasDiscount = price?.discountedPrice != null;
   return {
@@ -122,10 +126,18 @@ function planToFormData(plan: SubscriptionPlanDetail): PlanFormData {
     discountedPrice: price?.discountedPrice ?? null,
     discountStart: toInputDate(price?.discountStart ?? null),
     discountEnd: toInputDate(price?.discountEnd ?? null),
-    selectedFeatures: plan.features.map((f) => ({
-      featureId: f.featureId,
-      usageLimit: f.usageLimit,
-    })),
+    selectedFeatures: plan.features.map((f) => {
+      // BE returns featureId=0; match by description or code to get the real featureId
+      const matched =
+        allFeatures.find(
+          (ref) => ref.featureCode === f.featureCode && f.featureCode !== "",
+        ) ??
+        allFeatures.find((ref) => ref.description === f.featureDescription);
+      return {
+        featureId: matched?.featureId ?? f.featureId,
+        usageLimit: f.usageLimit,
+      };
+    }),
   };
 }
 
@@ -168,8 +180,15 @@ function PlanFormDialog({
   isSubmitting: boolean;
 }) {
   const [form, setForm] = useState<PlanFormData>(() =>
-    editingPlan ? planToFormData(editingPlan) : EMPTY_FORM,
+    editingPlan ? planToFormData(editingPlan, features) : EMPTY_FORM,
   );
+
+  // Re-sync when editingPlan or features finish loading (they may arrive at different times)
+  useEffect(() => {
+    if (editingPlan && features.length > 0) {
+      setForm(planToFormData(editingPlan, features));
+    }
+  }, [editingPlan, features]);
 
   const isEdit = editingPlan != null;
 
@@ -478,6 +497,179 @@ function PlanFormDialog({
 
 // -- Delete Confirmation Dialog -----------------------------------------------
 
+// -- Plan Detail Dialog -----------------------------------------------------
+
+function PlanDetailDialog({
+  open,
+  onOpenChange,
+  planId,
+  features,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  planId: number | null;
+  features: Feature[];
+}) {
+  const { data: detail, isFetching } = useAdminSubscriptionPlan(planId);
+
+  const resolveFeatureName = (f: {
+    featureCode: string;
+    featureName: string;
+    featureDescription: string;
+  }) => {
+    const ref =
+      features.find(
+        (r) => r.featureCode === f.featureCode && f.featureCode !== "",
+      ) ?? features.find((r) => r.description === f.featureDescription);
+    return ref?.name || f.featureName || f.featureDescription;
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Eye className="w-4 h-4 text-teal-600" />
+            Chi Tiết Gói Đăng Ký
+          </DialogTitle>
+        </DialogHeader>
+
+        {isFetching || !detail ? (
+          <div className="flex items-center justify-center py-16">
+            <Loader2 className="w-6 h-6 animate-spin text-teal-600" />
+          </div>
+        ) : (
+          <div className="space-y-5 py-1">
+            {/* Basic info */}
+            <div className="rounded-lg border p-4 space-y-3">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <p className="text-base font-semibold text-gray-900">
+                    {detail.name}
+                  </p>
+                  <p className="text-sm text-gray-500 mt-0.5">
+                    {detail.description}
+                  </p>
+                </div>
+                <Badge
+                  variant="secondary"
+                  className={
+                    detail.isActive
+                      ? "bg-emerald-50 text-emerald-700 shrink-0"
+                      : "bg-gray-100 text-gray-500 shrink-0"
+                  }
+                >
+                  {detail.isActive ? "Hoạt động" : "Không hoạt động"}
+                </Badge>
+              </div>
+              <div className="flex flex-wrap gap-4 text-sm text-gray-600">
+                <div className="flex items-center gap-1.5">
+                  <CalendarDays className="w-3.5 h-3.5 text-gray-400" />
+                  <span className="text-gray-500">Thời hạn:</span>
+                  <span className="font-medium">
+                    {detail.durationDays > 0
+                      ? `${detail.durationDays} ngày`
+                      : "Không giới hạn"}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-gray-500">Tạo lúc:</span>
+                  <span className="font-medium">
+                    {formatDateTime(detail.createdAt)}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Pricing */}
+            {detail.currentPrice && (
+              <div className="rounded-lg border p-4 space-y-2">
+                <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">
+                  Giá
+                </p>
+                <div className="flex items-center gap-3">
+                  <span className="text-2xl font-bold text-gray-900">
+                    {formatVND(detail.currentPrice.basePrice)}
+                  </span>
+                  <span className="text-sm text-gray-400">
+                    {detail.currentPrice.currency}
+                  </span>
+                  {detail.currentPrice.isDiscountActive &&
+                    detail.currentPrice.discountedPrice != null && (
+                      <Badge
+                        variant="secondary"
+                        className="bg-rose-50 text-rose-600"
+                      >
+                        Giảm → {formatVND(detail.currentPrice.discountedPrice)}
+                      </Badge>
+                    )}
+                </div>
+              </div>
+            )}
+
+            {/* Features */}
+            <div className="rounded-lg border p-4 space-y-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">
+                Tính năng ({detail.features.length})
+              </p>
+              {detail.features.length === 0 ? (
+                <p className="text-sm text-gray-400">Chưa có tính năng nào.</p>
+              ) : (
+                <ul className="space-y-2">
+                  {detail.features.map((f, i) => (
+                    <li
+                      key={i}
+                      className="flex items-center justify-between text-sm"
+                    >
+                      <span className="text-gray-700">
+                        {resolveFeatureName(f)}
+                      </span>
+                      <span className="font-medium text-teal-600 flex items-center gap-0.5">
+                        {f.usageLimit === -1 ? (
+                          <InfinityIcon className="w-3.5 h-3.5" />
+                        ) : f.usageLimit === 0 ? (
+                          <span className="text-gray-400">—</span>
+                        ) : (
+                          f.usageLimit.toLocaleString("vi-VN")
+                        )}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
+            {/* Stripe IDs */}
+            {(detail.stripeProductId || detail.stripePriceId) && (
+              <div className="rounded-lg border p-4 space-y-1.5">
+                <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">
+                  Stripe
+                </p>
+                {detail.stripeProductId && (
+                  <p className="text-xs text-gray-500 font-mono break-all">
+                    Product: {detail.stripeProductId}
+                  </p>
+                )}
+                {detail.stripePriceId && (
+                  <p className="text-xs text-gray-500 font-mono break-all">
+                    Price: {detail.stripePriceId}
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Đóng
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function DeleteConfirmDialog({
   open,
   onOpenChange,
@@ -553,6 +745,8 @@ export default function AdminSubscriptionsClient() {
   const [deletingPlan, setDeletingPlan] = useState<SubscriptionPlan | null>(
     null,
   );
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [detailPlanId, setDetailPlanId] = useState<number | null>(null);
 
   const { data: plans, isLoading, error } = useAdminSubscriptionPlans();
   const { data: features = [] } = useAdminFeatures();
@@ -881,6 +1075,17 @@ export default function AdminSubscriptionsClient() {
                           <DropdownMenuContent align="end">
                             <DropdownMenuItem
                               className="gap-2"
+                              onClick={() => {
+                                setDetailPlanId(plan.subscriptionPlanId);
+                                setDetailOpen(true);
+                              }}
+                            >
+                              <Eye className="w-4 h-4" />
+                              Xem chi tiết
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              className="gap-2"
                               onClick={() => handleEdit(plan)}
                             >
                               <Pencil className="w-4 h-4" />
@@ -945,6 +1150,17 @@ export default function AdminSubscriptionsClient() {
         plan={deletingPlan}
         onConfirm={handleDeleteConfirm}
         isDeleting={deleteMutation.isPending}
+      />
+
+      {/* Detail Dialog */}
+      <PlanDetailDialog
+        open={detailOpen}
+        onOpenChange={(open) => {
+          setDetailOpen(open);
+          if (!open) setDetailPlanId(null);
+        }}
+        planId={detailPlanId}
+        features={features}
       />
     </div>
   );

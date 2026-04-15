@@ -43,15 +43,9 @@ import { useImportDetail, useUpdateImport } from "@/hooks/useImports";
 import { useProducts } from "@/hooks/useProducts";
 import type { ImportItemRequest, ImportType } from "@/lib/types/import";
 import type { Product } from "@/lib/types/product";
+import { formatVnd as formatCurrency } from "@/lib/format";
 
 // --- Helpers ---
-
-function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat("vi-VN", {
-    style: "currency",
-    currency: "VND",
-  }).format(amount);
-}
 
 function formatDateVN(date: Date): string {
   return `Ngày ${date.getDate().toString().padStart(2, "0")} tháng ${(date.getMonth() + 1).toString().padStart(2, "0")} năm ${date.getFullYear()}`;

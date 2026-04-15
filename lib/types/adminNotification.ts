@@ -52,7 +52,8 @@ export type DispatchStatus =
   | "PROCESSING"
   | "SENT"
   | "COMPLETED"
-  | "FAILED";
+  | "FAILED"
+  | "CANCELLED";
 
 export interface NotificationDispatch {
   notificationDispatchId: number;
@@ -83,8 +84,38 @@ export interface CreateDispatchRequest {
   targetScreen?: string;
   actionPayloadJson?: string;
   sendToAllUsers: boolean;
+  recipientGroupType?: string;
+  businessLocationId?: number;
   recipientUserIds?: string[];
   scheduledAt?: string;
+}
+
+export interface NotificationRecipient {
+  profileId: string;
+  fullName: string;
+  phone?: string | null;
+  email?: string | null;
+  isOwner: boolean;
+}
+
+export interface NotificationRecipientGroupPreview {
+  businessLocationId: number;
+  locationName: string;
+  recipientGroupType: string;
+  totalRecipients: number;
+  recipients: NotificationRecipient[];
+}
+
+export interface RecipientMode {
+  id: string;
+  label: string;
+  description: string;
+}
+
+export interface BusinessLocationSummary {
+  businessLocationId: number;
+  locationName: string;
+  city?: string | null;
 }
 
 export interface PaginatedResponse<T> {

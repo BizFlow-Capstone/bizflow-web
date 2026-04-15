@@ -20,6 +20,10 @@ export default function AdminLayout({
       try {
         const token = await getValidAccessToken();
         const role = getRoleFromToken(token);
+        if (role === "consultant") {
+          router.replace("/consultant/accounting");
+          return;
+        }
         if (role !== "admin") {
           router.replace("/dashboard");
           return;

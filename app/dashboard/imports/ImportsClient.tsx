@@ -65,6 +65,11 @@ import {
   useDeleteImport,
   useConfirmImport,
 } from "@/hooks/useImports";
+import {
+  useProducts,
+  useReorderSuggestions,
+  useReorderSuggestionProductLookup,
+} from "@/hooks/useProducts";
 import { useLocations } from "@/hooks/useLocations";
 import { useDashboardLocation } from "@/lib/providers/DashboardLocationProvider";
 import NoLocationScreenSkeleton from "@/components/NoLocationScreenSkeleton";
@@ -75,15 +80,9 @@ import type {
   ImportStatus,
   ImportRecord,
 } from "@/lib/types/import";
+import { formatVnd as formatCurrency } from "@/lib/format";
 
 // --- Helpers ---
-
-function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat("vi-VN", {
-    style: "currency",
-    currency: "VND",
-  }).format(amount);
-}
 
 function formatDate(dateStr?: string): string {
   if (!dateStr) return "—";
@@ -185,6 +184,26 @@ function getHasInvoiceBadge(hasInvoice: boolean) {
   );
 }
 
+function getUrgencyMeta(urgency?: string) {
+  switch (urgency) {
+    case "HIGH":
+      return {
+        badgeClass: "bg-red-100 text-red-700 border-red-200",
+        label: "Khẩn cấp cao",
+      };
+    case "MEDIUM":
+      return {
+        badgeClass: "bg-amber-100 text-amber-700 border-amber-200",
+        label: "Khẩn cấp vừa",
+      };
+    default:
+      return {
+        badgeClass: "bg-blue-100 text-blue-700 border-blue-200",
+        label: "Khẩn cấp thấp",
+      };
+  }
+}
+
 // --- Main Component ---
 
 export default function ImportsClient() {
@@ -194,6 +213,19 @@ export default function ImportsClient() {
   const { selectedLocationId } = useDashboardLocation();
   const hasLocations = locations.length > 0;
   const { isOwner, isLoading: isRoleLoading } = useLocationRole();
+
+  const activeLocationId = useMemo(() => {
+    if (!hasLocations) return 0;
+
+    if (
+      selectedLocationId &&
+      locations.some((loc) => loc.id === selectedLocationId)
+    ) {
+      return selectedLocationId;
+    }
+
+    return locations[0].id;
+  }, [selectedLocationId, locations, hasLocations]);
 
   // Filter state
   const [statusFilter, setStatusFilter] = useState<ImportStatus | "ALL">("ALL");
@@ -227,6 +259,13 @@ export default function ImportsClient() {
     refetch,
   } = useImports(filters, hasLocations);
 
+  const { data: reorderSuggestions = [], isLoading: reorderLoading } =
+    useReorderSuggestions(activeLocationId);
+  const { data: productData } = useProducts({
+    locationId: activeLocationId,
+    pageSize: 200,
+  });
+
   const deleteMutation = useDeleteImport();
   const confirmMutation = useConfirmImport();
 
@@ -235,6 +274,48 @@ export default function ImportsClient() {
   const totalPages = importData?.totalPages ?? 0;
   const hasPreviousPage = importData?.hasPreviousPage ?? false;
   const hasNextPage = importData?.hasNextPage ?? false;
+
+  const productNameMap = useMemo(() => {
+    const map = new Map<number, string>();
+    (productData?.items ?? []).forEach((product) => {
+      map.set(product.productId, product.productName || product.name);
+    });
+    return map;
+  }, [productData?.items]);
+
+  const reorderLookupIds = useMemo(
+    () =>
+      reorderSuggestions
+        .slice(0, 5)
+        .map((item) => Number(item.productId))
+        .filter((id) => Number.isFinite(id) && id > 0),
+    [reorderSuggestions],
+  );
+  const { data: reorderProductLookup = {}, isLoading: reorderLookupLoading } =
+    useReorderSuggestionProductLookup(reorderLookupIds, activeLocationId);
+
+  const highUrgencyCount = useMemo(
+    () => reorderSuggestions.filter((item) => item.urgency === "HIGH").length,
+    [reorderSuggestions],
+  );
+
+  const topReorderSuggestions = useMemo(
+    () =>
+      reorderSuggestions.slice(0, 5).map((item) => {
+        const numericId = Number(item.productId);
+        const productName =
+          Number.isFinite(numericId) && numericId > 0
+            ? productNameMap.get(numericId) ||
+              reorderProductLookup[numericId]?.productName
+            : undefined;
+
+        return {
+          ...item,
+          productName: productName || `SP #${item.productId}`,
+        };
+      }),
+    [reorderSuggestions, productNameMap, reorderProductLookup],
+  );
 
   // Client-side search filter (on top of server-side filter)
   const filteredImports = useMemo(() => {
@@ -338,6 +419,70 @@ export default function ImportsClient() {
               </Button>
             </Link>
           </div>
+        </div>
+
+        <div className="mb-6 rounded-xl border border-blue-200 bg-linear-to-r from-blue-50 to-cyan-50 p-4">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <p className="text-sm font-semibold text-gray-900">
+                Gợi ý nhập hàng AI (nightly)
+              </p>
+              <p className="text-sm text-gray-600 mt-1">
+                {highUrgencyCount > 0
+                  ? `Có ${highUrgencyCount} sản phẩm cần nhập gấp.`
+                  : "Không có sản phẩm mức khẩn cấp cao trong lần dự báo gần nhất."}
+              </p>
+            </div>
+            <Link
+              href={`/dashboard/imports/create?locationId=${activeLocationId}`}
+            >
+              <Button className="bg-[#23C4C1] hover:bg-[#1da8a5] text-white">
+                <Plus className="w-4 h-4 mr-2" />
+                Tạo phiếu từ gợi ý
+              </Button>
+            </Link>
+          </div>
+
+          {reorderLoading || reorderLookupLoading ? (
+            <div className="mt-4 flex items-center text-sm text-gray-600">
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              Đang tải gợi ý nhập hàng...
+            </div>
+          ) : topReorderSuggestions.length > 0 ? (
+            <div className="mt-4 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+              {topReorderSuggestions.map((item) => {
+                const urgency = getUrgencyMeta(item.urgency);
+                return (
+                  <div
+                    key={`${item.productId}-${item.generatedAt}`}
+                    className="rounded-lg border border-white/80 bg-white/90 px-3 py-2"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="text-sm font-medium text-gray-800 line-clamp-1">
+                        {item.productName}
+                      </p>
+                      <Badge variant="outline" className={urgency.badgeClass}>
+                        {urgency.label}
+                      </Badge>
+                    </div>
+                    <p className="text-xs text-gray-600 mt-1">
+                      Gợi ý nhập{" "}
+                      {Math.max(
+                        0,
+                        Math.round(item.suggestedQuantity),
+                      ).toLocaleString("vi-VN")}{" "}
+                      · còn {Math.max(0, Math.round(item.daysUntilStockout))}{" "}
+                      ngày
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="mt-4 text-sm text-gray-500">
+              Chưa có dữ liệu gợi ý nhập hàng cho địa điểm này.
+            </p>
+          )}
         </div>
 
         {/* Filters & Search */}
@@ -493,7 +638,7 @@ export default function ImportsClient() {
                     <TableCell>
                       <div className="flex items-center gap-2">
                         <Building2 className="w-4 h-4 text-gray-400" />
-                        <span className="text-sm text-gray-700 truncate max-w-[180px]">
+                        <span className="text-sm text-gray-700 truncate max-w-45">
                           {imp.businessLocationName}
                         </span>
                       </div>

@@ -18,6 +18,17 @@ export interface AdminManagedUser {
   createdAt: string;
 }
 
+export interface CreateAdminConsultantRequest {
+  email: string;
+  fullName: string;
+}
+
+export interface CreateAdminConsultantResponse {
+  accountId: string;
+  profileId: string;
+  email: string;
+}
+
 export interface AdminUsersPaginatedResponse<T> {
   items: T[];
   pageNumber: number;

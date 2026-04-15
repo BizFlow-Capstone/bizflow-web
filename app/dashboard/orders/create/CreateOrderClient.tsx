@@ -3,6 +3,7 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
+import { formatVnd as formatCurrency } from "@/lib/format";
 import {
   ArrowLeft,
   Search,
@@ -890,12 +891,6 @@ export default function CreateOrderClient() {
     },
     [],
   );
-
-  const formatCurrency = (amount: number) =>
-    new Intl.NumberFormat("vi-VN", {
-      style: "currency",
-      currency: "VND",
-    }).format(amount);
 
   const routeAfterCreate = useCallback(
     (orderId: number, payload: CreateOrderRequest) => {

@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import {
+  changeAccountPassword,
   getAuthCredentials,
   loginWithGoogle,
   loginWithPhone,
@@ -123,6 +124,8 @@ export default function LoginPage() {
       const role = getRoleFromToken(token);
       if (role === "admin") {
         router.push("/admin");
+      } else if (role === "consultant") {
+        router.push("/consultant/accounting");
       } else {
         router.push("/dashboard");
       }
@@ -142,7 +145,7 @@ export default function LoginPage() {
           return;
         }
         result = await loginWithPhone(
-          formData.phone,
+          formData.phone.trim(),
           formData.password,
           getDeviceInfo(),
         );
@@ -152,18 +155,37 @@ export default function LoginPage() {
           return;
         }
         result = await loginWithEmail(
-          formData.email,
+          formData.email.trim(),
           formData.password,
           getDeviceInfo(),
         );
       }
       const authData = result.data ?? {};
+      const token = authData.accessToken ?? "";
+      const account = authData.account ?? null;
+      const hasPassword =
+        authData.hasPassword === true || account?.hasPassword === true;
+      const mustChangePassword = account?.mustChangePassword === true;
       const storedAccount = await saveTokens(
-        authData.accessToken ?? "",
+        token,
         authData.refreshToken ?? "",
-        authData.account ?? null,
+        account,
       );
-      await handleAfterAuth(authData.accessToken ?? "", storedAccount);
+
+      setAccessToken(token);
+      setPendingAccount(storedAccount);
+
+      if (!hasPassword || mustChangePassword) {
+        setShowSetPasswordModal(true);
+        setMessage(
+          mustChangePassword
+            ? "Vui lòng đổi mật khẩu trước khi tiếp tục sử dụng tài khoản."
+            : "Hãy thiết lập mật khẩu cho tài khoản của bạn.",
+        );
+        return;
+      }
+
+      await handleAfterAuth(token, storedAccount);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "";
       setError(
@@ -194,6 +216,7 @@ export default function LoginPage() {
         const account = authData.account ?? null;
         const hasPassword =
           authData.hasPassword === true || account?.hasPassword === true;
+        const mustChangePassword = account?.mustChangePassword === true;
         if (!token) throw new Error("API không trả về accessToken");
         setAccessToken(token);
         const storedAccount = await saveTokens(
@@ -202,7 +225,7 @@ export default function LoginPage() {
           account,
         );
         setPendingAccount(storedAccount);
-        if (!hasPassword) {
+        if (!hasPassword || mustChangePassword) {
           setShowSetPasswordModal(true);
           return;
         }
@@ -266,11 +289,42 @@ export default function LoginPage() {
       setError("Xác nhận mật khẩu không khớp");
       return;
     }
+    const currentPassword = pendingAccount?.mustChangePassword
+      ? formData.password
+      : "";
+
+    if (pendingAccount?.mustChangePassword && !currentPassword) {
+      setError("Thiếu mật khẩu tạm thời để đổi mật khẩu.");
+      return;
+    }
+
     setIsSettingPassword(true);
     try {
-      await setAccountPassword(newPassword, accessToken);
+      if (pendingAccount?.mustChangePassword) {
+        await changeAccountPassword(currentPassword, newPassword, accessToken);
+      } else {
+        await setAccountPassword(newPassword, accessToken);
+      }
+
+      const updatedAccount: AuthAccount | null = pendingAccount
+        ? {
+            ...pendingAccount,
+            hasPassword: true,
+            mustChangePassword: false,
+          }
+        : pendingAccount;
+
+      if (typeof window !== "undefined" && updatedAccount) {
+        window.localStorage.setItem(
+          AUTH_ACCOUNT_KEY,
+          JSON.stringify(updatedAccount),
+        );
+        window.dispatchEvent(new Event(AUTH_UPDATED_EVENT));
+      }
+
+      setPendingAccount(updatedAccount);
       setShowSetPasswordModal(false);
-      await handleAfterAuth(accessToken, pendingAccount);
+      await handleAfterAuth(accessToken, updatedAccount);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Set password thất bại");
     } finally {
@@ -356,6 +410,14 @@ export default function LoginPage() {
                   className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#23C4C1] focus:border-transparent outline-none"
                 />
               </div>
+              <div className="flex items-center justify-end">
+                <Link
+                  href="/auth/forgot-password"
+                  className="text-sm font-medium text-[#23C4C1] hover:text-[#1a9b99]"
+                >
+                  Quên mật khẩu?
+                </Link>
+              </div>
               <button
                 type="submit"
                 disabled={isLoading}
@@ -431,10 +493,15 @@ export default function LoginPage() {
       <Dialog open={showSetPasswordModal} onOpenChange={() => {}}>
         <DialogContent className="sm:max-w-md" showCloseButton={false}>
           <DialogHeader>
-            <DialogTitle>Thiết lập mật khẩu bắt buộc</DialogTitle>
+            <DialogTitle>
+              {pendingAccount?.mustChangePassword
+                ? "Đổi mật khẩu bắt buộc"
+                : "Thiết lập mật khẩu bắt buộc"}
+            </DialogTitle>
             <DialogDescription>
-              Tài khoản Google chưa có mật khẩu. Vui lòng tạo mật khẩu để hoàn
-              tất đăng nhập.
+              {pendingAccount?.mustChangePassword
+                ? "Phiên đăng nhập này yêu cầu cập nhật mật khẩu mới trước khi tiếp tục."
+                : "Tài khoản Google chưa có mật khẩu. Vui lòng tạo mật khẩu để hoàn tất đăng nhập."}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">

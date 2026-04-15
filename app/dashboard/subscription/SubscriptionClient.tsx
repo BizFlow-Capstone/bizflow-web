@@ -204,9 +204,9 @@ function CurrentPlanCard({
       </div>
 
       <div className="mt-4 flex flex-wrap gap-2">
-        {plan.features.slice(0, 6).map((f) => (
+        {plan.features.slice(0, 6).map((f, i) => (
           <span
-            key={f.featureId}
+            key={f.featureId || i}
             className={
               "inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs " +
               (featureIncluded(f)
@@ -215,7 +215,7 @@ function CurrentPlanCard({
             }
           >
             {f.usageLimit === -1 ? <InfinityIcon className="w-3 h-3" /> : null}
-            {f.featureName}
+            {f.featureName || f.featureDescription}
             {f.usageLimit > 0
               ? `: ${f.usageLimit.toLocaleString("vi-VN")}`
               : ""}
@@ -322,13 +322,13 @@ function PricingCard({
           </div>
 
           <ul className="mt-6 space-y-2.5 text-sm text-white/90">
-            {plan.features.map((f) => (
+            {plan.features.map((f, i) => (
               <li
-                key={f.featureId}
+                key={f.featureId || i}
                 className="flex items-center justify-between gap-2"
               >
                 <span className={featureIncluded(f) ? "" : "text-white/40"}>
-                  {f.featureName}
+                  {f.featureName || f.featureDescription}
                 </span>
                 <span
                   className={
@@ -434,13 +434,13 @@ function PricingCard({
         </div>
 
         <ul className="mt-6 space-y-2.5 text-sm text-slate-600">
-          {plan.features.map((f) => (
+          {plan.features.map((f, i) => (
             <li
-              key={f.featureId}
+              key={f.featureId || i}
               className="flex items-center justify-between gap-2"
             >
               <span className={featureIncluded(f) ? "" : "text-slate-300"}>
-                {f.featureName}
+                {f.featureName || f.featureDescription}
               </span>
               <span
                 className={

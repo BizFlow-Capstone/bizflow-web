@@ -3,6 +3,8 @@ import type {
   AdminManagedUser,
   AdminUserQueryParams,
   AdminUsersPaginatedResponse,
+  CreateAdminConsultantRequest,
+  CreateAdminConsultantResponse,
 } from "@/lib/types/adminUserManagement";
 
 type ApiEnvelope<T> = {
@@ -69,4 +71,16 @@ export async function revokeAdminUserRefreshTokens(
       method: "DELETE",
     },
   );
+}
+
+export async function createAdminConsultant(
+  payload: CreateAdminConsultantRequest,
+): Promise<CreateAdminConsultantResponse> {
+  return request<CreateAdminConsultantResponse>("/api/admin/consultants", {
+    method: "POST",
+    body: JSON.stringify({
+      email: payload.email.trim().toLowerCase(),
+      fullName: payload.fullName.trim(),
+    }),
+  });
 }
