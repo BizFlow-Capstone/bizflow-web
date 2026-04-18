@@ -85,12 +85,12 @@ export async function fetchNotifications(page = 1, pageSize = 30) {
 
     if (raw.success && Array.isArray(raw.data?.items)) {
       const items = raw.data.items.map((srv: any) => ({
-        id: srv.id?.toString() || "",
+        id: (srv.userNotificationId ?? srv.id)?.toString() || "",
         title: srv.title || "",
         body: srv.content || srv.body || "",
         route: srv.route || "/dashboard/employees?tab=invitations",
         receivedAt: srv.createdAt || srv.receivedAt || new Date().toISOString(),
-        isRead: !!(srv.isRead ?? srv.IsRead),
+        isRead: srv.readAt != null,
       })) as DashboardNotificationItem[];
 
       writeRawItems(items);
@@ -130,7 +130,10 @@ export async function markAllNotificationsAsRead() {
     });
     return response.ok;
   } catch (error) {
-    console.error("Failed to mark all notifications as read on backend:", error);
+    console.error(
+      "Failed to mark all notifications as read on backend:",
+      error,
+    );
     return false;
   }
 }
@@ -156,7 +159,10 @@ export async function markNotificationAsRead(userNotificationId: string) {
     );
     return response.ok;
   } catch (error) {
-    console.error(`Failed to mark notification ${userNotificationId} as read:`, error);
+    console.error(
+      `Failed to mark notification ${userNotificationId} as read:`,
+      error,
+    );
     return false;
   }
 }

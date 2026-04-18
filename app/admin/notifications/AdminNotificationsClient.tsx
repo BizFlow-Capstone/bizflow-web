@@ -76,6 +76,8 @@ import {
   processDueDispatches,
 } from "@/lib/admin-notification-api";
 import { getAdminUsers } from "@/lib/admin-users-api";
+import { getValidAccessToken } from "@/lib/auth/tokenManager";
+import { toast } from "sonner";
 import type { AdminManagedUser } from "@/lib/types/adminUserManagement";
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -278,8 +280,6 @@ export default function AdminNotificationsClient({
   const [cancellingDispatchId, setCancellingDispatchId] = useState<
     number | null
   >(null);
-  const [message, setMessage] = useState("");
-  const [messageType, setMessageType] = useState<"ok" | "error">("ok");
 
   // ── Computed ──────────────────────────────────────────────────────────────────
 
@@ -350,8 +350,7 @@ export default function AdminNotificationsClient({
       const data = await getTemplates();
       setTemplates(data);
     } catch (err) {
-      setMessage((err as Error).message);
-      setMessageType("error");
+      toast.error((err as Error).message);
     } finally {
       setLoading(false);
     }
@@ -403,8 +402,7 @@ export default function AdminNotificationsClient({
       const data = await getDispatches(1, 20);
       setDispatches(data);
     } catch (err) {
-      setMessage((err as Error).message);
-      setMessageType("error");
+      toast.error((err as Error).message);
     }
   }, []);
 
@@ -413,8 +411,7 @@ export default function AdminNotificationsClient({
       const data = await getDispatches(1, 50, "FAILED");
       setFailedDispatches(data);
     } catch (err) {
-      setMessage((err as Error).message);
-      setMessageType("error");
+      toast.error((err as Error).message);
     }
   }, []);
 
@@ -458,14 +455,13 @@ export default function AdminNotificationsClient({
     if (!selectedTemplate) return;
     try {
       setLoading(true);
-      setMessage("");
       await upsertTemplate(selectedTemplate.eventCode, templateForm);
-      setMessage(`Đã lưu template "${selectedTemplate.eventCode}" thành công.`);
-      setMessageType("ok");
+      toast.success(
+        `Đã lưu template "${selectedTemplate.eventCode}" thành công.`,
+      );
       await loadTemplates();
     } catch (err) {
-      setMessage((err as Error).message);
-      setMessageType("error");
+      toast.error((err as Error).message);
     } finally {
       setLoading(false);
     }
@@ -475,29 +471,25 @@ export default function AdminNotificationsClient({
     if (!selectedTemplate) return;
 
     if (isLockedTemplate(selectedTemplate.eventCode)) {
-      setMessage(
+      toast.error(
         `Template "${selectedTemplate.eventCode}" là template hệ thống, chỉ được chỉnh nội dung chứ không thể tắt.`,
       );
-      setMessageType("error");
       return;
     }
 
     try {
       setLoading(true);
-      setMessage("");
       const updatedTemplate = await toggleTemplate(
         selectedTemplate.eventCode,
         !selectedTemplate.isActive,
       );
       setSelectedTemplate(updatedTemplate);
       await loadTemplates();
-      setMessage(
+      toast.success(
         `Đã ${!selectedTemplate.isActive ? "bật" : "tắt"} template "${selectedTemplate.eventCode}".`,
       );
-      setMessageType("ok");
     } catch (err) {
-      setMessage((err as Error).message);
-      setMessageType("error");
+      toast.error((err as Error).message);
     } finally {
       setLoading(false);
     }
@@ -506,13 +498,11 @@ export default function AdminNotificationsClient({
   async function onCreateNewTemplate() {
     const code = newEventCode.trim().toUpperCase();
     if (!code) {
-      setMessage("Nhập Event Code trước khi tạo template mới.");
-      setMessageType("error");
+      toast.error("Nhập Event Code trước khi tạo template mới.");
       return;
     }
     try {
       setLoading(true);
-      setMessage("");
       await upsertTemplate(code, {
         notificationType: code,
         titleTemplate: `Thông báo ${code}`,
@@ -524,11 +514,9 @@ export default function AdminNotificationsClient({
       });
       setNewEventCode("");
       await loadTemplates();
-      setMessage(`Đã tạo template mới: ${code}`);
-      setMessageType("ok");
+      toast.success(`Đã tạo template mới: ${code}`);
     } catch (err) {
-      setMessage((err as Error).message);
-      setMessageType("error");
+      toast.error((err as Error).message);
     } finally {
       setLoading(false);
     }
@@ -541,8 +529,7 @@ export default function AdminNotificationsClient({
       const detail = await getTemplateByEventCode(template.eventCode);
       setSelectedTemplate(detail);
     } catch (err) {
-      setMessage((err as Error).message);
-      setMessageType("error");
+      toast.error((err as Error).message);
     } finally {
       setLoadingTemplateDetail(false);
     }
@@ -565,10 +552,9 @@ export default function AdminNotificationsClient({
 
       const detail = await getTemplateByEventCode(eventCode);
       if (!detail.isActive) {
-        setMessage(
+        toast.error(
           `Template "${eventCode}" đang tắt nên không thể dùng để gửi hoặc lên lịch thông báo.`,
         );
-        setMessageType("error");
         return;
       }
 
@@ -598,8 +584,7 @@ export default function AdminNotificationsClient({
         actionPayloadJson: resolvedPayload,
       }));
     } catch (err) {
-      setMessage((err as Error).message);
-      setMessageType("error");
+      toast.error((err as Error).message);
     }
   }
 
@@ -623,7 +608,6 @@ export default function AdminNotificationsClient({
   async function onPreviewRecipients() {
     try {
       setPreviewLoading(true);
-      setMessage("");
 
       if (normalizedRecipientMode === "ALL_LOCATION_OWNERS") {
         const preview = await getAllLocationOwnersPreview();
@@ -640,14 +624,12 @@ export default function AdminNotificationsClient({
         return;
       }
 
-      setMessage(
+      toast.error(
         "Chế độ người nhận hiện tại không cần preview hoặc còn thiếu dữ liệu.",
       );
-      setMessageType("error");
     } catch (err) {
       setRecipientPreview(null);
-      setMessage((err as Error).message);
-      setMessageType("error");
+      toast.error((err as Error).message);
     } finally {
       setPreviewLoading(false);
     }
@@ -656,15 +638,12 @@ export default function AdminNotificationsClient({
   async function onCancelDispatch(dispatchId: number) {
     try {
       setCancellingDispatchId(dispatchId);
-      setMessage("");
       await cancelDispatch(dispatchId);
-      setMessage(`Đã hủy lịch gửi cho dispatch #${dispatchId}.`);
-      setMessageType("ok");
+      toast.success(`Đã hủy lịch gửi cho dispatch #${dispatchId}.`);
       await loadDispatches();
       await loadFailedDispatches();
     } catch (err) {
-      setMessage((err as Error).message);
-      setMessageType("error");
+      toast.error((err as Error).message);
     } finally {
       setCancellingDispatchId(null);
     }
@@ -674,29 +653,27 @@ export default function AdminNotificationsClient({
     event.preventDefault();
     try {
       setLoading(true);
-      setMessage("");
 
       if (campaignForm.eventCode && isCampaignTemplateInactive) {
-        setMessage(
+        toast.error(
           `Template "${campaignForm.eventCode}" đang tắt nên không thể dùng để gửi thông báo hay lên lịch.`,
         );
-        setMessageType("error");
         return;
       }
 
       const specificRecipientIds = campaignForm.recipientUserIds ?? [];
 
       if (shouldSelectLocation && !campaignForm.businessLocationId) {
-        setMessage("Vui lòng chọn địa điểm kinh doanh trước khi tạo dispatch.");
-        setMessageType("error");
+        toast.error(
+          "Vui lòng chọn địa điểm kinh doanh trước khi tạo dispatch.",
+        );
         return;
       }
 
       if (isSpecificUserMode && specificRecipientIds.length === 0) {
-        setMessage(
+        toast.error(
           "Vui lòng nhập ít nhất 1 Profile ID cho chế độ người dùng cụ thể.",
         );
-        setMessageType("error");
         return;
       }
 
@@ -732,14 +709,12 @@ export default function AdminNotificationsClient({
       }
 
       await createDispatch(payload);
-      setMessage("Đã tạo chiến dịch thành công.");
-      setMessageType("ok");
+      toast.success("Đã tạo chiến dịch thành công.");
       setCampaignForm(createEmptyCampaignForm());
       setRecipientPreview(null);
       await loadDispatches();
     } catch (err) {
-      setMessage((err as Error).message);
-      setMessageType("error");
+      toast.error((err as Error).message);
     } finally {
       setLoading(false);
     }
@@ -748,15 +723,12 @@ export default function AdminNotificationsClient({
   async function onProcessDue() {
     try {
       setLoading(true);
-      setMessage("");
       await processDueDispatches();
-      setMessage("Đã trigger process-due dispatches thành công.");
-      setMessageType("ok");
+      toast.success("Đã trigger process-due dispatches thành công.");
       await loadFailedDispatches();
       await loadDispatches();
     } catch (err) {
-      setMessage((err as Error).message);
-      setMessageType("error");
+      toast.error((err as Error).message);
     } finally {
       setLoading(false);
     }
@@ -799,6 +771,27 @@ export default function AdminNotificationsClient({
 
   // ── Render ────────────────────────────────────────────────────────────────────
 
+  const HANGFIRE_URL = "https://api.bizflow.asia/hangfire";
+
+  async function setHangfireCookie() {
+    try {
+      const token = await getValidAccessToken();
+      document.cookie = `HangfireToken=${token}; path=/; domain=.bizflow.asia; SameSite=None; Secure`;
+    } catch {
+      // ignore
+    }
+  }
+
+  async function handleOpenHangfire() {
+    try {
+      const token = await getValidAccessToken();
+      document.cookie = `HangfireToken=${token}; path=/; domain=.bizflow.asia; SameSite=None; Secure`;
+      window.open(HANGFIRE_URL, "_blank");
+    } catch {
+      toast.error("Không thể lấy access token để mở Hangfire.");
+    }
+  }
+
   const dispatchItems = dispatches?.items ?? [];
   const failedItems = failedDispatches?.items ?? [];
   const isConsultantMode = mode === "consultant";
@@ -823,18 +816,6 @@ export default function AdminNotificationsClient({
       </div> */}
 
       {/* Alert message */}
-      {message && (
-        <div
-          className={`text-sm px-4 py-2.5 rounded-lg border ${
-            messageType === "error"
-              ? "bg-red-50 text-red-700 border-red-200"
-              : "bg-emerald-50 text-emerald-700 border-emerald-200"
-          }`}
-        >
-          {message}
-        </div>
-      )}
-
       {/* Quick stats */}
       {/* <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
         {[
@@ -874,7 +855,13 @@ export default function AdminNotificationsClient({
       </div> */}
 
       {/* Tabs */}
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
+      <Tabs
+        value={activeTab}
+        onValueChange={(val) => {
+          setActiveTab(val);
+          if (val === "hangfire") void setHangfireCookie();
+        }}
+      >
         <TabsList className="bg-white border shadow-sm">
           <TabsTrigger value="templates" className="gap-1.5">
             <FileText className="w-4 h-4" />
@@ -2125,21 +2112,20 @@ export default function AdminNotificationsClient({
                 Dashboard hiệu suất xử lý background jobs — Hangfire.
               </p>
             </div>
-            <a
-              href="http://localhost:8080/hangfire/"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 text-sm text-teal-600 hover:text-teal-700 hover:underline"
+            <button
+              type="button"
+              onClick={() => void handleOpenHangfire()}
+              className="inline-flex items-center gap-1.5 text-sm font-medium text-teal-600 hover:text-teal-700 hover:underline"
             >
               <ExternalLink className="w-3.5 h-3.5" />
-              Mở trong tab mới
-            </a>
+              Mở Hangfire Dashboard
+            </button>
           </div>
 
           <Card className="border-0 shadow-sm overflow-hidden">
             <CardContent className="p-0">
               <iframe
-                src="http://localhost:8080/hangfire/"
+                src={HANGFIRE_URL}
                 title="Hangfire Dashboard"
                 className="w-full border-0"
                 style={{ height: "calc(100vh - 220px)", minHeight: "600px" }}
