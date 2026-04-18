@@ -40,6 +40,7 @@ import {
   appendIncomingNotification,
   cleanupWebPushForegroundListener,
   fetchNotifications,
+  fetchUnreadCount,
   getStoredNotifications,
   markAllNotificationsAsRead,
   markNotificationAsRead,
@@ -370,6 +371,7 @@ export default function DashboardHeader() {
   const [floatingToasts, setFloatingToasts] = useState<FloatingToast[]>([]);
   const [toastTick, setToastTick] = useState(() => Date.now());
   const [isNotificationMenuOpen, setIsNotificationMenuOpen] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
   const floatingTimerRef = useRef<Record<string, number>>({});
   const { selectedLocationId, switchLocation } = useDashboardLocation();
   const { data: locations = [], isLoading: isLoadingLocations } =
@@ -393,14 +395,14 @@ export default function DashboardHeader() {
     activeLocation?.id ?? 0,
     false,
   );
-  const unreadCount = useMemo(
-    () => notifications.filter((item) => !item.isRead).length,
-    [notifications],
-  );
   const anomalyUnreadCount = useMemo(
     () => unackedAnomalies.length,
     [unackedAnomalies],
   );
+
+  const refreshUnreadCount = () => {
+    void fetchUnreadCount().then(setUnreadCount);
+  };
 
   const refreshNotifications = () => {
     setNotifications(getStoredNotifications());
@@ -572,6 +574,7 @@ export default function DashboardHeader() {
       refreshNotifications();
     }, 0);
     void fetchNotifications();
+    refreshUnreadCount();
 
     void setupWebPushNotifications().catch(() => {
       // Ignore push setup failures to keep header stable.
@@ -579,6 +582,7 @@ export default function DashboardHeader() {
 
     const handleNotificationUpdated = () => {
       refreshNotifications();
+      refreshUnreadCount();
     };
 
     const handleIncomingNotification = (event: Event) => {
@@ -731,9 +735,11 @@ export default function DashboardHeader() {
             >
               <AlertCircle className="w-4 h-4" />
               <span className="text-xs font-semibold">AI</span>
-              <span className="inline-flex min-w-5 h-5 px-1.5 items-center justify-center rounded-full bg-amber-500 text-[10px] font-semibold text-white">
-                {anomalyUnreadCount > 99 ? "99+" : anomalyUnreadCount}
-              </span>
+              {anomalyUnreadCount > 0 && (
+                <span className="inline-flex min-w-5 h-5 px-1.5 items-center justify-center rounded-full bg-amber-500 text-[10px] font-semibold text-white">
+                  {anomalyUnreadCount > 99 ? "99+" : anomalyUnreadCount}
+                </span>
+              )}
             </Button>
 
             <DropdownMenu
@@ -765,9 +771,11 @@ export default function DashboardHeader() {
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation();
-                        void markAllNotificationsAsRead().then(() =>
-                          refreshNotifications(),
-                        );
+                        void markAllNotificationsAsRead().then(async () => {
+                          await fetchNotifications();
+                          refreshNotifications();
+                          setUnreadCount(0);
+                        });
                       }}
                       className="inline-flex items-center gap-1.5 text-xs font-medium text-[#23C4C1] hover:text-[#1ba8a5] transition-colors"
                     >
@@ -786,9 +794,11 @@ export default function DashboardHeader() {
                     <AlertCircle className="w-4 h-4 text-amber-600" />
                     Cảnh báo bất thường AI
                   </span>
-                  <span className="inline-flex items-center justify-center min-w-6 h-6 px-2 rounded-full bg-amber-100 text-xs font-semibold text-amber-700 border border-amber-200">
-                    {anomalyUnreadCount}
-                  </span>
+                  {anomalyUnreadCount > 0 && (
+                    <span className="inline-flex items-center justify-center min-w-6 h-6 px-2 rounded-full bg-amber-100 text-xs font-semibold text-amber-700 border border-amber-200">
+                      {anomalyUnreadCount}
+                    </span>
+                  )}
                 </button>
 
                 {notifications.length === 0 ? (

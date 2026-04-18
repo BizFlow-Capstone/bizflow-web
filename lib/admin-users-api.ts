@@ -84,3 +84,12 @@ export async function createAdminConsultant(
     }),
   });
 }
+
+export async function deleteAdminConsultant(accountId: string): Promise<void> {
+  return request<void>(
+    `/api/admin/consultants/${encodeURIComponent(accountId)}`,
+    {
+      method: "DELETE",
+    },
+  );
+}

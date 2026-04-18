@@ -15,6 +15,7 @@ import {
   ChevronLeft,
   ChevronRight,
   UserPlus,
+  Trash2,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -40,6 +41,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -54,6 +56,7 @@ import { toast } from "sonner";
 import {
   useAdminUsers,
   useCreateAdminConsultant,
+  useDeleteAdminConsultant,
   useRevokeAdminUserRefreshTokens,
 } from "@/hooks/useAdminUsers";
 import type { AdminManagedUser } from "@/lib/types/adminUserManagement";
@@ -110,6 +113,8 @@ export default function AdminAccountsClient() {
   const [mountedAt] = useState(() => Date.now());
   const [revokeDialogUser, setRevokeDialogUser] =
     useState<AdminManagedUser | null>(null);
+  const [deleteDialogUser, setDeleteDialogUser] =
+    useState<AdminManagedUser | null>(null);
   const [isCreateConsultantOpen, setIsCreateConsultantOpen] = useState(false);
   const [consultantForm, setConsultantForm] = useState({
     email: "",
@@ -153,6 +158,7 @@ export default function AdminAccountsClient() {
   const usersQuery = useAdminUsers(queryParams);
   const createConsultantMutation = useCreateAdminConsultant();
   const revokeTokensMutation = useRevokeAdminUserRefreshTokens();
+  const deleteConsultantMutation = useDeleteAdminConsultant();
 
   const users = usersQuery.data?.items ?? [];
   const activeCount = users.filter((user) => user.isActive).length;
@@ -223,6 +229,26 @@ export default function AdminAccountsClient() {
           error instanceof Error
             ? error.message
             : "Không thể thu hồi phiên đăng nhập.",
+        );
+      },
+    });
+  };
+
+  const handleDeleteConsultant = () => {
+    if (!deleteDialogUser) return;
+
+    deleteConsultantMutation.mutate(deleteDialogUser.accountId, {
+      onSuccess: () => {
+        toast.success(
+          `Đã xóa tài khoản accountant "${deleteDialogUser.fullName || deleteDialogUser.email}".`,
+        );
+        setDeleteDialogUser(null);
+      },
+      onError: (error) => {
+        toast.error(
+          error instanceof Error
+            ? error.message
+            : "Không thể xóa tài khoản accountant.",
         );
       },
     });
@@ -509,6 +535,28 @@ export default function AdminAccountsClient() {
                             </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
+                      ) : user.role.toLowerCase() === "consultant" ? (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 w-8 p-0"
+                            >
+                              <MoreHorizontal className="w-4 h-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              className="gap-2 text-red-600 focus:text-red-600"
+                              onClick={() => setDeleteDialogUser(user)}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                              Xóa tài khoản
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       ) : (
                         <span className="text-xs text-gray-400">--</span>
                       )}
@@ -696,6 +744,70 @@ export default function AdminAccountsClient() {
                 <>
                   <AlertTriangle className="w-4 h-4 mr-2" />
                   Thu hồi ngay
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete consultant dialog */}
+      <Dialog
+        open={deleteDialogUser != null}
+        onOpenChange={(open) => {
+          if (!open) setDeleteDialogUser(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Xóa tài khoản accountant</DialogTitle>
+            <DialogDescription>
+              Hành động này không thể hoàn tác. Tài khoản accountant sẽ bị xóa
+              vĩnh viễn khỏi hệ thống.
+            </DialogDescription>
+          </DialogHeader>
+
+          {deleteDialogUser ? (
+            <div className="rounded-lg border bg-red-50/50 border-red-200 p-3 text-sm text-gray-700 space-y-1">
+              <p>
+                <span className="font-medium">Tên:</span>{" "}
+                {deleteDialogUser.fullName || "--"}
+              </p>
+              <p>
+                <span className="font-medium">Email:</span>{" "}
+                {deleteDialogUser.email || "--"}
+              </p>
+              <p>
+                <span className="font-medium">AccountId:</span>{" "}
+                {deleteDialogUser.accountId}
+              </p>
+            </div>
+          ) : null}
+
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setDeleteDialogUser(null)}
+              disabled={deleteConsultantMutation.isPending}
+            >
+              Hủy
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={handleDeleteConsultant}
+              disabled={deleteConsultantMutation.isPending}
+            >
+              {deleteConsultantMutation.isPending ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Đang xóa
+                </>
+              ) : (
+                <>
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  Xóa tài khoản
                 </>
               )}
             </Button>
