@@ -95,7 +95,7 @@ function roleColor(role: string) {
 function formatRoleLabel(role: string) {
   switch (role.toLowerCase()) {
     case "consultant":
-      return "Accountant";
+      return "Consultant";
     default:
       return role;
   }
@@ -160,15 +160,25 @@ export default function AdminAccountsClient() {
   const revokeTokensMutation = useRevokeAdminUserRefreshTokens();
   const deleteConsultantMutation = useDeleteAdminConsultant();
 
+  // Separate lightweight queries for global stat cards (independent of current filters/page)
+  const totalStatsQuery = useAdminUsers({ pageNumber: 1, pageSize: 1 });
+  const activeStatsQuery = useAdminUsers({
+    pageNumber: 1,
+    pageSize: 1,
+    isActive: true,
+  });
+  const inactiveStatsQuery = useAdminUsers({
+    pageNumber: 1,
+    pageSize: 1,
+    isActive: false,
+  });
+
   const users = usersQuery.data?.items ?? [];
-  const activeCount = users.filter((user) => user.isActive).length;
-  const inactiveCount = users.length - activeCount;
   const sevenDaysAgo = mountedAt - 7 * 24 * 60 * 60 * 1000;
-  const recentLoginCount = users.filter((user) => {
-    if (!user.lastLoginAt) return false;
-    const loginTime = new Date(user.lastLoginAt).getTime();
-    return loginTime >= sevenDaysAgo;
-  }).length;
+
+  const globalTotalCount = totalStatsQuery.data?.totalCount ?? 0;
+  const globalActiveCount = activeStatsQuery.data?.totalCount ?? 0;
+  const globalInactiveCount = inactiveStatsQuery.data?.totalCount ?? 0;
 
   const totalCount = usersQuery.data?.totalCount ?? 0;
   const totalPages = usersQuery.data?.totalPages ?? 1;
@@ -183,12 +193,12 @@ export default function AdminAccountsClient() {
     const fullName = consultantForm.fullName.trim();
 
     if (!email) {
-      setConsultantFormError("Vui lòng nhập email cho accountant.");
+      setConsultantFormError("Vui lòng nhập email cho consultant.");
       return;
     }
 
     if (!fullName) {
-      setConsultantFormError("Vui lòng nhập họ và tên accountant.");
+      setConsultantFormError("Vui lòng nhập họ và tên consultant.");
       return;
     }
 
@@ -198,7 +208,7 @@ export default function AdminAccountsClient() {
       {
         onSuccess: (result) => {
           toast.success(
-            `Đã tạo tài khoản accountant cho ${result.email} và gửi email hướng dẫn.`,
+            `Đã tạo tài khoản consultant cho ${result.email} và gửi email hướng dẫn.`,
           );
           setIsCreateConsultantOpen(false);
           resetConsultantForm();
@@ -208,7 +218,7 @@ export default function AdminAccountsClient() {
           const message =
             error instanceof Error
               ? error.message
-              : "Không thể tạo tài khoản accountant.";
+              : "Không thể tạo tài khoản consultant.";
           setConsultantFormError(message);
           toast.error(message);
         },
@@ -240,7 +250,7 @@ export default function AdminAccountsClient() {
     deleteConsultantMutation.mutate(deleteDialogUser.accountId, {
       onSuccess: () => {
         toast.success(
-          `Đã xóa tài khoản accountant "${deleteDialogUser.fullName || deleteDialogUser.email}".`,
+          `Đã xóa tài khoản consultant "${deleteDialogUser.fullName || deleteDialogUser.email}".`,
         );
         setDeleteDialogUser(null);
       },
@@ -248,7 +258,7 @@ export default function AdminAccountsClient() {
         toast.error(
           error instanceof Error
             ? error.message
-            : "Không thể xóa tài khoản accountant.",
+            : "Không thể xóa tài khoản consultant.",
         );
       },
     });
@@ -256,54 +266,35 @@ export default function AdminAccountsClient() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">
-            Quản Lý Người Dùng
-          </h1>
-          <p className="mt-1 text-sm text-gray-500">
-            Xem, tìm kiếm và tạo nhanh tài khoản accountant cho hệ thống.
-          </p>
-        </div>
-        <Button
-          type="button"
-          onClick={() => {
-            resetConsultantForm();
-            setIsCreateConsultantOpen(true);
-          }}
-          className="bg-[#23C4C1] hover:bg-[#1a9b99]"
-        >
-          <UserPlus className="mr-2 h-4 w-4" />
-          Tạo tài khoản kế toán
-        </Button>
-      </div>
-
-      <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+      {/* <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
         {[
           {
-            label: "Tài khoản trang này",
-            value: users.length,
+            label: "Tổng tài khoản",
+            value: globalTotalCount,
             icon: Shield,
             color: "text-blue-600",
             bg: "bg-blue-50",
           },
-          {
-            label: "Đang hoạt động",
-            value: activeCount,
-            icon: Shield,
-            color: "text-emerald-600",
-            bg: "bg-emerald-50",
-          },
-          {
-            label: "Đã vô hiệu",
-            value: inactiveCount,
-            icon: AlertTriangle,
-            color: "text-red-600",
-            bg: "bg-red-50",
-          },
+          // {
+          //   label: "Đang hoạt động",
+          //   value: globalActiveCount,
+          //   icon: Shield,
+          //   color: "text-emerald-600",
+          //   bg: "bg-emerald-50",
+          // },
+          // {
+          //   label: "Đã vô hiệu",
+          //   value: globalInactiveCount,
+          //   icon: AlertTriangle,
+          //   color: "text-red-600",
+          //   bg: "bg-red-50",
+          // },
           {
             label: "Login trong 7 ngày",
-            value: recentLoginCount,
+            value: users.filter((user) => {
+              if (!user.lastLoginAt) return false;
+              return new Date(user.lastLoginAt).getTime() >= sevenDaysAgo;
+            }).length,
             icon: Calendar,
             color: "text-violet-600",
             bg: "bg-violet-50",
@@ -324,12 +315,31 @@ export default function AdminAccountsClient() {
             </Card>
           );
         })}
-      </div>
+      </div> */}
 
       <Card className="border-0 shadow-sm">
-        <CardContent className="p-4">
+        <CardHeader className="pb-2">
+          <div className="flex items-center justify-between gap-2">
+            <CardTitle className="text-base font-semibold">
+              Danh Sách Người Dùng ({totalCount})
+            </CardTitle>
+
+            <div className="inline-block mr-0">
+              <Button
+                type="button"
+                onClick={() => {
+                  resetConsultantForm();
+                  setIsCreateConsultantOpen(true);
+                }}
+                className="bg-[#23C4C1] hover:bg-[#1a9b99] inline-flex items-center"
+              >
+                <UserPlus className="mr-2 h-4 w-4" />
+                Tạo tài khoản Consultant
+              </Button>
+            </div>
+          </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <div className="space-y-1.5">
+            <div className="space-y-1.5 md:col-span-2">
               <Label htmlFor="users-search">Từ khóa</Label>
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -352,45 +362,10 @@ export default function AdminAccountsClient() {
                 <SelectContent>
                   <SelectItem value="ALL">Tất cả role</SelectItem>
                   <SelectItem value="User">User</SelectItem>
-                  <SelectItem value="Owner">Owner</SelectItem>
-                  <SelectItem value="Consultant">Accountant</SelectItem>
-                  <SelectItem value="Staff">Staff</SelectItem>
+                  <SelectItem value="Consultant">Consultant</SelectItem>
                 </SelectContent>
               </Select>
             </div>
-
-            <div className="space-y-1.5">
-              <Label htmlFor="users-status-filter">Trạng thái</Label>
-              <Select
-                value={statusFilter}
-                onValueChange={handleStatusFilterChange}
-              >
-                <SelectTrigger id="users-status-filter" className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="ALL">Tất cả</SelectItem>
-                  <SelectItem value="ACTIVE">Hoạt động</SelectItem>
-                  <SelectItem value="INACTIVE">Vô hiệu</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card className="border-0 shadow-sm">
-        <CardHeader className="pb-2">
-          <div className="flex items-center justify-between gap-2">
-            <CardTitle className="text-base font-semibold">
-              Danh Sách Người Dùng ({totalCount})
-            </CardTitle>
-            {usersQuery.isFetching ? (
-              <div className="flex items-center gap-1.5 text-xs text-gray-500">
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                Đang cập nhật dữ liệu
-              </div>
-            ) : null}
           </div>
         </CardHeader>
         <CardContent className="p-0">
@@ -607,11 +582,11 @@ export default function AdminAccountsClient() {
       >
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Tạo tài khoản accountant</DialogTitle>
+            <DialogTitle>Tạo tài khoản consultant</DialogTitle>
             <DialogDescription>
-              Hệ thống sẽ tạo tài khoản role consultant/accountant và gửi email
-              chào mừng. Khi đăng nhập lần đầu, accountant sẽ được yêu cầu đổi
-              mật khẩu mới.
+              Hệ thống sẽ tạo tài khoản role consultant và gửi email chào mừng.
+              Khi đăng nhập lần đầu, consultant sẽ được yêu cầu đổi mật khẩu
+              mới.
             </DialogDescription>
           </DialogHeader>
 
@@ -627,7 +602,7 @@ export default function AdminAccountsClient() {
                     fullName: e.target.value,
                   }))
                 }
-                placeholder="Nhập họ và tên accountant"
+                placeholder="Nhập họ và tên consultant"
               />
             </div>
 
@@ -643,12 +618,12 @@ export default function AdminAccountsClient() {
                     email: e.target.value,
                   }))
                 }
-                placeholder="accountant@bizflow.vn"
+                placeholder="consultant@bizflow.vn"
               />
             </div>
 
             <div className="rounded-lg border border-teal-100 bg-teal-50/70 p-3 text-sm text-teal-800">
-              Sau khi tạo xong, accountant sẽ nhận email hướng dẫn và dùng luồng
+              Sau khi tạo xong, consultant sẽ nhận email hướng dẫn và dùng luồng
               đặt mật khẩu mới ngay trong màn hình đăng nhập.
             </div>
 
@@ -760,9 +735,9 @@ export default function AdminAccountsClient() {
       >
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Xóa tài khoản accountant</DialogTitle>
+            <DialogTitle>Xóa tài khoản consultant</DialogTitle>
             <DialogDescription>
-              Hành động này không thể hoàn tác. Tài khoản accountant sẽ bị xóa
+              Hành động này không thể hoàn tác. Tài khoản consultant sẽ bị xóa
               vĩnh viễn khỏi hệ thống.
             </DialogDescription>
           </DialogHeader>

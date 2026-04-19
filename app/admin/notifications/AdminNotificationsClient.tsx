@@ -427,6 +427,28 @@ export default function AdminNotificationsClient({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // ── Realtime polling for dispatch history ─────────────────────────────────
+  // Fast poll (3s) while any immediate-send PENDING dispatch exists,
+  // slow poll (15s) otherwise.
+  const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    const hasPendingImmediate =
+      dispatches?.items?.some(
+        (d) => d.status === "PENDING" && !d.scheduledAt,
+      ) ?? false;
+
+    const interval = hasPendingImmediate ? 3_000 : 15_000;
+
+    pollTimerRef.current = setTimeout(() => {
+      void loadDispatches();
+    }, interval);
+
+    return () => {
+      if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
+    };
+  }, [dispatches, loadDispatches]);
+  // ─────────────────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!isSpecificUserMode) return;
     void loadAvailableUsers();
@@ -1011,8 +1033,7 @@ export default function AdminNotificationsClient({
                         )}
                         {isLockedTemplate(selectedTemplate.eventCode) && (
                           <p className="mt-1 text-xs text-amber-600">
-                            Template hệ thống: chỉ chỉnh nội dung, không được
-                            tắt.
+                            Template hệ thống: Tự động gửi bởi hệ thống
                           </p>
                         )}
                       </div>
@@ -1666,7 +1687,7 @@ export default function AdminNotificationsClient({
                               <SelectItem value="user">User</SelectItem>
 
                               <SelectItem value="consultant">
-                                Accountant
+                                Consultant
                               </SelectItem>
                             </SelectContent>
                           </Select>

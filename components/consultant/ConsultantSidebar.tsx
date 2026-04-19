@@ -32,10 +32,10 @@ export default function ConsultantSidebar() {
     <aside className="flex min-h-full w-60 shrink-0 flex-col border-r border-gray-200 bg-white">
       <div className="px-4 pt-4 pb-2">
         <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-400">
-          Accountant Panel
+          Consultant Panel
         </h2>
         <p className="mt-1 text-sm font-semibold text-gray-900">
-          BizFlow Accountant
+          BizFlow Consultant
         </p>
       </div>
 

@@ -1476,9 +1476,14 @@ export default function AdminAccountingClient({
     if (!id) return;
     await runSafe(async () => {
       const d = await getTemplateVersionFullStructure(id);
-      setTvLabel(String(d.versionLabel ?? ""));
-      setTvEffective(String(d.effectiveFrom ?? ""));
-      setTvNotes(String(d.changeNotes ?? ""));
+      // Only update metadata fields if the full-structure response provides them.
+      // tvDetail is the authoritative source for metadata; avoid overwriting with empty values.
+      const newLabel = String(d.versionLabel ?? "");
+      const newEffective = String(d.effectiveFrom ?? "");
+      const newNotes = String(d.changeNotes ?? "");
+      if (newLabel) setTvLabel(newLabel);
+      if (newEffective) setTvEffective(newEffective);
+      if (newNotes) setTvNotes(newNotes);
       setTvResult(d);
       log(`Loaded full structure ${id}`, "ok");
     });
@@ -3838,7 +3843,7 @@ export default function AdminAccountingClient({
                       <input
                         value={efCode}
                         onChange={(e) => setEfCode(e.target.value)}
-                        placeholder="TotalAmount"
+                        placeholder="ABC"
                         className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
                       />
                     </div>
@@ -3849,7 +3854,7 @@ export default function AdminAccountingClient({
                       <input
                         value={efName}
                         onChange={(e) => setEfName(e.target.value)}
-                        placeholder="Tổng tiền"
+                        placeholder="ABC Field"
                         className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
                       />
                     </div>
@@ -5174,7 +5179,7 @@ export default function AdminAccountingClient({
         </Card>
       ) : null}
 
-      <Card className="rounded-xl border border-gray-200 bg-white shadow-sm">
+      {/* <Card className="rounded-xl border border-gray-200 bg-white shadow-sm">
         <CardHeader>
           <CardTitle>API Console</CardTitle>
         </CardHeader>
@@ -5199,7 +5204,7 @@ export default function AdminAccountingClient({
             ))}
           </div>
         </CardContent>
-      </Card>
+      </Card> */}
     </main>
   );
 }
