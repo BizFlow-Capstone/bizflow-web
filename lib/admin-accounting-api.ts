@@ -5,6 +5,7 @@ type ApiEnvelope<T> = {
   success: boolean;
   messageCode?: string;
   message?: string;
+  errors?: string | string[] | null;
   data: T;
 };
 
@@ -25,7 +26,13 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const body = (await res.json()) as ApiEnvelope<T>;
 
   if (!res.ok || !body.success) {
-    throw new Error(body.message || `Request failed (${res.status})`);
+    const detail =
+      typeof body.errors === "string"
+        ? body.errors
+        : Array.isArray(body.errors)
+          ? body.errors.join(", ")
+          : null;
+    throw new Error(detail || body.message || `Request failed (${res.status})`);
   }
 
   return body.data;

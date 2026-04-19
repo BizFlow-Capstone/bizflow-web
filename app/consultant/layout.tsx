@@ -21,7 +21,11 @@ export default function ConsultantLayout({
         const token = await getValidAccessToken();
         const role = getRoleFromToken(token);
 
-        if (role !== "consultant" && role !== "admin") {
+        if (role === "admin") {
+          router.replace("/admin");
+          return;
+        }
+        if (role !== "consultant") {
           router.replace("/dashboard");
           return;
         }

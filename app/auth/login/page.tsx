@@ -4,7 +4,7 @@ import PublicHeader from "@/components/PublicHeader";
 import PublicFooter from "@/components/PublicFooter";
 import Link from "next/link";
 import Script from "next/script";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Dialog,
@@ -25,7 +25,7 @@ import {
 } from "@/services/authService";
 import type { AuthAccount } from "@/lib/types/auth";
 import { persistAccountWithLocalAvatar } from "@/lib/auth/avatarLocalCache";
-import { getRoleFromToken } from "@/lib/auth/tokenManager";
+import { getRoleFromToken, getValidAccessToken } from "@/lib/auth/tokenManager";
 
 const ACCESS_TOKEN_KEY = "bizflow_access_token";
 const REFRESH_TOKEN_KEY = "bizflow_refresh_token";
@@ -80,6 +80,26 @@ export default function LoginPage() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [isSettingPassword, setIsSettingPassword] = useState(false);
   const googleInitializedRef = useRef(false);
+
+  // Auto-redirect if a valid session already exists
+  useEffect(() => {
+    async function checkExistingSession() {
+      try {
+        const token = await getValidAccessToken();
+        const role = getRoleFromToken(token);
+        if (role === "admin") {
+          router.replace("/admin");
+        } else if (role === "consultant") {
+          router.replace("/consultant/accounting");
+        } else {
+          router.replace("/dashboard");
+        }
+      } catch {
+        // No valid session — stay on login page
+      }
+    }
+    void checkExistingSession();
+  }, [router]);
 
   const saveTokens = async (
     token: string,

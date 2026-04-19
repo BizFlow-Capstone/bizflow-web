@@ -616,6 +616,7 @@ export default function VersionTab(props: VersionTabProps) {
   const [wizardError, setWizardError] = useState("");
   const [previewLoadedForVersionId, setPreviewLoadedForVersionId] =
     useState("");
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [createTemplateModalOpen, setCreateTemplateModalOpen] = useState(false);
   const [createVersionModalOpen, setCreateVersionModalOpen] = useState(false);
   const [createTemplateBusy, setCreateTemplateBusy] = useState(false);
@@ -1642,6 +1643,37 @@ export default function VersionTab(props: VersionTabProps) {
         </CardContent>
       </Card>
 
+      {/* Confirm delete dialog */}
+      <Dialog open={confirmDeleteOpen} onOpenChange={setConfirmDeleteOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Xác nhận xóa phiên bản</DialogTitle>
+            <DialogDescription>
+              Bạn có chắc chắn muốn xóa phiên bản draft này không? Hành động này
+              không thể hoàn tác.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setConfirmDeleteOpen(false)}
+            >
+              Hủy
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                setConfirmDeleteOpen(false);
+                void props.onDelete();
+              }}
+            >
+              <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+              Xóa
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog
         open={createTemplateModalOpen}
         onOpenChange={(open) => {
@@ -2062,7 +2094,7 @@ export default function VersionTab(props: VersionTabProps) {
                           <Button
                             size="sm"
                             variant="destructive"
-                            onClick={() => void props.onDelete()}
+                            onClick={() => setConfirmDeleteOpen(true)}
                           >
                             <Trash2 className="mr-1.5 h-3.5 w-3.5" />
                             Xóa draft
@@ -2346,12 +2378,19 @@ export default function VersionTab(props: VersionTabProps) {
                       />
                       <select
                         value={mappingDraft.sourceType}
-                        onChange={(e) =>
+                        onChange={(e) => {
+                          const nextSourceType = e.target.value;
+                          const isFormula =
+                            nextSourceType.trim().toLowerCase() === "formula";
                           setMappingDraft((prev) => ({
                             ...prev,
-                            sourceType: e.target.value,
-                          }))
-                        }
+                            sourceType: nextSourceType,
+                            sourceEntityId: isFormula
+                              ? ""
+                              : prev.sourceEntityId,
+                            sourceFieldId: isFormula ? "" : prev.sourceFieldId,
+                          }));
+                        }}
                         className="w-full rounded-lg border px-3 py-2 text-sm"
                       >
                         <option value="">Chọn nguồn dữ liệu</option>
@@ -2377,8 +2416,17 @@ export default function VersionTab(props: VersionTabProps) {
                             }))
                           }
                           className="w-full rounded-lg border px-3 py-2 text-sm"
+                          disabled={
+                            mappingDraft.sourceType.trim().toLowerCase() ===
+                            "formula"
+                          }
                         >
-                          <option value="">Chọn entity</option>
+                          <option value="">
+                            {mappingDraft.sourceType.trim().toLowerCase() ===
+                            "formula"
+                              ? "formula không dùng entity"
+                              : "Chọn entity"}
+                          </option>
                           {mappingEntityOptions.map((option) => (
                             <option key={option.value} value={option.value}>
                               {option.label}
@@ -2399,9 +2447,17 @@ export default function VersionTab(props: VersionTabProps) {
                             }))
                           }
                           className="w-full rounded-lg border px-3 py-2 text-sm"
-                          disabled={!mappingDraft.sourceEntityId}
+                          disabled={
+                            mappingDraft.sourceType.trim().toLowerCase() ===
+                              "formula" || !mappingDraft.sourceEntityId
+                          }
                         >
-                          <option value="">Chọn field</option>
+                          <option value="">
+                            {mappingDraft.sourceType.trim().toLowerCase() ===
+                            "formula"
+                              ? "formula không dùng field"
+                              : "Chọn field"}
+                          </option>
                           {mappingEntityFieldOptions.map((option) => (
                             <option key={option.value} value={option.value}>
                               {option.label}
@@ -2461,12 +2517,15 @@ export default function VersionTab(props: VersionTabProps) {
                       </label>
                       <input
                         value={mappingDraft.sortOrder}
-                        onChange={(e) =>
+                        onChange={(e) => {
+                          const numericOnly = e.target.value.replace(/\D/g, "");
                           setMappingDraft((prev) => ({
                             ...prev,
-                            sortOrder: e.target.value,
-                          }))
-                        }
+                            sortOrder: numericOnly,
+                          }));
+                        }}
+                        inputMode="numeric"
+                        pattern="[0-9]*"
                         className="w-full rounded-lg border px-3 py-2 text-sm"
                       />
                     </div>

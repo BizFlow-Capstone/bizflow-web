@@ -190,6 +190,13 @@ function PlanFormDialog({
     }
   }, [editingPlan, features]);
 
+  // Reset to empty form when dialog opens for creation
+  useEffect(() => {
+    if (open && !editingPlan) {
+      setForm(EMPTY_FORM);
+    }
+  }, [open, editingPlan]);
+
   const isEdit = editingPlan != null;
 
   const toggleFeature = (featureId: number, checked: boolean) => {
@@ -587,22 +594,44 @@ function PlanDetailDialog({
                 <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">
                   Giá
                 </p>
-                <div className="flex items-center gap-3">
-                  <span className="text-2xl font-bold text-gray-900">
-                    {formatVND(detail.currentPrice.basePrice)}
-                  </span>
-                  <span className="text-sm text-gray-400">
-                    {detail.currentPrice.currency}
-                  </span>
-                  {detail.currentPrice.isDiscountActive &&
-                    detail.currentPrice.discountedPrice != null && (
-                      <Badge
-                        variant="secondary"
-                        className="bg-rose-50 text-rose-600"
-                      >
-                        Giảm → {formatVND(detail.currentPrice.discountedPrice)}
-                      </Badge>
-                    )}
+                <div className="space-y-1.5 text-sm">
+                  <div className="flex items-center justify-between">
+                    <span className="text-gray-500">Giá gốc</span>
+                    <span className="font-medium text-gray-800">
+                      {formatVND(detail.currentPrice.basePrice)}
+                    </span>
+                  </div>
+                  {detail.currentPrice.discountedPrice != null && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-gray-500">
+                        Giá giảm
+                        {!detail.currentPrice.isDiscountActive && (
+                          <span className="ml-1 text-xs text-gray-400">
+                            (chưa áp dụng)
+                          </span>
+                        )}
+                      </span>
+                      <span className="font-medium text-rose-600">
+                        {formatVND(detail.currentPrice.discountedPrice)}
+                      </span>
+                    </div>
+                  )}
+                  {detail.currentPrice.discountStart && (
+                    <div className="flex items-center justify-between text-xs text-gray-400">
+                      <span>Bắt đầu giảm</span>
+                      <span>
+                        {formatDateTime(detail.currentPrice.discountStart)}
+                      </span>
+                    </div>
+                  )}
+                  {detail.currentPrice.discountEnd && (
+                    <div className="flex items-center justify-between text-xs text-gray-400">
+                      <span>Kết thúc giảm</span>
+                      <span>
+                        {formatDateTime(detail.currentPrice.discountEnd)}
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -996,7 +1025,7 @@ export default function AdminSubscriptionsClient() {
                   <TableHead>Gói</TableHead>
                   <TableHead>Thời hạn</TableHead>
                   <TableHead>Giá</TableHead>
-                  <TableHead>Tính năng</TableHead>
+                  {/* <TableHead>Tính năng</TableHead> */}
                   <TableHead>Trạng thái</TableHead>
                   <TableHead>Ngày tạo</TableHead>
                   <TableHead className="w-12" />
@@ -1004,8 +1033,6 @@ export default function AdminSubscriptionsClient() {
               </TableHeader>
               <TableBody>
                 {filteredPlans.map((plan) => {
-                  const effectivePrice = plan.basePrice ?? 0;
-
                   return (
                     <TableRow key={plan.subscriptionPlanId}>
                       <TableCell>
@@ -1024,16 +1051,27 @@ export default function AdminSubscriptionsClient() {
                       </TableCell>
 
                       <TableCell>
-                        <div>
-                          <p className="text-sm font-semibold text-gray-800">
-                            {formatVND(effectivePrice)}
-                          </p>
+                        <div className="flex items-baseline gap-1.5">
+                          <span className="text-sm font-semibold text-gray-800">
+                            {formatVND(
+                              plan.isDiscountActive &&
+                                plan.discountedPrice != null
+                                ? plan.discountedPrice
+                                : (plan.basePrice ?? 0),
+                            )}
+                          </span>
+                          {plan.isDiscountActive &&
+                            plan.discountedPrice != null && (
+                              <span className="text-xs text-gray-400 line-through">
+                                {formatVND(plan.basePrice ?? 0)}
+                              </span>
+                            )}
                         </div>
                       </TableCell>
 
-                      <TableCell>
+                      {/* <TableCell>
                         <span className="text-xs text-gray-400">—</span>
-                      </TableCell>
+                      </TableCell> */}
 
                       <TableCell>
                         <Badge

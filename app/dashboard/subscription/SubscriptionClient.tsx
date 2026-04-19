@@ -352,7 +352,11 @@ function PricingCard({
                 disabled
                 className="inline-flex w-full items-center justify-center rounded-lg bg-white/10 px-4 py-2.5 text-sm font-medium text-white/50 cursor-not-allowed"
               >
-                {isCurrentPlan ? "Gói đang dùng" : "Gói miễn phí"}
+                {isCurrentPlan
+                  ? plan.features.every((f) => f.usageLimit === -1)
+                    ? "Đã có"
+                    : "Gia Hạn Thêm"
+                  : "Gói miễn phí"}
               </button>
             ) : (
               <button
@@ -464,7 +468,11 @@ function PricingCard({
               disabled
               className="inline-flex w-full items-center justify-center rounded-lg bg-slate-100 px-4 py-2.5 text-sm font-medium text-slate-400 cursor-not-allowed"
             >
-              {isCurrentPlan ? "Gói đang dùng" : "Gói miễn phí"}
+              {isCurrentPlan
+                ? plan.features.every((f) => f.usageLimit === -1)
+                  ? "Hiện Đã Sở Hữu"
+                  : "Gia Hạn Thêm"
+                : "Gói miễn phí"}
             </button>
           ) : (
             <button

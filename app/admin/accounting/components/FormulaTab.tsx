@@ -279,6 +279,11 @@ export default function FormulaTab(props: FormulaTabProps) {
   const [cloneDialogOpen, setCloneDialogOpen] = useState(false);
   const [cloneDraftCode, setCloneDraftCode] = useState("");
   const [cloneDraftSuffix, setCloneDraftSuffix] = useState(" (draft)");
+  const [editingNumTokenId, setEditingNumTokenId] = useState<string | null>(
+    null,
+  );
+  const [editingNumValue, setEditingNumValue] = useState("");
+  const [customNumInput, setCustomNumInput] = useState("");
   const tokenDragHandledRef = useRef(false);
   const lastSelectedFormulaIdRef = useRef("");
 
@@ -670,6 +675,36 @@ export default function FormulaTab(props: FormulaTabProps) {
     onBuilderDropAt(event, builderTokens.length);
   }
 
+  function startEditNum(token: FormulaToken) {
+    setEditingNumTokenId(token.id);
+    setEditingNumValue(token.value);
+  }
+
+  function commitEditNum() {
+    if (!editingNumTokenId) return;
+    const trimmed = editingNumValue.trim();
+    const parsed = Number(trimmed);
+    if (!trimmed || !Number.isFinite(parsed)) {
+      setEditingNumTokenId(null);
+      return;
+    }
+    const next = builderTokens.map((t) =>
+      t.id === editingNumTokenId
+        ? { ...t, value: String(parsed), label: String(parsed) }
+        : t,
+    );
+    syncTokens(next);
+    setEditingNumTokenId(null);
+  }
+
+  function addCustomNum() {
+    const trimmed = customNumInput.trim();
+    const parsed = Number(trimmed);
+    if (!trimmed || !Number.isFinite(parsed)) return;
+    addToken({ type: "num", value: String(parsed), label: String(parsed) });
+    setCustomNumInput("");
+  }
+
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
@@ -915,8 +950,8 @@ export default function FormulaTab(props: FormulaTabProps) {
 
               <div className="rounded-lg border border-cyan-100 bg-cyan-50 px-3 py-2 text-sm text-cyan-900">
                 {isCreateMode
-                  ? "Không có giải thích từ backend."
-                  : props.fmExplanation || "Không có giải thích từ backend."}
+                  ? "Không có giải thích."
+                  : props.fmExplanation || "Không có giải thích."}
               </div>
 
               <div className="flex flex-wrap gap-2">
@@ -925,7 +960,7 @@ export default function FormulaTab(props: FormulaTabProps) {
                   className={primaryBtnClass}
                   onClick={isCreateMode ? props.onCreate : props.onUpdate}
                 >
-                  {isCreateMode ? "Tạo mới" : "Update"}
+                  {isCreateMode ? "Tạo mới" : "Cập nhật"}
                 </Button>
                 <Button
                   size="sm"
@@ -1015,220 +1050,277 @@ export default function FormulaTab(props: FormulaTabProps) {
 
           <Card className="rounded-xl border border-gray-200 bg-white shadow-sm">
             <CardHeader>
-              <CardTitle>Formula Builder (Kéo thả biến)</CardTitle>
+              <div className="flex items-center justify-between gap-2">
+                <CardTitle>Formula Builder</CardTitle>
+                {builderTokens.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => syncTokens([])}
+                    className="rounded-lg border border-red-200 bg-red-50 px-3 py-1 text-xs font-medium text-red-700 hover:bg-red-100"
+                  >
+                    Xóa biểu thức
+                  </button>
+                )}
+              </div>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div
-                onDragOver={(event) => event.preventDefault()}
-                onDrop={onDropToBuilderEnd}
-                className="min-h-24 rounded-xl border border-dashed border-[#2563eb]/35 bg-[#eff6ff] p-3"
-              >
-                <p className="mb-2 text-xs text-gray-500">
-                  Kéo biến hoặc dấu toán tử vào đây. Kéo token trong input để
-                  đổi thứ tự trước/sau nhau.
-                </p>
-                <div className="flex min-h-10 flex-wrap items-center gap-2 rounded-lg bg-[#0b1324] px-3 py-2 text-sm text-cyan-300">
-                  {builderTokens.length === 0 ? (
-                    <span className="text-xs text-gray-400">
-                      Biểu thức trống
-                    </span>
-                  ) : (
-                    builderTokens.map((token, index) => (
-                      <span
-                        key={token.id}
-                        draggable
-                        onDragStart={(event) =>
-                          onTokenDragStart(event, token.id)
-                        }
-                        onDragEnd={onTokenDragEnd}
-                        onDragOver={(event) => event.preventDefault()}
-                        onDrop={(event) => {
-                          const rect =
-                            event.currentTarget.getBoundingClientRect();
-                          const insertAfter =
-                            event.clientX > rect.left + rect.width / 2;
-                          const targetIndex = index + (insertAfter ? 1 : 0);
-                          onBuilderDropAt(event, targetIndex);
+            <CardContent>
+              <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.5fr_1fr]">
+                {/* ── Left: expression builder ── */}
+                <div className="space-y-3">
+                  {/* Drop zone */}
+                  <div
+                    onDragOver={(event) => event.preventDefault()}
+                    onDrop={onDropToBuilderEnd}
+                    className="min-h-36 rounded-xl border-2 border-dashed border-[#2563eb]/30 bg-[#f0f4ff] p-2"
+                  >
+                    <p className="mb-1.5 text-[11px] text-gray-400">
+                      Nhấn biến / toán tử để thêm · Kéo để sắp xếp · Nhấn ✕ để
+                      xóa token
+                    </p>
+                    <div className="flex min-h-20 flex-wrap items-start gap-1.5 rounded-lg bg-[#0b1324] px-3 py-2.5">
+                      {builderTokens.length === 0 ? (
+                        <span className="text-xs text-gray-500">
+                          Biểu thức trống — thêm biến hoặc số từ bên phải
+                        </span>
+                      ) : (
+                        builderTokens.map((token, index) =>
+                          token.type === "num" &&
+                          editingNumTokenId === token.id ? (
+                            <input
+                              key={token.id}
+                              autoFocus
+                              value={editingNumValue}
+                              onChange={(e) =>
+                                setEditingNumValue(e.target.value)
+                              }
+                              onBlur={commitEditNum}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") commitEditNum();
+                                if (e.key === "Escape")
+                                  setEditingNumTokenId(null);
+                              }}
+                              className="w-20 rounded-full bg-violet-900 px-2 py-0.5 text-center font-mono text-xs text-violet-200 outline-none ring-1 ring-violet-400"
+                            />
+                          ) : (
+                            <span
+                              key={token.id}
+                              draggable
+                              onDragStart={(event) =>
+                                onTokenDragStart(event, token.id)
+                              }
+                              onDragEnd={onTokenDragEnd}
+                              onDragOver={(event) => event.preventDefault()}
+                              onDrop={(event) => {
+                                const rect =
+                                  event.currentTarget.getBoundingClientRect();
+                                const insertAfter =
+                                  event.clientX > rect.left + rect.width / 2;
+                                onBuilderDropAt(
+                                  event,
+                                  index + (insertAfter ? 1 : 0),
+                                );
+                              }}
+                              onDoubleClick={() =>
+                                token.type === "num" && startEditNum(token)
+                              }
+                              className={`inline-flex cursor-grab items-center gap-1 rounded-full px-2 py-0.5 text-xs active:cursor-grabbing ${
+                                token.type === "var"
+                                  ? "bg-cyan-900/70 text-cyan-200"
+                                  : token.type === "num"
+                                    ? "bg-violet-900/70 text-violet-200"
+                                    : "bg-slate-800 text-slate-200"
+                              }`}
+                              title={
+                                token.type === "num"
+                                  ? "Nhấp đôi để sửa số"
+                                  : undefined
+                              }
+                            >
+                              {token.type === "var"
+                                ? `[${token.label}]`
+                                : token.label}
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  removeTokenById(token.id);
+                                }}
+                                className="ml-0.5 rounded-full text-[10px] leading-none opacity-50 hover:opacity-100"
+                                title="Xóa token này"
+                              >
+                                ✕
+                              </button>
+                            </span>
+                          ),
+                        )
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Hint / Error */}
+                  {builderHint ? (
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                      {builderHint}
+                    </div>
+                  ) : null}
+                  {builderError ? (
+                    <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                      {builderError}
+                    </div>
+                  ) : null}
+
+                  {/* Operator palette */}
+                  <div>
+                    <p className="mb-1.5 text-xs font-medium text-gray-500">
+                      Toán tử
+                    </p>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {["+", "-", "*", "/", "(", ")"].map((sign) => (
+                        <button
+                          key={sign}
+                          type="button"
+                          draggable
+                          onDragStart={(event) =>
+                            onPaletteTokenDragStart(event, {
+                              type:
+                                sign === "("
+                                  ? "lpar"
+                                  : sign === ")"
+                                    ? "rpar"
+                                    : "op",
+                              value: sign,
+                              label: sign,
+                            })
+                          }
+                          onClick={() =>
+                            addToken({
+                              type:
+                                sign === "("
+                                  ? "lpar"
+                                  : sign === ")"
+                                    ? "rpar"
+                                    : "op",
+                              value: sign,
+                              label: sign,
+                            })
+                          }
+                          className="flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 bg-white text-sm font-semibold text-gray-700 hover:border-[#2563eb]/40 hover:bg-[#eff6ff]"
+                        >
+                          {sign}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Custom number input */}
+                  <div>
+                    <p className="mb-1.5 text-xs font-medium text-gray-500">
+                      Thêm số cố định
+                    </p>
+                    <div className="flex gap-2">
+                      <input
+                        type="number"
+                        value={customNumInput}
+                        onChange={(e) => setCustomNumInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") addCustomNum();
                         }}
-                        className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs ${
-                          token.type === "var"
-                            ? "bg-cyan-900/70 text-cyan-200"
-                            : token.type === "num"
-                              ? "bg-violet-900/70 text-violet-200"
-                              : "bg-slate-800 text-slate-200"
-                        } cursor-grab active:cursor-grabbing`}
+                        placeholder="VD: 100000"
+                        className="w-36 rounded-lg border border-gray-200 px-3 py-1.5 text-sm"
+                      />
+                      <button
+                        type="button"
+                        onClick={addCustomNum}
+                        className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:border-[#2563eb]/30 hover:bg-[#eff6ff]"
                       >
-                        {token.type === "var"
-                          ? `[${token.label}]`
-                          : token.label}
-                      </span>
-                    ))
-                  )}
+                        + Thêm
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Expression string preview */}
+                  <div className="rounded-lg border border-gray-100 bg-gray-50 px-3 py-2">
+                    <p className="text-[11px] text-gray-400">Biểu thức</p>
+                    <p className="mt-0.5 font-mono text-sm text-gray-800">
+                      {tokenExpression ? (
+                        tokenExpression
+                      ) : (
+                        <span className="text-xs text-gray-400">(trống)</span>
+                      )}
+                    </p>
+                  </div>
                 </div>
-              </div>
 
-              <div
-                onDragOver={(event) => event.preventDefault()}
-                onDrop={(event) => {
-                  event.preventDefault();
-                  const draggedTokenId =
-                    event.dataTransfer.getData("application/x-formula-token") ||
-                    draggingTokenId;
-                  if (!draggedTokenId) return;
-                  tokenDragHandledRef.current = true;
-                  removeTokenById(draggedTokenId);
-                  setDraggingTokenId(null);
-                }}
-                className={`rounded-lg border border-dashed px-3 py-2 text-xs transition ${
-                  draggingTokenId
-                    ? "border-red-300 bg-red-50 text-red-700"
-                    : "border-gray-200 bg-gray-50 text-gray-500"
-                }`}
-              >
-                {draggingTokenId
-                  ? "Thả token ra đây để bỏ khỏi công thức"
-                  : "Kéo token ra khỏi input và thả vào đây để bỏ khỏi công thức"}
-              </div>
-
-              <div className="flex flex-wrap items-center gap-2">
-                {["+", "-", "*", "/", "(", ")"].map((sign) => (
-                  <button
-                    key={sign}
-                    type="button"
-                    draggable
-                    onDragStart={(event) =>
-                      onPaletteTokenDragStart(event, {
-                        type:
-                          sign === "(" ? "lpar" : sign === ")" ? "rpar" : "op",
-                        value: sign,
-                        label: sign,
-                      })
-                    }
-                    onClick={() =>
-                      addToken({
-                        type:
-                          sign === "(" ? "lpar" : sign === ")" ? "rpar" : "op",
-                        value: sign,
-                        label: sign,
-                      })
-                    }
-                    className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:border-[#2563eb]/30 hover:bg-[#eff6ff]"
-                  >
-                    {sign}
-                  </button>
-                ))}
-                <button
-                  type="button"
-                  draggable
-                  onDragStart={(event) =>
-                    onPaletteTokenDragStart(event, {
-                      type: "num",
-                      value: "0",
-                      label: "0",
-                    })
-                  }
-                  onClick={() =>
-                    addToken({ type: "num", value: "0", label: "0" })
-                  }
-                  className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:border-[#2563eb]/30 hover:bg-[#eff6ff]"
-                >
-                  0
-                </button>
-                <button
-                  type="button"
-                  onClick={() => syncTokens([])}
-                  className="rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-100"
-                >
-                  Xóa biểu thức
-                </button>
-              </div>
-
-              {builderHint ? (
-                <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
-                  {builderHint}
-                </div>
-              ) : null}
-              {builderError ? (
-                <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
-                  {builderError}
-                </div>
-              ) : null}
-
-              <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
-                <p className="text-xs font-medium text-gray-600">
-                  Expression generated
-                </p>
-                <p className="mt-1 font-mono text-xs text-gray-700">
-                  {tokenExpression || "(trống)"}
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="rounded-xl border border-gray-200 bg-white shadow-sm">
-            <CardHeader>
-              <CardTitle>Thư viện biến</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <input
-                value={variableSearch}
-                onChange={(e) => setVariableSearch(e.target.value)}
-                placeholder="Tìm biến..."
-                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
-              />
-
-              <div className="flex flex-wrap gap-2">
-                {[
-                  { key: "all", label: "Tất cả" },
-                  { key: "double", label: "Double" },
-                  { key: "integer", label: "Integer" },
-                  { key: "string", label: "String" },
-                ].map((item) => (
-                  <button
-                    key={item.key}
-                    type="button"
-                    onClick={() => setVariableTypeFilter(item.key)}
-                    className={`rounded-full border px-3 py-1 text-xs font-medium ${
-                      variableTypeFilter === item.key
-                        ? "border-[#2563eb]/35 bg-[#eff6ff] text-[#1d4ed8]"
-                        : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
-                    }`}
-                  >
-                    {item.label}
-                  </button>
-                ))}
-              </div>
-
-              <div className="max-h-60 overflow-auto rounded-xl border border-gray-200 bg-white p-2">
-                <div className="flex flex-wrap gap-2">
-                  {filteredVariables.map((variable) => (
-                    <button
-                      key={variable.code}
-                      type="button"
-                      draggable
-                      onDragStart={(event) => {
-                        event.dataTransfer.setData(
-                          "application/x-formula-var",
-                          JSON.stringify({
-                            code: variable.code,
-                            label: variable.label,
-                          }),
-                        );
-                      }}
-                      onClick={() =>
-                        addToken({
-                          type: "var",
-                          value: variable.code,
-                          label: variable.label,
-                        })
-                      }
-                      className="inline-flex items-center gap-1 rounded-full border border-cyan-200 bg-cyan-50 px-2.5 py-1 text-xs text-cyan-800 hover:border-cyan-300"
-                      title={`${variable.group} · ${variable.code}`}
-                    >
-                      <span className="h-1.5 w-1.5 rounded-full bg-cyan-500" />
-                      {variable.label}
-                    </button>
-                  ))}
+                {/* ── Right: variable library ── */}
+                <div className="space-y-2">
+                  <p className="text-xs font-medium text-gray-500">
+                    Thư viện biến — nhấn để thêm vào biểu thức
+                  </p>
+                  <input
+                    value={variableSearch}
+                    onChange={(e) => setVariableSearch(e.target.value)}
+                    placeholder="Tìm biến..."
+                    className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                  />
+                  <div className="flex flex-wrap gap-1.5">
+                    {[
+                      { key: "all", label: "Tất cả" },
+                      { key: "double", label: "Double" },
+                      { key: "integer", label: "Integer" },
+                      { key: "string", label: "String" },
+                    ].map((item) => (
+                      <button
+                        key={item.key}
+                        type="button"
+                        onClick={() => setVariableTypeFilter(item.key)}
+                        className={`rounded-full border px-2.5 py-0.5 text-xs font-medium ${
+                          variableTypeFilter === item.key
+                            ? "border-[#2563eb]/35 bg-[#eff6ff] text-[#1d4ed8]"
+                            : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
+                        }`}
+                      >
+                        {item.label}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="max-h-96 overflow-auto rounded-xl border border-gray-100 bg-white p-2">
+                    {filteredVariables.length === 0 ? (
+                      <p className="p-2 text-xs text-gray-400">
+                        Không tìm thấy biến nào.
+                      </p>
+                    ) : (
+                      <div className="flex flex-wrap gap-1.5">
+                        {filteredVariables.map((variable) => (
+                          <button
+                            key={variable.code}
+                            type="button"
+                            draggable
+                            onDragStart={(event) => {
+                              event.dataTransfer.setData(
+                                "application/x-formula-var",
+                                JSON.stringify({
+                                  code: variable.code,
+                                  label: variable.label,
+                                }),
+                              );
+                            }}
+                            onClick={() =>
+                              addToken({
+                                type: "var",
+                                value: variable.code,
+                                label: variable.label,
+                              })
+                            }
+                            className="inline-flex items-center gap-1 rounded-full border border-cyan-200 bg-cyan-50 px-2.5 py-1 text-xs text-cyan-800 hover:border-cyan-300 hover:bg-cyan-100"
+                            title={`${variable.label} · ${variable.dataType}`}
+                          >
+                            <span className="h-1.5 w-1.5 rounded-full bg-cyan-500" />
+                            {variable.code}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             </CardContent>

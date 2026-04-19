@@ -338,7 +338,7 @@ function getHeaderContent(pathname: string): HeaderContent {
     return {
       title: "Quản Lý Mẫu Sổ",
       description:
-        "Không gian làm việc cho accountant quản lý template và cấu trúc sổ kế toán.",
+        "Không gian làm việc cho Consultant quản lý template và cấu trúc sổ kế toán.",
     };
   }
 

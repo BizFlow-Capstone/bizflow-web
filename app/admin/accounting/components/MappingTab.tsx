@@ -44,6 +44,8 @@ const emptyMappingForm: MappingFormState = {
 export default function MappingTab(props: MappingTabProps) {
   const [mappingActionMenuId, setMappingActionMenuId] = useState("");
   const isUpdateMode = Boolean(props.mappingForm.mappingId.trim());
+  const isFormulaSource =
+    props.mappingForm.sourceType.trim().toLowerCase() === "formula";
 
   return (
     <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
@@ -277,12 +279,22 @@ export default function MappingTab(props: MappingTabProps) {
             </label>
             <select
               value={props.mappingForm.sourceType}
-              onChange={(e) =>
+              onChange={(e) => {
+                const nextSourceType = e.target.value;
+                const isNextFormula =
+                  nextSourceType.trim().toLowerCase() === "formula";
+
                 props.setMappingForm({
                   ...props.mappingForm,
-                  sourceType: e.target.value,
-                })
-              }
+                  sourceType: nextSourceType,
+                  sourceEntityId: isNextFormula
+                    ? ""
+                    : props.mappingForm.sourceEntityId,
+                  sourceFieldId: isNextFormula
+                    ? ""
+                    : props.mappingForm.sourceFieldId,
+                });
+              }}
               className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
             >
               <option value="">Chọn nguồn dữ liệu</option>
@@ -315,8 +327,13 @@ export default function MappingTab(props: MappingTabProps) {
                   })
                 }
                 className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                disabled={isFormulaSource}
               >
-                <option value="">Chọn entity</option>
+                <option value="">
+                  {isFormulaSource
+                    ? "formula không dùng entity"
+                    : "Chọn entity"}
+                </option>
                 {props.entityOptions.map((option) => (
                   <option key={option.value} value={option.value}>
                     {option.label}
@@ -337,9 +354,11 @@ export default function MappingTab(props: MappingTabProps) {
                   })
                 }
                 className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-                disabled={!props.mappingForm.sourceEntityId}
+                disabled={isFormulaSource || !props.mappingForm.sourceEntityId}
               >
-                <option value="">Chọn field</option>
+                <option value="">
+                  {isFormulaSource ? "formula không dùng field" : "Chọn field"}
+                </option>
                 {props.entityFieldOptions.map((option) => (
                   <option key={option.value} value={option.value}>
                     {option.label}
@@ -414,12 +433,15 @@ export default function MappingTab(props: MappingTabProps) {
             </label>
             <input
               value={props.mappingForm.sortOrder}
-              onChange={(e) =>
+              onChange={(e) => {
+                const numericOnly = e.target.value.replace(/\D/g, "");
                 props.setMappingForm({
                   ...props.mappingForm,
-                  sortOrder: e.target.value,
-                })
-              }
+                  sortOrder: numericOnly,
+                });
+              }}
+              inputMode="numeric"
+              pattern="[0-9]*"
               placeholder="Sort"
               className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
             />
