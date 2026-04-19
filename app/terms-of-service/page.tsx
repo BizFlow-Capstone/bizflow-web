@@ -80,14 +80,14 @@ const sections = [
         <Callout icon={LinkIcon}>
           Việc thu thập và xử lý dữ liệu cá nhân được thực hiện theo{" "}
           <Link
-            href="/policy/sms-authentication"
+            href="/policy"
             className="font-semibold underline"
             style={{ color: TEAL }}
           >
-            Chính Sách Xác Thực SMS
+            Chính Sách Nền Tảng
           </Link>{" "}
-          của chúng tôi, phù hợp với Nghị định 13/2023/NĐ-CP về Bảo vệ dữ
-          liệu cá nhân.
+          của chúng tôi, phù hợp với Nghị định 13/2023/NĐ-CP về Bảo vệ dữ liệu
+          cá nhân.
         </Callout>
       </>
     ),
@@ -237,8 +237,8 @@ const sections = [
       <>
         <p className="text-slate-600 leading-relaxed">
           Toàn bộ mã nguồn, giao diện, thiết kế, logo, nhãn hiệu và nội dung
-          thuộc nền tảng BizFlow là tài sản trí tuệ của BizFlow và được bảo
-          hộ bởi pháp luật Việt Nam và quốc tế về sở hữu trí tuệ.
+          thuộc nền tảng BizFlow là tài sản trí tuệ của BizFlow và được bảo hộ
+          bởi pháp luật Việt Nam và quốc tế về sở hữu trí tuệ.
         </p>
         <p className="mt-3 text-slate-600 leading-relaxed">
           Người dùng được cấp quyền sử dụng cá nhân, không độc quyền, không
@@ -365,10 +365,10 @@ const sections = [
         </Callout>
         <Callout icon={CloudOff}>
           <strong>Điều khoản bất khả kháng (Force Majeure):</strong> BizFlow
-          không chịu trách nhiệm nếu dịch vụ bị gián đoạn do các sự kiện
-          nằm ngoài khả năng kiểm soát hợp lý, bao gồm nhưng không giới hạn
-          ở: thiên tai, dịch bệnh, đứt cáp quang biển, sự cố hạ tầng internet
-          quốc gia, hoặc các quyết định của cơ quan nhà nước.
+          không chịu trách nhiệm nếu dịch vụ bị gián đoạn do các sự kiện nằm
+          ngoài khả năng kiểm soát hợp lý, bao gồm nhưng không giới hạn ở: thiên
+          tai, dịch bệnh, đứt cáp quang biển, sự cố hạ tầng internet quốc gia,
+          hoặc các quyết định của cơ quan nhà nước.
         </Callout>
       </>
     ),

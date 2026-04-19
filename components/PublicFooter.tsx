@@ -99,16 +99,16 @@ export default function PublicFooter() {
               <li>
                 <Link
                   className="inline-flex items-center gap-1 text-slate-600 hover:text-[#052659]"
-                  href="/policy/sms-authentication"
+                  href="/policy"
                 >
                   <Shield className="h-3.5 w-3.5" />
-                  Chính sách SMS
+                  Chính sách nền tảng
                 </Link>
               </li>
               <li>
                 <Link
                   className="inline-flex items-center gap-1 text-slate-600 hover:text-[#052659]"
-                  href="/policy/terms-of-service"
+                  href="/terms-of-service"
                 >
                   <Scale className="h-3.5 w-3.5" />
                   Điều khoản dịch vụ
@@ -123,14 +123,14 @@ export default function PublicFooter() {
             Copyright ©2026 BizFlow. All Rights Reserved
           </p>
           <Link
-            href="/policy/sms-authentication"
+            href="/policy"
             className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-[#052659] transition-colors"
           >
             <Shield className="h-3 w-3" />
-            Chính Sách Xác Thực SMS
+            Chính Sách Nền Tảng
           </Link>
           <Link
-            href="/policy/terms-of-service"
+            href="/terms-of-service"
             className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-[#052659] transition-colors"
           >
             <Scale className="h-3 w-3" />
