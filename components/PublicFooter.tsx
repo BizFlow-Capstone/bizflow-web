@@ -1,5 +1,6 @@
 import Link from "next/link";
 import Image from "next/image";
+import { Shield, Scale } from "lucide-react";
 
 export default function PublicFooter() {
   return (
@@ -95,14 +96,46 @@ export default function PublicFooter() {
               </li>
               <li className="text-slate-600">Thời gian: 8:30 - 18:00</li>
               <li className="text-slate-600">Hỗ trợ: 7 ngày/tuần</li>
+              <li>
+                <Link
+                  className="inline-flex items-center gap-1 text-slate-600 hover:text-[#052659]"
+                  href="/policy/sms-authentication"
+                >
+                  <Shield className="h-3.5 w-3.5" />
+                  Chính sách SMS
+                </Link>
+              </li>
+              <li>
+                <Link
+                  className="inline-flex items-center gap-1 text-slate-600 hover:text-[#052659]"
+                  href="/policy/terms-of-service"
+                >
+                  <Scale className="h-3.5 w-3.5" />
+                  Điều khoản dịch vụ
+                </Link>
+              </li>
             </ul>
           </div>
         </div>
 
-        <div className="mt-10 border-t border-slate-200 pt-8 text-center">
+        <div className="mt-10 border-t border-slate-200 pt-8 flex flex-col items-center gap-2 sm:flex-row sm:justify-between">
           <p className="text-sm text-slate-600">
             Copyright ©2026 BizFlow. All Rights Reserved
           </p>
+          <Link
+            href="/policy/sms-authentication"
+            className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-[#052659] transition-colors"
+          >
+            <Shield className="h-3 w-3" />
+            Chính Sách Xác Thực SMS
+          </Link>
+          <Link
+            href="/policy/terms-of-service"
+            className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-[#052659] transition-colors"
+          >
+            <Scale className="h-3 w-3" />
+            Điều Khoản Dịch Vụ
+          </Link>
         </div>
       </div>
     </footer>
