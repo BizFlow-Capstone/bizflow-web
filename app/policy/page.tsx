@@ -14,9 +14,9 @@ import {
 } from "lucide-react";
 
 export const metadata = {
-  title: "Chính Sách Xác Thực SMS – BizFlow",
+  title: "Chính Sách Nền Tảng – BizFlow",
   description:
-    "Chính sách bảo mật và quyền riêng tư liên quan đến xác thực số điện thoại qua SMS OTP của BizFlow.",
+    "Chính sách bảo mật, quyền riêng tư và bảo vệ dữ liệu cá nhân của nền tảng BizFlow.",
 };
 
 const TEAL = "#23C4C1";
@@ -49,7 +49,7 @@ const sections = [
         </p>
         <p className="mt-3 text-slate-600 leading-relaxed">
           Chính sách này giải thích rõ cách chúng tôi thu thập, sử dụng và bảo
-          vệ thông tin số điện thoại của bạn trong quá trình xác thực.
+          vệ thông tin cá nhân của bạn khi sử dụng nền tảng BizFlow.
         </p>
         <p className="mt-3 text-slate-600 leading-relaxed">
           Chính sách này được xây dựng phù hợp với quy định của pháp luật Việt
@@ -69,7 +69,7 @@ const sections = [
     content: (
       <>
         <p className="text-slate-600">
-          Khi bạn sử dụng tính năng xác thực SMS, chúng tôi có thể thu thập:
+          Khi bạn sử dụng nền tảng BizFlow, chúng tôi có thể thu thập:
         </p>
         <ul className="mt-4 space-y-2 list-none">
           {[
@@ -355,7 +355,7 @@ const sections = [
   },
 ];
 
-export default function SmsAuthPolicyPage() {
+export default function PolicyPage() {
   return (
     <>
       <PublicHeader />
@@ -382,11 +382,11 @@ export default function SmsAuthPolicyPage() {
               <Shield className="h-8 w-8 text-white" />
             </div>
             <h1 className="text-3xl font-bold italic tracking-wide sm:text-[2.6rem] drop-shadow">
-              Chính Sách Xác Thực SMS
+              Chính Sách Nền Tảng
             </h1>
             <p className="mt-4 text-white/85 text-base sm:text-lg max-w-xl mx-auto leading-[1.8] font-normal not-italic">
-              Cam kết minh bạch về cách BizFlow sử dụng số điện thoại của bạn
-              trong quá trình xác thực OTP qua Firebase Authentication.
+              Cam kết minh bạch về cách BizFlow thu thập, sử dụng và bảo vệ
+              thông tin cá nhân của bạn trên nền tảng.
             </p>
           </div>
         </div>
