@@ -752,6 +752,29 @@ export async function getBookSummary(locationId: number, bookId: number) {
   return (await response.json()) as ApiResponse<Record<string, unknown>>;
 }
 
+export async function getBookRows(
+  locationId: number,
+  bookId: number,
+  batchSize = 200,
+  cursor?: string,
+): Promise<ApiResponse<Record<string, unknown>>> {
+  const params = new URLSearchParams();
+  params.append("batchSize", String(batchSize));
+  if (cursor) params.append("cursor", cursor);
+
+  const response = await authFetch(
+    `/api/locations/${locationId}/accounting/books/${bookId}/rows?${params.toString()}`,
+    {
+      method: "GET",
+      headers: { "Content-Type": "application/json" },
+      cache: "no-store",
+    },
+  );
+
+  if (!response.ok) throw new Error("Không thể tải dòng sổ kế toán");
+  return (await response.json()) as ApiResponse<Record<string, unknown>>;
+}
+
 export async function getBookSections(
   locationId: number,
   bookId: number,

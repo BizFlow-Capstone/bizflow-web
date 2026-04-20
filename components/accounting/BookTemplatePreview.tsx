@@ -2,7 +2,7 @@ import type {
   AccountingBookRow,
   AccountingTemplateColumnSummary,
 } from "@/lib/types/adminAccounting";
-import type { ReactElement } from "react";
+import type { CSSProperties, ReactElement } from "react";
 
 interface BookTemplatePreviewProps {
   templateCode?: string;
@@ -1568,6 +1568,14 @@ const templateRenderers: Record<string, TemplateRenderer> = {
   s2e: renderS2eTemplate,
 };
 
+const VIETNAMESE_PREVIEW_FONT_STACK =
+  '"Tahoma", "Segoe UI", "Arial", "Times New Roman", sans-serif';
+
+const vietnamesePreviewFontStyle = {
+  fontFamily: VIETNAMESE_PREVIEW_FONT_STACK,
+  "--font-serif": VIETNAMESE_PREVIEW_FONT_STACK,
+} as CSSProperties;
+
 export default function BookTemplatePreview({
   templateCode,
   templateName,
@@ -1586,15 +1594,19 @@ export default function BookTemplatePreview({
   const renderer =
     templateRenderers[normalizedTemplateCode] || renderFallbackTemplate;
 
-  return renderer({
-    templateCode: normalizedTemplateCode,
-    templateName,
-    versionLabel,
-    normalizedColumns,
-    rows,
-    rowDefinitions: normalizedRowDefinitions,
-    referenceData,
-    summaryMeta,
-    totalValue,
-  });
+  return (
+    <div style={vietnamesePreviewFontStyle}>
+      {renderer({
+        templateCode: normalizedTemplateCode,
+        templateName,
+        versionLabel,
+        normalizedColumns,
+        rows,
+        rowDefinitions: normalizedRowDefinitions,
+        referenceData,
+        summaryMeta,
+        totalValue,
+      })}
+    </div>
+  );
 }

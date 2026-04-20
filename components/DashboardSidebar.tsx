@@ -15,14 +15,26 @@ import {
   PackagePlus,
   Package,
   Zap,
+  ArrowLeftRight,
 } from "lucide-react";
 import Image from "next/image";
 import { Separator } from "@/components/ui/separator";
 import { useLocationRole } from "@/hooks/useLocationRole";
+import { useEffect, useState } from "react";
+import { getValidAccessToken, getRoleFromToken } from "@/lib/auth/tokenManager";
 
 export default function DashboardSidebar() {
   const pathname = usePathname();
   const { isOwner } = useLocationRole();
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  useEffect(() => {
+    getValidAccessToken()
+      .then((token) => {
+        setIsAdmin(getRoleFromToken(token) === "admin");
+      })
+      .catch(() => {});
+  }, []);
 
   // Items visible to ALL users (owner + employee)
   const sharedMenuItems = [
@@ -149,6 +161,19 @@ export default function DashboardSidebar() {
           })}
         </ul>
       </div>
+
+      {isAdmin && (
+        <div className="px-4 pb-4">
+          <Separator className="mb-3" />
+          <Link
+            href="/admin"
+            className="flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50 hover:text-gray-900 transition-colors border border-dashed border-gray-200"
+          >
+            <ArrowLeftRight className="w-5 h-5 text-gray-400" />
+            <span>Trang Quản Trị</span>
+          </Link>
+        </div>
+      )}
     </aside>
   );
 }

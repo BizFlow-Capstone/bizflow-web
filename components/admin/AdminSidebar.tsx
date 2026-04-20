@@ -8,6 +8,7 @@ import {
   Users,
   CreditCard,
   BookOpen,
+  ArrowLeftRight,
 } from "lucide-react";
 
 const adminMenuItems = [
@@ -93,6 +94,17 @@ export default function AdminSidebar() {
           })}
         </ul>
       </nav>
+
+      {/* Switch to user dashboard */}
+      <div className="px-3 pb-4">
+        <Link
+          href="/dashboard"
+          className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50 hover:text-gray-900 transition-all duration-150 border border-dashed border-gray-200"
+        >
+          <ArrowLeftRight className="h-4 w-4 text-gray-400" />
+          Xem Dashboard Người Dùng
+        </Link>
+      </div>
     </aside>
   );
 }

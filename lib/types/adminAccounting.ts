@@ -19,6 +19,8 @@ export interface AccountingTaxRulesetSummary {
   code: string;
   name: string;
   isActive: boolean;
+  effectiveFrom?: string;
+  effectiveTo?: string | null;
   groupRuleCount: number;
   industryRateCount: number;
 }
