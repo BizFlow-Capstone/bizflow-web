@@ -166,17 +166,6 @@ export interface CompareRequest {
   businessTypeIds: string[];
 }
 
-export interface PreviewRequest {
-  businessLocationId: number;
-  periodId: number;
-  templateVersionId: number;
-  groupNumber: number;
-  taxMethod: string;
-  rulesetId: number;
-  businessTypeIds: string[];
-  batchSize: number;
-}
-
 export interface MappableEntityCreateRequest {
   entityCode: string;
   displayName: string;
@@ -239,6 +228,30 @@ export interface BusinessTypeRateReplaceItem {
 
 export interface BusinessTypeTaxRatesReplaceRequest {
   rates: BusinessTypeRateReplaceItem[];
+}
+
+export interface CreateTaxRulesetRequest {
+  code?: string;
+  name?: string;
+  description?: string;
+  version?: string;
+  effectiveFrom?: string;
+  effectiveTo?: string;
+  cloneFromRulesetId?: number | null;
+}
+
+export interface UpdateTaxRulesetRequest {
+  name?: string;
+  description?: string;
+  version?: string;
+  effectiveFrom?: string;
+  effectiveTo?: string | null;
+}
+
+export interface CreateBusinessTypeRequest {
+  code?: string;
+  name?: string;
+  description?: string;
 }
 
 export async function getTemplateVersionDetail(
@@ -504,6 +517,15 @@ export async function updateMappableEntity(
   );
 }
 
+export async function deleteMappableEntity(entityId: number): Promise<void> {
+  await request<unknown>(
+    `/api/admin/accounting/mappable-entities/${entityId}`,
+    {
+      method: "DELETE",
+    },
+  );
+}
+
 export async function createMappableField(
   entityId: number,
   payload: MappableFieldCreateRequest,
@@ -556,11 +578,48 @@ export async function runAccountingTrace(
   );
 }
 
-export async function runAccountingPreview(
-  payload: PreviewRequest,
+export async function createTaxRuleset(
+  payload: CreateTaxRulesetRequest,
+): Promise<Record<string, unknown>> {
+  return request<Record<string, unknown>>("/api/admin/accounting/rulesets", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateTaxRuleset(
+  rulesetId: number,
+  payload: UpdateTaxRulesetRequest,
 ): Promise<Record<string, unknown>> {
   return request<Record<string, unknown>>(
-    "/api/admin/accounting/testing/preview",
+    `/api/admin/accounting/rulesets/${rulesetId}`,
+    { method: "PATCH", body: JSON.stringify(payload) },
+  );
+}
+
+export async function activateTaxRuleset(
+  rulesetId: number,
+): Promise<Record<string, unknown>> {
+  return request<Record<string, unknown>>(
+    `/api/admin/accounting/rulesets/${rulesetId}/activate`,
+    { method: "POST" },
+  );
+}
+
+export async function deactivateTaxRuleset(
+  rulesetId: number,
+): Promise<Record<string, unknown>> {
+  return request<Record<string, unknown>>(
+    `/api/admin/accounting/rulesets/${rulesetId}/deactivate`,
+    { method: "POST" },
+  );
+}
+
+export async function createBusinessType(
+  payload: CreateBusinessTypeRequest,
+): Promise<Record<string, unknown>> {
+  return request<Record<string, unknown>>(
+    "/api/admin/accounting/business-types",
     { method: "POST", body: JSON.stringify(payload) },
   );
 }

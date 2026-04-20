@@ -14,12 +14,21 @@ import {
   Plug,
   Rows,
   Scale,
+  Trash2,
   TreePine,
 } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { toast } from "sonner";
 import {
   activateTemplateVersion,
@@ -32,6 +41,7 @@ import {
   createMappableEntity,
   createMappableField,
   createRowDefinition,
+  deleteMappableEntity,
   deactivateTemplateVersion,
   deleteFieldMapping,
   deleteRowDefinition,
@@ -47,7 +57,6 @@ import {
   getTemplateVersionDetail,
   getTemplateVersionFullStructure,
   runAccountingCompare,
-  runAccountingPreview,
   runAccountingTrace,
   replaceBusinessTypeTaxRates,
   updateFieldMappingForTesting,
@@ -57,11 +66,17 @@ import {
   updateMappableField,
   updateRowDefinition,
   updateTemplateVersion,
+  createTaxRuleset,
+  activateTaxRuleset,
+  deactivateTaxRuleset,
+  createBusinessType,
 } from "@/lib/admin-accounting-api";
 import type {
   BusinessTypeWithRatesDto,
   CreateTemplateRequest,
   CreateTemplateVersionRequest,
+  CreateTaxRulesetRequest,
+  CreateBusinessTypeRequest,
 } from "@/lib/admin-accounting-api";
 import type {
   AccountingBookRow,
@@ -131,6 +146,11 @@ interface BusinessTypeTaxRateForm {
   taxType: string;
   taxRate: string;
   description: string;
+}
+
+interface EntityDeleteTarget {
+  id: number;
+  code: string;
 }
 
 interface AdminAccountingClientProps {
@@ -263,6 +283,37 @@ function toNum(value: string): number | null {
   if (!value.trim()) return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function parseDate(value: string | null | undefined): Date | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const parsed = new Date(trimmed);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed;
+}
+
+function isDateOnly(value: string | null | undefined): boolean {
+  if (!value) return false;
+  return /^\d{4}-\d{2}-\d{2}$/.test(value.trim());
+}
+
+function isRulesetEffectiveAt(
+  ruleset: AccountingOverviewResponse["taxRulesets"][number],
+  at: Date,
+): boolean {
+  const fromDate = parseDate(ruleset.effectiveFrom);
+  if (fromDate && fromDate.getTime() > at.getTime()) return false;
+
+  const toDate = parseDate(ruleset.effectiveTo);
+  if (!toDate) return true;
+
+  const end = new Date(toDate);
+  if (isDateOnly(ruleset.effectiveTo)) {
+    end.setHours(23, 59, 59, 999);
+  }
+  return end.getTime() >= at.getTime();
 }
 
 function asArray(value: unknown): Array<Record<string, unknown>> {
@@ -663,6 +714,29 @@ export default function AdminAccountingClient({
     useState<BusinessTypeMetadataForm>(emptyBusinessTypeMetadataForm);
   const [btRatesForm, setBtRatesForm] = useState<BusinessTypeTaxRateForm[]>([]);
 
+  // Create Ruleset form state
+  const [showCreateRulesetModal, setShowCreateRulesetModal] = useState(false);
+  const [createRulesetForm, setCreateRulesetForm] =
+    useState<CreateTaxRulesetRequest>({
+      code: "",
+      name: "",
+      description: "",
+      version: "",
+      effectiveFrom: "",
+      effectiveTo: "",
+      cloneFromRulesetId: null,
+    });
+  const [createRulesetLoading, setCreateRulesetLoading] = useState(false);
+
+  // Create Business Type form state
+  const [showCreateBtModal, setShowCreateBtModal] = useState(false);
+  const [createBtForm, setCreateBtForm] = useState<CreateBusinessTypeRequest>({
+    code: "",
+    name: "",
+    description: "",
+  });
+  const [createBtLoading, setCreateBtLoading] = useState(false);
+
   const [entities, setEntities] = useState<Array<Record<string, unknown>>>([]);
   const [entityFields, setEntityFields] = useState<
     Array<Record<string, unknown>>
@@ -674,6 +748,9 @@ export default function AdminAccountingClient({
   const [entCat, setEntCat] = useState("revenue");
   const [entDesc, setEntDesc] = useState("");
   const [entIsActive, setEntIsActive] = useState("true");
+  const [entityDeleteTarget, setEntityDeleteTarget] =
+    useState<EntityDeleteTarget | null>(null);
+  const [entityDeleteBusy, setEntityDeleteBusy] = useState(false);
   const [efEditId, setEfEditId] = useState("");
   const [efEntId, setEfEntId] = useState("");
   const [efCode, setEfCode] = useState("");
@@ -739,6 +816,23 @@ export default function AdminAccountingClient({
     () => overview?.businessTypes ?? [],
     [overview?.businessTypes],
   );
+
+  const activeEffectiveRulesets = useMemo(() => {
+    const now = new Date();
+    return (overview?.taxRulesets ?? []).filter(
+      (ruleset) =>
+        Boolean(ruleset.isActive) && isRulesetEffectiveAt(ruleset, now),
+    );
+  }, [overview?.taxRulesets]);
+
+  const overviewAppliedRuleset = useMemo(() => {
+    if (activeEffectiveRulesets.length === 0) return null;
+    return [...activeEffectiveRulesets].sort((left, right) => {
+      const leftTime = parseDate(left.effectiveFrom)?.getTime() ?? 0;
+      const rightTime = parseDate(right.effectiveFrom)?.getTime() ?? 0;
+      return rightTime - leftTime;
+    })[0];
+  }, [activeEffectiveRulesets]);
 
   const previewSummary = useMemo(() => {
     const root = asRecord(previewResult);
@@ -1238,6 +1332,20 @@ export default function AdminAccountingClient({
     return matched ? btRulesetId : rowRulesetOptions[0].value;
   }, [btRulesetId, rowRulesetOptions]);
 
+  const selectedRulesetMeta = useMemo(() => {
+    const selectedId = Number(effectiveBtRulesetId);
+    if (!selectedId) return null;
+    return (
+      (overview?.taxRulesets ?? []).find(
+        (ruleset) => Number(ruleset.rulesetId ?? 0) === selectedId,
+      ) ?? null
+    );
+  }, [effectiveBtRulesetId, overview?.taxRulesets]);
+
+  const selectedRulesetId = Number(selectedRulesetMeta?.rulesetId ?? 0);
+  const selectedRulesetIsActive = Boolean(selectedRulesetMeta?.isActive);
+  const selectedRulesetStatus = selectedRulesetIsActive ? "active" : "inactive";
+
   const selectedBusinessTypeWithRates = useMemo(
     () =>
       businessTypesWithRates.find(
@@ -1432,6 +1540,77 @@ export default function AdminAccountingClient({
         selectedBusinessTypeWithRates.businessTypeId,
       );
     });
+  };
+
+  const handleCreateRuleset = async () => {
+    setCreateRulesetLoading(true);
+    await runSafe(async () => {
+      const payload: CreateTaxRulesetRequest = {
+        code: createRulesetForm.code?.trim() || undefined,
+        name: createRulesetForm.name?.trim() || undefined,
+        description: createRulesetForm.description?.trim() || undefined,
+        version: createRulesetForm.version?.trim() || undefined,
+        effectiveFrom: createRulesetForm.effectiveFrom?.trim() || undefined,
+        effectiveTo: createRulesetForm.effectiveTo?.trim() || undefined,
+        cloneFromRulesetId: createRulesetForm.cloneFromRulesetId
+          ? Number(createRulesetForm.cloneFromRulesetId)
+          : null,
+      };
+      if (!payload.name) throw new Error("Ruleset name không được để trống.");
+      if (!payload.effectiveFrom)
+        throw new Error("effectiveFrom không được để trống.");
+      await createTaxRuleset(payload);
+      log(`Created ruleset: ${payload.name}`, "ok");
+      setCreateRulesetForm({
+        code: "",
+        name: "",
+        description: "",
+        version: "",
+        effectiveFrom: "",
+        effectiveTo: "",
+        cloneFromRulesetId: null,
+      });
+      setShowCreateRulesetModal(false);
+      await loadOverview();
+    });
+    setCreateRulesetLoading(false);
+  };
+
+  const handleActivateRuleset = async (rulesetId: number) => {
+    await runSafe(async () => {
+      await activateTaxRuleset(rulesetId);
+      log(`Activated ruleset ${rulesetId}`, "ok");
+      await loadOverview();
+      await btLoad(effectiveBtRulesetId);
+    });
+  };
+
+  const handleDeactivateRuleset = async (rulesetId: number) => {
+    await runSafe(async () => {
+      await deactivateTaxRuleset(rulesetId);
+      log(`Deactivated ruleset ${rulesetId}`, "ok");
+      await loadOverview();
+      await btLoad(effectiveBtRulesetId);
+    });
+  };
+
+  const handleCreateBusinessType = async () => {
+    setCreateBtLoading(true);
+    await runSafe(async () => {
+      const payload: CreateBusinessTypeRequest = {
+        code: createBtForm.code?.trim() || undefined,
+        name: createBtForm.name?.trim() || undefined,
+        description: createBtForm.description?.trim() || undefined,
+      };
+      if (!payload.name)
+        throw new Error("Business type name không được để trống.");
+      await createBusinessType(payload);
+      log(`Created business type: ${payload.name}`, "ok");
+      setCreateBtForm({ code: "", name: "", description: "" });
+      setShowCreateBtModal(false);
+      await btLoad(effectiveBtRulesetId);
+    });
+    setCreateBtLoading(false);
   };
 
   useEffect(() => {
@@ -2315,6 +2494,37 @@ export default function AdminAccountingClient({
     });
   };
 
+  const openEntityDeleteConfirm = useCallback(
+    (rawEntityId?: string, entityCode?: string) => {
+      const id = toNum(rawEntityId ?? entEditId);
+      if (!id) return;
+      const selectedEntityId = toNum(entEditId);
+      const resolvedCode =
+        entityCode?.trim() || (selectedEntityId === id ? entCode.trim() : "");
+      setEntityDeleteTarget({ id, code: resolvedCode });
+    },
+    [entCode, entEditId],
+  );
+
+  const entDelete = async () => {
+    const id = entityDeleteTarget?.id;
+    if (!id) return;
+    try {
+      setEntityDeleteBusy(true);
+      setError("");
+      await deleteMappableEntity(id);
+      log(`Deleted entity ${id}`, "ok");
+      await entLoad();
+      setEntityDeleteTarget(null);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Có lỗi xảy ra";
+      setError(msg);
+      log(msg, "error");
+    } finally {
+      setEntityDeleteBusy(false);
+    }
+  };
+
   const efCreate = async () => {
     const entityId = toNum(currentFieldEntityId);
     if (!entityId) return;
@@ -2436,12 +2646,8 @@ export default function AdminAccountingClient({
       };
 
       setPreviewFullStructure(null);
-
-      const [d, reference] = await Promise.all([
-        runAccountingPreview(payload),
-        getAccountingReference(),
-      ]);
-      setPreviewResult(d);
+      setPreviewResult(null);
+      const reference = await getAccountingReference();
       setRefData(reference);
 
       if (payload.templateVersionId > 0) {
@@ -2483,6 +2689,42 @@ export default function AdminAccountingClient({
 
   return (
     <main className="space-y-6" aria-labelledby="admin-accounting-title">
+      <Dialog
+        open={Boolean(entityDeleteTarget)}
+        onOpenChange={(open) => {
+          if (!open && !entityDeleteBusy) {
+            setEntityDeleteTarget(null);
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Xác nhận xóa entity</DialogTitle>
+            <DialogDescription>
+              {entityDeleteTarget
+                ? `Bạn có chắc chắn muốn xóa entity ${entityDeleteTarget.code ? `${entityDeleteTarget.code} (#${entityDeleteTarget.id})` : `#${entityDeleteTarget.id}`} không? Chỉ entity đang Inactive mới xóa được.`
+                : "Chỉ entity đang Inactive mới xóa được."}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setEntityDeleteTarget(null)}
+              disabled={entityDeleteBusy}
+            >
+              Hủy
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => void entDelete()}
+              disabled={entityDeleteBusy}
+            >
+              {entityDeleteBusy ? "Đang xóa..." : "Xóa entity"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* {isConsultantMode ? (
         <Card className="rounded-xl border border-amber-200 bg-amber-50 shadow-sm">
           <CardContent className="flex flex-col gap-1 p-4 text-sm text-amber-800">
@@ -2557,20 +2799,18 @@ export default function AdminAccountingClient({
               <CardTitle>Templates</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              {(overview?.taxRulesets ?? []).length > 0 ? (
+              {overviewAppliedRuleset ? (
                 <div className="flex flex-wrap gap-2">
-                  {(overview?.taxRulesets ?? []).map((r) => (
-                    <span
-                      key={r.rulesetId}
-                      className="inline-flex items-center gap-1.5 rounded-full border border-[#23C4C1]/30 bg-[#23C4C1]/8 px-3 py-1 text-xs font-medium text-[#15918f]"
-                    >
-                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                      Áp dụng theo: {r.name}
-                      <span className="ml-1 font-mono text-[10px] text-gray-400">
-                        ({r.code})
-                      </span>
+                  <span
+                    key={overviewAppliedRuleset.rulesetId}
+                    className="inline-flex items-center gap-1.5 rounded-full border border-[#23C4C1]/30 bg-[#23C4C1]/8 px-3 py-1 text-xs font-medium text-[#15918f]"
+                  >
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                    Áp dụng theo: {overviewAppliedRuleset.name}
+                    <span className="ml-1 font-mono text-[10px] text-gray-400">
+                      ({overviewAppliedRuleset.code})
                     </span>
-                  ))}
+                  </span>
                 </div>
               ) : null}
               <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
@@ -2757,243 +2997,576 @@ export default function AdminAccountingClient({
       ) : null}
 
       {activeTab === "business-types" ? (
-        <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-          <Card className="xl:col-span-2 rounded-xl border border-gray-200 bg-white shadow-sm">
-            <CardHeader>
-              <CardTitle>Business Types By Ruleset</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-                <select
-                  value={effectiveBtRulesetId}
-                  onChange={(e) => handleBtRulesetSelect(e.target.value)}
-                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-                >
-                  {rowRulesetOptions.length === 0 ? (
-                    <option value="1">1 - Default Ruleset</option>
-                  ) : (
-                    rowRulesetOptions.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))
-                  )}
-                </select>
-              </div>
-
-              <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
-                <table className="w-full text-sm">
-                  <thead className="sticky top-0 bg-gray-50 text-left text-xs uppercase text-gray-500">
-                    <tr>
-                      <th className="px-3 py-2">Code</th>
-                      <th className="px-3 py-2">Name</th>
-                      <th className="px-3 py-2">Status</th>
-                      <th className="px-3 py-2">Rates</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {businessTypesWithRates.length === 0 ? (
-                      <tr>
-                        <td className="px-3 py-3 text-gray-500" colSpan={4}>
-                          Chưa có dữ liệu business type theo ruleset này.
-                        </td>
-                      </tr>
-                    ) : (
-                      businessTypesWithRates.map((item) => {
-                        const isSelected = item.businessTypeId === btSelectedId;
-                        return (
-                          <tr
-                            key={item.businessTypeId}
-                            className={`cursor-pointer border-t transition-colors ${
-                              isSelected
-                                ? "bg-[#23C4C1]/15 text-teal-900 shadow-[inset_4px_0_0_0_#23C4C1]"
-                                : "hover:bg-gray-50/70"
-                            }`}
-                            onClick={() => handleBtSelect(item.businessTypeId)}
-                          >
-                            <td className="px-3 py-2 font-mono text-xs">
-                              {item.code}
-                            </td>
-                            <td className="px-3 py-2">{item.name}</td>
-                            <td className="px-3 py-2">
-                              <Badge
-                                variant="secondary"
-                                className={
-                                  item.status?.toLowerCase() === "active"
-                                    ? "bg-emerald-50 text-emerald-700"
-                                    : "bg-red-50 text-red-700"
-                                }
-                              >
-                                {item.status || "unknown"}
-                              </Badge>
-                            </td>
-                            <td className="px-3 py-2 text-xs text-gray-600">
-                              {(item.taxRates ?? [])
-                                .map(
-                                  (rate) =>
-                                    `${rate.taxType}: ${(Number(rate.taxRate || 0) * 100).toFixed(2)}%`,
-                                )
-                                .join(" | ") || "-"}
-                            </td>
-                          </tr>
-                        );
-                      })
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="rounded-xl border border-gray-200 bg-white shadow-sm">
-            <CardHeader>
-              <CardTitle>Business Type Editor</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs text-gray-600">
-                <div className="font-medium text-gray-700">
-                  {selectedBusinessTypeWithRates
-                    ? `${selectedBusinessTypeWithRates.code} - ${selectedBusinessTypeWithRates.businessTypeId}`
-                    : "Chọn business type để chỉnh sửa"}
-                </div>
-              </div>
-
-              <div className="space-y-2 rounded-xl border border-gray-100 bg-gray-50/60 p-3">
-                <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                  Metadata (PATCH)
-                </p>
-                <input
-                  value={btMetadataForm.name}
-                  onChange={(e) =>
-                    setBtMetadataForm((prev) => ({
-                      ...prev,
-                      name: e.target.value,
-                    }))
-                  }
-                  placeholder="Name"
-                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-                  disabled={!selectedBusinessTypeWithRates}
-                />
-                <textarea
-                  value={btMetadataForm.description}
-                  onChange={(e) =>
-                    setBtMetadataForm((prev) => ({
-                      ...prev,
-                      description: e.target.value,
-                    }))
-                  }
-                  placeholder="Description"
-                  rows={2}
-                  className="w-full resize-y rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-                  disabled={!selectedBusinessTypeWithRates}
-                />
-                <select
-                  value={btMetadataForm.status}
-                  onChange={(e) =>
-                    setBtMetadataForm((prev) => ({
-                      ...prev,
-                      status: e.target.value,
-                    }))
-                  }
-                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-                  disabled={!selectedBusinessTypeWithRates}
-                >
-                  <option value="active">active</option>
-                  <option value="inactive">inactive</option>
-                </select>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  onClick={() => void btUpdateMetadata()}
-                  disabled={!selectedBusinessTypeWithRates}
-                >
-                  Save Metadata
-                </Button>
-              </div>
-
-              <div className="space-y-2 rounded-xl border border-gray-100 bg-gray-50/60 p-3">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                    Tax Rates (PUT Replace)
-                  </p>
+        <>
+          {showCreateRulesetModal ? (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+              <div
+                className="absolute inset-0"
+                onClick={() => setShowCreateRulesetModal(false)}
+              />
+              <Card className="relative z-10 max-h-[85vh] w-full max-w-2xl overflow-auto rounded-xl border border-gray-200 bg-white shadow-xl">
+                <CardHeader>
+                  <div className="flex items-center justify-between gap-2">
+                    <CardTitle>Create New Ruleset</CardTitle>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      className="h-8 px-2"
+                      onClick={() => setShowCreateRulesetModal(false)}
+                    >
+                      Close
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="grid grid-cols-2 gap-2">
+                    <input
+                      value={createRulesetForm.code ?? ""}
+                      onChange={(e) =>
+                        setCreateRulesetForm((prev) => ({
+                          ...prev,
+                          code: e.target.value,
+                        }))
+                      }
+                      placeholder="Code (e.g. CIRCULAR_2025)"
+                      className="col-span-2 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                    />
+                    <input
+                      value={createRulesetForm.name ?? ""}
+                      onChange={(e) =>
+                        setCreateRulesetForm((prev) => ({
+                          ...prev,
+                          name: e.target.value,
+                        }))
+                      }
+                      placeholder="Name *"
+                      className="col-span-2 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                    />
+                    <input
+                      value={createRulesetForm.version ?? ""}
+                      onChange={(e) =>
+                        setCreateRulesetForm((prev) => ({
+                          ...prev,
+                          version: e.target.value,
+                        }))
+                      }
+                      placeholder="Version (e.g. v1)"
+                      className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                    />
+                    <input
+                      value={
+                        createRulesetForm.cloneFromRulesetId != null
+                          ? String(createRulesetForm.cloneFromRulesetId)
+                          : ""
+                      }
+                      onChange={(e) =>
+                        setCreateRulesetForm((prev) => ({
+                          ...prev,
+                          cloneFromRulesetId: e.target.value
+                            ? Number(e.target.value)
+                            : null,
+                        }))
+                      }
+                      placeholder="Clone từ ruleset ID (tùy chọn)"
+                      type="number"
+                      className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                    />
+                    <div className="space-y-1">
+                      <label className="text-xs text-gray-500">
+                        Effective From *
+                      </label>
+                      <input
+                        type="date"
+                        value={createRulesetForm.effectiveFrom ?? ""}
+                        onChange={(e) =>
+                          setCreateRulesetForm((prev) => ({
+                            ...prev,
+                            effectiveFrom: e.target.value,
+                          }))
+                        }
+                        className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs text-gray-500">
+                        Effective To (tùy chọn)
+                      </label>
+                      <input
+                        type="date"
+                        value={createRulesetForm.effectiveTo ?? ""}
+                        onChange={(e) =>
+                          setCreateRulesetForm((prev) => ({
+                            ...prev,
+                            effectiveTo: e.target.value,
+                          }))
+                        }
+                        className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                      />
+                    </div>
+                    <textarea
+                      value={createRulesetForm.description ?? ""}
+                      onChange={(e) =>
+                        setCreateRulesetForm((prev) => ({
+                          ...prev,
+                          description: e.target.value,
+                        }))
+                      }
+                      placeholder="Description"
+                      rows={2}
+                      className="col-span-2 w-full resize-y rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                    />
+                  </div>
                   <Button
                     size="sm"
-                    variant="outline"
-                    onClick={addBtRate}
+                    className="w-full bg-[#23C4C1] text-white hover:bg-[#1ea8a6]"
+                    onClick={() => void handleCreateRuleset()}
+                    disabled={createRulesetLoading}
+                  >
+                    {createRulesetLoading ? "Creating..." : "Create Ruleset"}
+                  </Button>
+
+                  {(overview?.taxRulesets ?? []).length > 0 ? (
+                    <div className="mt-3 space-y-2">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                        Existing Rulesets
+                      </p>
+                      <div className="max-h-56 space-y-1 overflow-auto">
+                        {(overview?.taxRulesets ?? []).map((rs) => {
+                          const id = Number(rs.rulesetId ?? 0);
+                          const name = String(rs.name ?? "");
+                          const isActive = Boolean(rs.isActive);
+                          const status = isActive ? "active" : "inactive";
+                          return (
+                            <div
+                              key={id}
+                              className="flex items-center justify-between gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm"
+                            >
+                              <div>
+                                <span className="font-medium">
+                                  [{id}] {name}
+                                </span>
+                                <Badge
+                                  variant="secondary"
+                                  className={
+                                    isActive
+                                      ? "ml-2 bg-emerald-50 text-emerald-700"
+                                      : "ml-2 bg-gray-100 text-gray-500"
+                                  }
+                                >
+                                  {status || "unknown"}
+                                </Badge>
+                              </div>
+                              <div className="flex gap-1">
+                                {!isActive ? (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-6 border-emerald-300 px-2 text-xs text-emerald-700 hover:bg-emerald-50"
+                                    onClick={() =>
+                                      void handleActivateRuleset(id)
+                                    }
+                                  >
+                                    Activate
+                                  </Button>
+                                ) : null}
+                                {isActive ? (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-6 border-red-300 px-2 text-xs text-red-600 hover:bg-red-50"
+                                    onClick={() =>
+                                      void handleDeactivateRuleset(id)
+                                    }
+                                  >
+                                    Deactivate
+                                  </Button>
+                                ) : null}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : null}
+                </CardContent>
+              </Card>
+            </div>
+          ) : null}
+
+          {showCreateBtModal ? (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+              <div
+                className="absolute inset-0"
+                onClick={() => setShowCreateBtModal(false)}
+              />
+              <Card className="relative z-10 w-full max-w-xl rounded-xl border border-gray-200 bg-white shadow-xl">
+                <CardHeader>
+                  <div className="flex items-center justify-between gap-2">
+                    <CardTitle>Create New Business Type</CardTitle>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      className="h-8 px-2"
+                      onClick={() => setShowCreateBtModal(false)}
+                    >
+                      Close
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <input
+                    value={createBtForm.code ?? ""}
+                    onChange={(e) =>
+                      setCreateBtForm((prev) => ({
+                        ...prev,
+                        code: e.target.value,
+                      }))
+                    }
+                    placeholder="Code (e.g. HKD_RETAIL)"
+                    className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                  />
+                  <input
+                    value={createBtForm.name ?? ""}
+                    onChange={(e) =>
+                      setCreateBtForm((prev) => ({
+                        ...prev,
+                        name: e.target.value,
+                      }))
+                    }
+                    placeholder="Name *"
+                    className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                  />
+                  <textarea
+                    value={createBtForm.description ?? ""}
+                    onChange={(e) =>
+                      setCreateBtForm((prev) => ({
+                        ...prev,
+                        description: e.target.value,
+                      }))
+                    }
+                    placeholder="Description"
+                    rows={3}
+                    className="w-full resize-y rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                  />
+                  <Button
+                    size="sm"
+                    className="w-full bg-[#23C4C1] text-white hover:bg-[#1ea8a6]"
+                    onClick={() => void handleCreateBusinessType()}
+                    disabled={createBtLoading}
+                  >
+                    {createBtLoading ? "Creating..." : "Create Business Type"}
+                  </Button>
+                </CardContent>
+              </Card>
+            </div>
+          ) : null}
+
+          <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+            <Card className="xl:col-span-2 rounded-xl border border-gray-200 bg-white shadow-sm">
+              <CardHeader>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <CardTitle>Business Types By Ruleset</CardTitle>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setShowCreateRulesetModal(true)}
+                    >
+                      Create New Ruleset
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setShowCreateBtModal(true)}
+                    >
+                      Create New Business Type
+                    </Button>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                  <select
+                    value={effectiveBtRulesetId}
+                    onChange={(e) => handleBtRulesetSelect(e.target.value)}
+                    className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                  >
+                    {rowRulesetOptions.length === 0 ? (
+                      <option value="1">1 - Default Ruleset</option>
+                    ) : (
+                      rowRulesetOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))
+                    )}
+                  </select>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {selectedRulesetId > 0 ? (
+                      <Badge
+                        variant="secondary"
+                        className={
+                          selectedRulesetIsActive
+                            ? "bg-emerald-50 text-emerald-700"
+                            : "bg-gray-100 text-gray-600"
+                        }
+                      >
+                        {selectedRulesetStatus || "unknown"}
+                      </Badge>
+                    ) : null}
+                    {selectedRulesetId > 0 ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className={
+                          selectedRulesetIsActive
+                            ? "border-red-300 text-red-600 hover:bg-red-50"
+                            : "border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                        }
+                        onClick={() =>
+                          selectedRulesetIsActive
+                            ? void handleDeactivateRuleset(selectedRulesetId)
+                            : void handleActivateRuleset(selectedRulesetId)
+                        }
+                      >
+                        {selectedRulesetIsActive
+                          ? "Deactivate Ruleset"
+                          : "Activate Ruleset"}
+                      </Button>
+                    ) : null}
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
+                  <table className="w-full text-sm">
+                    <thead className="sticky top-0 bg-gray-50 text-left text-xs uppercase text-gray-500">
+                      <tr>
+                        <th className="px-3 py-2">Code</th>
+                        <th className="px-3 py-2">Name</th>
+                        <th className="px-3 py-2">Status</th>
+                        <th className="px-3 py-2">Rates</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {businessTypesWithRates.length === 0 ? (
+                        <tr>
+                          <td className="px-3 py-3 text-gray-500" colSpan={4}>
+                            Chưa có dữ liệu business type theo ruleset này.
+                          </td>
+                        </tr>
+                      ) : (
+                        businessTypesWithRates.map((item) => {
+                          const isSelected =
+                            item.businessTypeId === btSelectedId;
+                          return (
+                            <tr
+                              key={item.businessTypeId}
+                              className={`cursor-pointer border-t transition-colors ${
+                                isSelected
+                                  ? "bg-[#23C4C1]/15 text-teal-900 shadow-[inset_4px_0_0_0_#23C4C1]"
+                                  : "hover:bg-gray-50/70"
+                              }`}
+                              onClick={() =>
+                                handleBtSelect(item.businessTypeId)
+                              }
+                            >
+                              <td className="px-3 py-2 font-mono text-xs">
+                                {item.code}
+                              </td>
+                              <td className="px-3 py-2">{item.name}</td>
+                              <td className="px-3 py-2">
+                                <Badge
+                                  variant="secondary"
+                                  className={
+                                    item.status?.toLowerCase() === "active"
+                                      ? "bg-emerald-50 text-emerald-700"
+                                      : "bg-red-50 text-red-700"
+                                  }
+                                >
+                                  {item.status || "unknown"}
+                                </Badge>
+                              </td>
+                              <td className="px-3 py-2 text-xs text-gray-600">
+                                {(item.taxRates ?? [])
+                                  .map(
+                                    (rate) =>
+                                      `${rate.taxType}: ${(Number(rate.taxRate || 0) * 100).toFixed(2)}%`,
+                                  )
+                                  .join(" | ") || "-"}
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="rounded-xl border border-gray-200 bg-white shadow-sm">
+              <CardHeader>
+                <CardTitle>Business Type Editor</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs text-gray-600">
+                  <div className="font-medium text-gray-700">
+                    {selectedBusinessTypeWithRates
+                      ? `${selectedBusinessTypeWithRates.code} - ${selectedBusinessTypeWithRates.businessTypeId}`
+                      : "Chọn business type để chỉnh sửa"}
+                  </div>
+                </div>
+
+                <div className="space-y-2 rounded-xl border border-gray-100 bg-gray-50/60 p-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                    Metadata (PATCH)
+                  </p>
+                  <input
+                    value={btMetadataForm.name}
+                    onChange={(e) =>
+                      setBtMetadataForm((prev) => ({
+                        ...prev,
+                        name: e.target.value,
+                      }))
+                    }
+                    placeholder="Name"
+                    className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                    disabled={!selectedBusinessTypeWithRates}
+                  />
+                  <textarea
+                    value={btMetadataForm.description}
+                    onChange={(e) =>
+                      setBtMetadataForm((prev) => ({
+                        ...prev,
+                        description: e.target.value,
+                      }))
+                    }
+                    placeholder="Description"
+                    rows={2}
+                    className="w-full resize-y rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                    disabled={!selectedBusinessTypeWithRates}
+                  />
+                  <select
+                    value={btMetadataForm.status}
+                    onChange={(e) =>
+                      setBtMetadataForm((prev) => ({
+                        ...prev,
+                        status: e.target.value,
+                      }))
+                    }
+                    className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
                     disabled={!selectedBusinessTypeWithRates}
                   >
-                    Add Rate
+                    <option value="active">active</option>
+                    <option value="inactive">inactive</option>
+                  </select>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => void btUpdateMetadata()}
+                    disabled={!selectedBusinessTypeWithRates}
+                  >
+                    Save Metadata
                   </Button>
                 </div>
-                <div className="max-h-72 space-y-2 overflow-auto">
-                  {btRatesForm.length === 0 ? (
-                    <div className="rounded-md border border-dashed border-gray-300 px-3 py-2 text-xs text-gray-500">
-                      Chưa có tax rate. Bấm Add Rate để thêm mới.
-                    </div>
-                  ) : (
-                    btRatesForm.map((rate, index) => (
-                      <div
-                        key={`${rate.taxType || "rate"}-${index}`}
-                        className="space-y-2 rounded-lg border border-gray-200 bg-white p-2"
-                      >
-                        <input
-                          value={rate.taxType}
-                          onChange={(e) =>
-                            updateBtRateField(index, "taxType", e.target.value)
-                          }
-                          placeholder="Tax Type (VAT, PIT_METHOD_1...)"
-                          className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-                          disabled={!selectedBusinessTypeWithRates}
-                        />
-                        <input
-                          value={rate.taxRate}
-                          onChange={(e) =>
-                            updateBtRateField(index, "taxRate", e.target.value)
-                          }
-                          placeholder="Tax Rate (e.g. 0.05)"
-                          className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-                          disabled={!selectedBusinessTypeWithRates}
-                        />
-                        <input
-                          value={rate.description}
-                          onChange={(e) =>
-                            updateBtRateField(
-                              index,
-                              "description",
-                              e.target.value,
-                            )
-                          }
-                          placeholder="Description"
-                          className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-                          disabled={!selectedBusinessTypeWithRates}
-                        />
-                        <div className="text-right">
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="text-red-600 hover:text-red-700"
-                            onClick={() => removeBtRate(index)}
-                            disabled={!selectedBusinessTypeWithRates}
-                          >
-                            Remove
-                          </Button>
-                        </div>
+
+                <div className="space-y-2 rounded-xl border border-gray-100 bg-gray-50/60 p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                      Tax Rates (PUT Replace)
+                    </p>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={addBtRate}
+                      disabled={!selectedBusinessTypeWithRates}
+                    >
+                      Add Rate
+                    </Button>
+                  </div>
+                  <div className="max-h-72 space-y-2 overflow-auto">
+                    {btRatesForm.length === 0 ? (
+                      <div className="rounded-md border border-dashed border-gray-300 px-3 py-2 text-xs text-gray-500">
+                        Chưa có tax rate. Bấm Add Rate để thêm mới.
                       </div>
-                    ))
-                  )}
+                    ) : (
+                      btRatesForm.map((rate, index) => (
+                        <div
+                          key={index}
+                          className="space-y-2 rounded-lg border border-gray-200 bg-white p-2"
+                        >
+                          <input
+                            value={rate.taxType}
+                            onChange={(e) =>
+                              updateBtRateField(
+                                index,
+                                "taxType",
+                                e.target.value,
+                              )
+                            }
+                            placeholder="Tax Type (VAT, PIT_METHOD_1...)"
+                            className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                            disabled={!selectedBusinessTypeWithRates}
+                          />
+                          <input
+                            value={rate.taxRate}
+                            onChange={(e) =>
+                              updateBtRateField(
+                                index,
+                                "taxRate",
+                                e.target.value,
+                              )
+                            }
+                            placeholder="Tax Rate (e.g. 0.05)"
+                            className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                            disabled={!selectedBusinessTypeWithRates}
+                          />
+                          <input
+                            value={rate.description}
+                            onChange={(e) =>
+                              updateBtRateField(
+                                index,
+                                "description",
+                                e.target.value,
+                              )
+                            }
+                            placeholder="Description"
+                            className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                            disabled={!selectedBusinessTypeWithRates}
+                          />
+                          <div className="text-right">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="text-red-600 hover:text-red-700"
+                              onClick={() => removeBtRate(index)}
+                              disabled={!selectedBusinessTypeWithRates}
+                            >
+                              Remove
+                            </Button>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                  <Button
+                    size="sm"
+                    className="w-full bg-[#23C4C1] text-white hover:bg-[#1ea8a6]"
+                    onClick={() => void btReplaceRates()}
+                    disabled={!selectedBusinessTypeWithRates}
+                  >
+                    Replace Tax Rates
+                  </Button>
                 </div>
-                <Button
-                  size="sm"
-                  className="w-full bg-[#23C4C1] text-white hover:bg-[#1ea8a6]"
-                  onClick={() => void btReplaceRates()}
-                  disabled={!selectedBusinessTypeWithRates}
-                >
-                  Replace Tax Rates
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+              </CardContent>
+            </Card>
+          </div>
+        </>
       ) : null}
 
       {activeTab === "version" ? (
@@ -3502,12 +4075,13 @@ export default function AdminAccountingClient({
                         <th className="px-3 py-2">Category</th>
                         <th className="px-3 py-2">Fields</th>
                         <th className="px-3 py-2">Status</th>
+                        <th className="px-3 py-2 text-right">Actions</th>
                       </tr>
                     </thead>
                     <tbody>
                       {entities.length === 0 ? (
                         <tr>
-                          <td className="px-3 py-3 text-gray-500" colSpan={6}>
+                          <td className="px-3 py-3 text-gray-500" colSpan={7}>
                             Chưa có entity.
                           </td>
                         </tr>
@@ -3515,6 +4089,8 @@ export default function AdminAccountingClient({
                         entities.map((e, index) => {
                           const entityId = String(e.entityId ?? "");
                           const isSelected = entityId === entEditId;
+                          const isActive = Boolean(e.isActive);
+                          const entityCode = String(e.entityCode ?? "");
                           return (
                             <tr
                               key={entityId || `entity-${index}`}
@@ -3546,13 +4122,36 @@ export default function AdminAccountingClient({
                                 <Badge
                                   variant="secondary"
                                   className={
-                                    Boolean(e.isActive)
+                                    isActive
                                       ? "bg-emerald-50 text-emerald-700"
                                       : "bg-red-50 text-red-700"
                                   }
                                 >
-                                  {Boolean(e.isActive) ? "Active" : "Inactive"}
+                                  {isActive ? "Active" : "Inactive"}
                                 </Badge>
+                              </td>
+                              <td className="px-3 py-2 text-right">
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-7 px-2 text-red-600 hover:bg-red-50 hover:text-red-700"
+                                  disabled={isActive}
+                                  title={
+                                    isActive
+                                      ? "Chỉ xóa được entity Inactive"
+                                      : "Xóa entity"
+                                  }
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    openEntityDeleteConfirm(
+                                      entityId,
+                                      entityCode,
+                                    );
+                                  }}
+                                >
+                                  <Trash2 className="mr-1 h-3.5 w-3.5" />
+                                </Button>
                               </td>
                             </tr>
                           );

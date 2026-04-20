@@ -21,12 +21,12 @@ export default function DashboardLayout({
       try {
         const token = await getValidAccessToken();
         const role = getRoleFromToken(token);
-        if (role === "admin") {
-          router.replace("/admin");
-          return;
-        }
         if (role === "consultant") {
           router.replace("/consultant/accounting");
+          return;
+        }
+        if (role !== "admin" && role !== "owner" && role !== "employee") {
+          router.replace("/auth/login");
           return;
         }
         setAuthorized(true);

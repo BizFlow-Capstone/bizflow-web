@@ -39,7 +39,6 @@ import {
   getFormulaDetail,
   getMappableEntities,
   getMappableEntityDetail,
-  runAccountingPreview,
   updateFieldMappingForTesting,
   updateFormulaTesting,
   updateMappableEntity,
@@ -49,6 +48,12 @@ import type {
   CreateTemplateRequest,
   CreateTemplateVersionRequest,
 } from "@/lib/admin-accounting-api";
+import {
+  getAccountingBooks,
+  getBookRows,
+  getBookSummary,
+  getBookSections,
+} from "@/services/accountingService";
 import BookTemplatePreview from "../../../../components/accounting/BookTemplatePreview";
 import type { VersionOption } from "./types";
 
@@ -194,6 +199,36 @@ const SECTION_TYPE_LABELS: Record<string, string> = {
   per_product: "Theo san pham",
 };
 
+type PreviewBookRow = Record<string, unknown>;
+
+type BookSectionRow = {
+  lineType: string;
+  values?: Record<string, unknown>;
+  dataFilter?: {
+    businessTypeId?: string;
+    section?: string;
+  };
+  taxMetadata?: {
+    taxType?: string;
+  };
+};
+
+type BookSectionsMeta = {
+  sections?: Array<{
+    sectionType?: string;
+    businessTypeId?: string;
+    businessTypeName?: string;
+    rows?: BookSectionRow[];
+  }>;
+  footerRows?: BookSectionRow[];
+};
+
+const PREVIEW_LOCATION_ID = 6;
+const PREVIEW_PERIOD_ID = 2;
+const PREVIEW_GROUP_NUMBER = 1;
+const PREVIEW_TAX_METHOD = "method_1";
+const PREVIEW_BATCH_SIZE = 10;
+
 function parseVisibleFieldCodes(raw: string): string[] {
   if (!raw.trim()) return [];
   try {
@@ -261,6 +296,101 @@ function asString(value: unknown): string {
 
 function asNumber(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function normalizeKey(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+function toSectionDisplayRow(sectionRow: BookSectionRow): PreviewBookRow {
+  const values = { ...(sectionRow.values ?? {}) };
+  const row: PreviewBookRow = {
+    ...values,
+    lineType: values.lineType ?? sectionRow.lineType,
+    rowType: values.rowType ?? sectionRow.lineType,
+  };
+
+  if (!row.rowLabel) {
+    row.rowLabel = row.dien_giai ?? row.description ?? "";
+  }
+
+  if (!row.taxType && sectionRow.taxMetadata?.taxType) {
+    row.taxType = sectionRow.taxMetadata.taxType;
+  }
+
+  return row;
+}
+
+function resolveBusinessTypeId(row: PreviewBookRow): string {
+  return asString(row.businessTypeId) || asString(row.BusinessTypeId);
+}
+
+function assembleRowsFromSections(
+  dataRows: PreviewBookRow[],
+  sectionsMeta: BookSectionsMeta | null,
+): PreviewBookRow[] {
+  if (!sectionsMeta?.sections || sectionsMeta.sections.length === 0) {
+    return dataRows;
+  }
+
+  const groupedDataRows = new Map<string, PreviewBookRow[]>();
+  let ungroupedRows: PreviewBookRow[] = [];
+
+  dataRows.forEach((row) => {
+    const businessTypeId = normalizeKey(resolveBusinessTypeId(row));
+    if (!businessTypeId) {
+      ungroupedRows.push(row);
+      return;
+    }
+    const group = groupedDataRows.get(businessTypeId) ?? [];
+    group.push(row);
+    groupedDataRows.set(businessTypeId, group);
+  });
+
+  const assembledRows: PreviewBookRow[] = [];
+  const consumedBusinessTypes = new Set<string>();
+
+  sectionsMeta.sections.forEach((section) => {
+    (section.rows ?? []).forEach((layoutRow) => {
+      if (layoutRow.lineType !== "data_placeholder") {
+        assembledRows.push(toSectionDisplayRow(layoutRow));
+        return;
+      }
+
+      const placeholderBusinessType = normalizeKey(
+        layoutRow.dataFilter?.businessTypeId ?? section.businessTypeId ?? "",
+      );
+
+      if (placeholderBusinessType) {
+        const matchedRows = groupedDataRows.get(placeholderBusinessType) ?? [];
+        if (matchedRows.length > 0) {
+          assembledRows.push(...matchedRows);
+          consumedBusinessTypes.add(placeholderBusinessType);
+        }
+        return;
+      }
+
+      if (ungroupedRows.length > 0) {
+        assembledRows.push(...ungroupedRows);
+        ungroupedRows = [];
+      }
+    });
+  });
+
+  groupedDataRows.forEach((groupRows, businessTypeId) => {
+    if (consumedBusinessTypes.has(businessTypeId)) return;
+    assembledRows.push(...groupRows);
+  });
+
+  if (ungroupedRows.length > 0) {
+    assembledRows.push(...ungroupedRows);
+  }
+
+  (sectionsMeta.footerRows ?? []).forEach((footerRow) => {
+    assembledRows.push(toSectionDisplayRow(footerRow));
+  });
+
+  return assembledRows.length > 0 ? assembledRows : dataRows;
 }
 
 function asBoolean(value: unknown): boolean | null {
@@ -546,6 +676,11 @@ export default function VersionTab(props: VersionTabProps) {
   > | null>(null);
   const [renderPreviewBusy, setRenderPreviewBusy] = useState(false);
   const [renderPreviewError, setRenderPreviewError] = useState("");
+  const [previewBookId, setPreviewBookId] = useState<number | null>(null);
+  const [bookSectionsMeta, setBookSectionsMeta] =
+    useState<BookSectionsMeta | null>(null);
+  const [bookSectionsBusy, setBookSectionsBusy] = useState(false);
+  const [bookSectionsError, setBookSectionsError] = useState("");
 
   const renderPreviewSummaryMeta = useMemo(() => {
     const root = asRecord(renderPreviewResult);
@@ -560,6 +695,11 @@ export default function VersionTab(props: VersionTabProps) {
       rowType: asString(row.rowType || row.lineType) || "data",
     }));
   }, [renderPreviewResult]);
+
+  const renderPreviewRowsWithSections = useMemo(
+    () => assembleRowsFromSections(renderPreviewRows, bookSectionsMeta),
+    [renderPreviewRows, bookSectionsMeta],
+  );
 
   const renderPreviewFormulaValues = useMemo(() => {
     const summary = renderPreviewSummaryMeta;
@@ -1151,13 +1291,13 @@ export default function VersionTab(props: VersionTabProps) {
   }, [loadFullStructure, previewLoadedForVersionId, selectedVersionId]);
 
   useEffect(() => {
-    const versionId = toNullableNumber(selectedVersionId);
-    if (!versionId) {
+    if (!previewBookId) {
       setRenderPreviewResult(null);
       setRenderPreviewError("");
+      setRenderPreviewBusy(false);
       return;
     }
-    const resolvedVersionId = Number(versionId);
+    const resolvedBookId = previewBookId;
 
     let disposed = false;
 
@@ -1165,26 +1305,19 @@ export default function VersionTab(props: VersionTabProps) {
       setRenderPreviewBusy(true);
       setRenderPreviewError("");
       try {
-        const rulesetId = asNumber(result?.rulesetId) ?? 1;
-        const businessTypeIds = (
-          await getBusinessTypesWithRates(rulesetId).catch(() => [])
-        )
-          .map((item) => String(item.businessTypeId ?? "").trim())
-          .filter(Boolean)
-          .slice(0, 5);
-
-        const preview = await runAccountingPreview({
-          businessLocationId: 6,
-          periodId: 1,
-          templateVersionId: resolvedVersionId,
-          groupNumber: 1,
-          taxMethod: "method_1",
-          rulesetId,
-          businessTypeIds,
-          batchSize: 10,
-        });
+        const [summaryResponse, rowsResponse] = await Promise.all([
+          getBookSummary(PREVIEW_LOCATION_ID, resolvedBookId),
+          getBookRows(PREVIEW_LOCATION_ID, resolvedBookId, PREVIEW_BATCH_SIZE),
+        ]);
 
         if (!disposed) {
+          const preview = {
+            summary: summaryResponse.data ?? {},
+            rows: {
+              items: asArray(rowsResponse.data?.rows),
+            },
+          } as Record<string, unknown>;
+
           setRenderPreviewResult(preview);
         }
       } catch (error) {
@@ -1193,7 +1326,7 @@ export default function VersionTab(props: VersionTabProps) {
           setRenderPreviewError(
             error instanceof Error
               ? error.message
-              : "Không tải được preview data.",
+              : "Không tải được dữ liệu sổ mẫu (summary/rows).",
           );
         }
       } finally {
@@ -1206,7 +1339,93 @@ export default function VersionTab(props: VersionTabProps) {
     return () => {
       disposed = true;
     };
-  }, [selectedVersionId, result?.rulesetId]);
+  }, [previewBookId]);
+
+  useEffect(() => {
+    const versionId = toNullableNumber(selectedVersionId);
+    const normalizedTemplateCode = normalizeKey(templateCode);
+
+    if (!versionId || !normalizedTemplateCode) {
+      setBookSectionsMeta(null);
+      setBookSectionsError("");
+      setBookSectionsBusy(false);
+      setPreviewBookId(null);
+      return;
+    }
+
+    let disposed = false;
+
+    async function loadBookSections() {
+      setBookSectionsBusy(true);
+      setBookSectionsError("");
+
+      try {
+        const booksResponse = await getAccountingBooks(
+          PREVIEW_LOCATION_ID,
+          PREVIEW_PERIOD_ID,
+        );
+
+        const matchingBooks = (booksResponse.data ?? []).filter((book) => {
+          const bookTemplateCode = normalizeKey(
+            String(book.templateCode ?? ""),
+          );
+          return bookTemplateCode === normalizedTemplateCode;
+        });
+
+        const preferredBook =
+          matchingBooks.find((book) => {
+            const taxMethod = normalizeKey(String(book.taxMethod ?? ""));
+            return (
+              book.groupNumber === PREVIEW_GROUP_NUMBER &&
+              (!taxMethod || taxMethod === normalizeKey(PREVIEW_TAX_METHOD))
+            );
+          }) ?? matchingBooks[0];
+
+        if (!preferredBook?.bookId) {
+          if (!disposed) {
+            setBookSectionsMeta(null);
+            setPreviewBookId(null);
+          }
+          return;
+        }
+
+        if (!disposed) {
+          setPreviewBookId(preferredBook.bookId);
+        }
+
+        const sectionsResponse = await getBookSections(
+          PREVIEW_LOCATION_ID,
+          preferredBook.bookId,
+        );
+
+        if (!disposed) {
+          setBookSectionsMeta(
+            (sectionsResponse.data as BookSectionsMeta) ?? null,
+          );
+        }
+      } catch (error) {
+        if (!disposed) {
+          setBookSectionsMeta(null);
+          setPreviewBookId(null);
+          setBookSectionsError(
+            error instanceof Error
+              ? error.message
+              : "Không tải được cấu trúc sections của sổ mẫu.",
+          );
+        }
+      } finally {
+        if (!disposed) {
+          setBookSectionsBusy(false);
+        }
+      }
+    }
+
+    void loadBookSections();
+
+    return () => {
+      disposed = true;
+    };
+  }, [selectedVersionId, templateCode]);
 
   useEffect(() => {
     if (!wizardOpen || wizardStep !== 3 || !selectedVersionId) return;
@@ -2131,6 +2350,16 @@ export default function VersionTab(props: VersionTabProps) {
                 </div>
               ) : (
                 <div className="space-y-3">
+                  {bookSectionsBusy ? (
+                    <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 px-4 py-6 text-sm text-gray-500">
+                      Đang tải cấu trúc sections...
+                    </div>
+                  ) : null}
+                  {bookSectionsError ? (
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-700">
+                      {bookSectionsError}
+                    </div>
+                  ) : null}
                   {renderPreviewBusy ? (
                     <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 px-4 py-6 text-sm text-gray-500">
                       Đang tải preview data...
@@ -2147,8 +2376,8 @@ export default function VersionTab(props: VersionTabProps) {
                     versionLabel={versionLabel}
                     columns={sampleBookColumns}
                     rows={
-                      renderPreviewRows.length > 0
-                        ? renderPreviewRows
+                      renderPreviewRowsWithSections.length > 0
+                        ? renderPreviewRowsWithSections
                         : sampleBookRows
                     }
                     rowDefinitions={rowDefinitions}
@@ -3254,6 +3483,16 @@ export default function VersionTab(props: VersionTabProps) {
                       </div>
                     ) : (
                       <div className="space-y-3 rounded-lg border border-gray-300 bg-white p-4 text-gray-900">
+                        {bookSectionsBusy ? (
+                          <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 px-4 py-4 text-sm text-gray-500">
+                            Đang tải cấu trúc sections...
+                          </div>
+                        ) : null}
+                        {bookSectionsError ? (
+                          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-700">
+                            {bookSectionsError}
+                          </div>
+                        ) : null}
                         {renderPreviewBusy ? (
                           <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 px-4 py-4 text-sm text-gray-500">
                             Đang tải preview data...
@@ -3271,8 +3510,8 @@ export default function VersionTab(props: VersionTabProps) {
                           versionLabel={props.tvLabel || versionLabel}
                           columns={sampleBookColumns}
                           rows={
-                            renderPreviewRows.length > 0
-                              ? renderPreviewRows
+                            renderPreviewRowsWithSections.length > 0
+                              ? renderPreviewRowsWithSections
                               : sampleBookRows
                           }
                           rowDefinitions={rowDefinitions}
