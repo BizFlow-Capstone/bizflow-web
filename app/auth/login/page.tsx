@@ -25,7 +25,11 @@ import {
 } from "@/services/authService";
 import type { AuthAccount } from "@/lib/types/auth";
 import { persistAccountWithLocalAvatar } from "@/lib/auth/avatarLocalCache";
-import { getRoleFromToken, getValidAccessToken } from "@/lib/auth/tokenManager";
+import {
+  clearAuthSession,
+  getRoleFromToken,
+  getValidAccessToken,
+} from "@/lib/auth/tokenManager";
 
 const ACCESS_TOKEN_KEY = "bizflow_access_token";
 const REFRESH_TOKEN_KEY = "bizflow_refresh_token";
@@ -91,8 +95,11 @@ export default function LoginPage() {
           router.replace("/admin");
         } else if (role === "consultant") {
           router.replace("/consultant/accounting");
-        } else {
+        } else if (role === "user") {
           router.replace("/dashboard");
+        } else {
+          clearAuthSession();
+          // Unknown role — stay on login
         }
       } catch {
         // No valid session — stay on login page
@@ -146,8 +153,13 @@ export default function LoginPage() {
         router.push("/admin");
       } else if (role === "consultant") {
         router.push("/consultant/accounting");
-      } else {
+      } else if (role === "user") {
         router.push("/dashboard");
+      } else {
+        clearAuthSession();
+        throw new Error(
+          "Vai trò tài khoản không hợp lệ. Vui lòng đăng nhập lại.",
+        );
       }
     },
     [router],

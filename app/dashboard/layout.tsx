@@ -25,7 +25,7 @@ export default function DashboardLayout({
           router.replace("/consultant/accounting");
           return;
         }
-        if (role !== "admin" && role !== "owner" && role !== "employee") {
+        if (role !== "admin" && role !== "user") {
           router.replace("/auth/login");
           return;
         }
