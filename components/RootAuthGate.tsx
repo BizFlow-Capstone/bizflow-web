@@ -11,7 +11,11 @@ import WhyChooseSection from "@/components/landing/WhyChooseSection";
 import PricingSection from "@/components/landing/PricingSection";
 import TestimonialsSection from "@/components/landing/TestimonialsSection";
 import CTASection from "@/components/landing/CTASection";
-import { getValidAccessToken, getRoleFromToken } from "@/lib/auth/tokenManager";
+import {
+  clearAuthSession,
+  getValidAccessToken,
+  getRoleFromToken,
+} from "@/lib/auth/tokenManager";
 
 export default function RootAuthGate() {
   const router = useRouter();
@@ -31,8 +35,11 @@ export default function RootAuthGate() {
           router.replace("/admin");
         } else if (role === "consultant") {
           router.replace("/consultant/accounting");
-        } else {
+        } else if (role === "user") {
           router.replace("/dashboard");
+        } else {
+          clearAuthSession();
+          router.replace("/auth/login");
         }
         // Keep showing loading while redirect is in progress
       } catch {

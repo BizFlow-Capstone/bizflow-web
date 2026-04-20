@@ -96,7 +96,11 @@ export default function DashboardSidebar() {
   return (
     <aside className="w-64 bg-white border-r border-gray-200 min-h-screen flex flex-col">
       <div className="p-6 ">
-        <Link href="/dashboard" className="flex items-center gap-3">
+        <Link
+          href="/dashboard"
+          prefetch={false}
+          className="flex items-center gap-3"
+        >
           <div className="w-100 h-25  rounded-lg flex items-center justify-center">
             <Image
               src="/pictures/logo.png"
@@ -117,6 +121,7 @@ export default function DashboardSidebar() {
               <li key={item.href}>
                 <Link
                   href={item.href}
+                  prefetch={item.href === "/dashboard" ? false : undefined}
                   className={`flex items-center gap-3 px-4 py-2.5 rounded-lg transition-colors ${
                     isActive
                       ? "bg-cyan-50 text-[#23C4C1]"
