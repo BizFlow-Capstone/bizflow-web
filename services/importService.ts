@@ -9,6 +9,7 @@ import type {
   ApiResponse,
   ImportPagination,
   ImportDetail,
+  ImportRecord,
   ImportFilters,
   CreateImportRequest,
   CreateImportResponse,
@@ -80,12 +81,29 @@ export async function getImports(
     throw new Error(`Failed to fetch imports: ${response.status}`);
   }
 
-  return response.json();
+  const result = (await response.json()) as ApiResponse<ImportPagination>;
+  return {
+    ...result,
+    data: result.data
+      ? {
+          ...result.data,
+          items: (result.data.items ?? []).map((item) => ({
+            ...item,
+            status:
+              typeof item.status === "object" && item.status !== null
+                ? ((item.status as { code: string })
+                    .code as ImportRecord["status"])
+                : item.status,
+            importType:
+              typeof item.importType === "object" && item.importType !== null
+                ? ((item.importType as { code: string })
+                    .code as ImportRecord["importType"])
+                : item.importType,
+          })),
+        }
+      : result.data,
+  };
 }
-
-/**
- * Fetch import detail by ID
- */
 export async function getImportDetail(
   importId: number,
 ): Promise<ApiResponse<ImportDetail>> {
@@ -101,7 +119,27 @@ export async function getImportDetail(
     throw new Error(`Failed to fetch import detail: ${response.status}`);
   }
 
-  return response.json();
+  const result = (await response.json()) as ApiResponse<ImportDetail>;
+  return {
+    ...result,
+    data: result.data
+      ? {
+          ...result.data,
+          status:
+            typeof result.data.status === "object" &&
+            result.data.status !== null
+              ? ((result.data.status as { code: string })
+                  .code as ImportDetail["status"])
+              : result.data.status,
+          importType:
+            typeof result.data.importType === "object" &&
+            result.data.importType !== null
+              ? ((result.data.importType as { code: string })
+                  .code as ImportDetail["importType"])
+              : result.data.importType,
+        }
+      : result.data,
+  };
 }
 
 /**

@@ -25,11 +25,13 @@ export async function GET(request: NextRequest) {
       backendUrl.searchParams.append(key, value),
     );
 
+    const acceptLanguage = request.headers.get("Accept-Language") ?? "vi";
     const response = await fetch(backendUrl.toString(), {
       method: "GET",
       headers: {
         accept: "*/*",
         Authorization: authHeader,
+        "Accept-Language": acceptLanguage,
       },
       cache: "no-store",
     });
@@ -62,6 +64,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const acceptLanguage = request.headers.get("Accept-Language") ?? "vi";
     const body = await request.json();
     const response = await fetch(
       `${BACKEND_API_URL}/api/my-business/accounting/orders`,
@@ -71,6 +74,7 @@ export async function POST(request: NextRequest) {
           "Content-Type": "application/json",
           accept: "*/*",
           Authorization: authHeader,
+          "Accept-Language": acceptLanguage,
         },
         body: JSON.stringify(body),
       },

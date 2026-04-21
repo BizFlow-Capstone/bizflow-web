@@ -100,6 +100,13 @@ function getStatusConfig(status: OrderStatus) {
         color: "red",
         bgClass: "bg-red-50 text-red-700 border-red-200",
       };
+    default:
+      return {
+        label: String(status),
+        icon: Clock,
+        color: "gray",
+        bgClass: "bg-gray-50 text-gray-700 border-gray-200",
+      };
   }
 }
 

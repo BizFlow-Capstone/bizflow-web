@@ -21,6 +21,7 @@ export async function GET(
     }
 
     const { orderId } = await params;
+    const acceptLanguage = request.headers.get("Accept-Language") ?? "vi";
     const response = await fetch(
       `${BACKEND_API_URL}/api/my-business/accounting/orders/${orderId}`,
       {
@@ -28,6 +29,7 @@ export async function GET(
         headers: {
           accept: "*/*",
           Authorization: authHeader,
+          "Accept-Language": acceptLanguage,
         },
         cache: "no-store",
       },
@@ -66,6 +68,7 @@ export async function PUT(
 
     const { orderId } = await params;
     const body = await request.json();
+    const acceptLanguage = request.headers.get("Accept-Language") ?? "vi";
     const response = await fetch(
       `${BACKEND_API_URL}/api/my-business/accounting/orders/${orderId}`,
       {
@@ -74,6 +77,7 @@ export async function PUT(
           "Content-Type": "application/json",
           accept: "*/*",
           Authorization: authHeader,
+          "Accept-Language": acceptLanguage,
         },
         body: JSON.stringify(body),
       },

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { CircleHelp } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -87,6 +88,90 @@ const DB_FORMULA_TYPES = [
   "WEIGHTED_AVG",
   "EXTERNAL_LOOKUP",
 ] as const;
+
+// ─── Aggregate / Lookup metadata ─────────────────────────────────────────────
+const AGGREGATE_FUNS = ["SUM", "COUNT", "AVG"] as const;
+
+type SourceKey = "revenues" | "costs" | "gl_entries" | "stock_movements";
+type LookupEntityKey = "IndustryTaxRates" | "AccountingPeriods";
+
+const SOURCES_META: Record<
+  SourceKey,
+  { label: string; fields: string[]; filterKeys: Record<string, string[]> }
+> = {
+  revenues: {
+    label: "Doanh thu",
+    fields: ["Amount", "RevenueDate", "Description"],
+    filterKeys: { RevenueType: ["sale", "manual", "adjustment"] },
+  },
+  costs: {
+    label: "Chi phí",
+    fields: ["Amount", "CostDate", "Description"],
+    filterKeys: { CostType: ["direct", "indirect", "overhead"] },
+  },
+  gl_entries: {
+    label: "Bút toán GL",
+    fields: ["DebitAmount", "CreditAmount"],
+    filterKeys: { MoneyChannel: ["cash", "bank"] },
+  },
+  stock_movements: {
+    label: "Xuất nhập kho",
+    fields: ["QuantityDelta", "TotalValue", "UnitCost"],
+    filterKeys: {},
+  },
+};
+
+const LOOKUP_META: Record<
+  LookupEntityKey,
+  { label: string; fields: string[]; filterKeys: Record<string, string[]> }
+> = {
+  IndustryTaxRates: {
+    label: "Thuế suất ngành",
+    fields: ["TaxRate"],
+    filterKeys: {
+      TaxType: [
+        "VAT",
+        "PIT_M1",
+        "PIT_M2",
+        "PIT_M3",
+        "PIT_M4",
+        "PIT_M5",
+        "PIT_M6",
+        "PIT_M7",
+      ],
+    },
+  },
+  AccountingPeriods: {
+    label: "Kỳ kế toán",
+    fields: ["OpeningCashBalance", "OpeningBankBalance"],
+    filterKeys: {},
+  },
+};
+
+// ─── Builder tabs ─────────────────────────────────────────────────────────────
+const BUILDER_TABS = [
+  {
+    key: "AGGREGATE",
+    label: "Aggregate",
+    desc: "SUM / COUNT / AVG từ bảng dữ liệu",
+  },
+  {
+    key: "CELL_REF",
+    label: "Expression",
+    desc: "Toán tử +  −  ×  ÷ giữa các ref",
+  },
+  {
+    key: "TAX_RATE",
+    label: "Tax Rate",
+    desc: "Công thức thuế / apply per-industry",
+  },
+  {
+    key: "EXTERNAL_LOOKUP",
+    label: "Lookup",
+    desc: "Tra giá trị từ bảng tham chiếu",
+  },
+] as const;
+type BuilderTabKey = (typeof BUILDER_TABS)[number]["key"];
 
 function tokenId(): string {
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -265,6 +350,412 @@ function tokensToAst(tokens: FormulaToken[]): Record<string, unknown> | null {
   return astStack.length === 1 ? astStack[0] : null;
 }
 
+// ─── FieldHint ──────────────────────────────────────────────────────────────
+function FieldHint({ hint }: { hint: string }) {
+  const [open, setOpen] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function enter() {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => {
+      setOpen(true);
+      timerRef.current = null;
+    }, 250);
+  }
+  function leave() {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+    setOpen(false);
+  }
+
+  return (
+    <span className="relative ml-1 inline-flex items-center">
+      <button
+        type="button"
+        onMouseEnter={enter}
+        onMouseLeave={leave}
+        onFocus={enter}
+        onBlur={leave}
+        className="inline-flex h-4 w-4 items-center justify-center rounded-full text-[#15918f] transition hover:scale-105 focus-visible:outline-none"
+      >
+        <CircleHelp className="h-3.5 w-3.5" />
+      </button>
+      {open && (
+        <div className="pointer-events-none absolute left-0 top-full z-50 mt-1 w-64 rounded-md bg-white px-3 py-2 text-[11px] leading-relaxed text-gray-700 shadow-lg ring-1 ring-[#23C4C1]/35">
+          {hint}
+        </div>
+      )}
+    </span>
+  );
+}
+
+// ─── AggregateEditor ─────────────────────────────────────────────────────────
+function AggregateEditor({
+  exprJson,
+  setExprJson,
+}: {
+  exprJson: string;
+  setExprJson: (v: string) => void;
+}) {
+  const parsed = useMemo(() => {
+    try {
+      return JSON.parse(exprJson) as Record<string, unknown>;
+    } catch {
+      return {} as Record<string, unknown>;
+    }
+  }, [exprJson]);
+
+  const source = (
+    typeof parsed.source === "string" ? parsed.source : "revenues"
+  ) as SourceKey;
+  const field = typeof parsed.field === "string" ? parsed.field : "Amount";
+  const aggFn = typeof parsed.aggregate === "string" ? parsed.aggregate : "SUM";
+  const scope = typeof parsed.scope === "string" ? parsed.scope : "book";
+  const period =
+    typeof parsed.periodFilter === "string" ? parsed.periodFilter : "none";
+  const sign = typeof parsed.sign === "string" ? parsed.sign : "all";
+  const filter =
+    typeof parsed.filter === "object" &&
+    parsed.filter &&
+    !Array.isArray(parsed.filter)
+      ? (parsed.filter as Record<string, string[]>)
+      : ({} as Record<string, string[]>);
+
+  const sourceMeta = SOURCES_META[source] ?? SOURCES_META["revenues"];
+
+  function patch(updates: Record<string, unknown>) {
+    const next: Record<string, unknown> = { ...parsed, ...updates };
+    Object.keys(next).forEach((k) => next[k] === undefined && delete next[k]);
+    setExprJson(JSON.stringify(next));
+  }
+
+  function patchFilter(key: string, opts: string[]) {
+    const nextFilter = { ...filter };
+    if (opts.length === 0) delete nextFilter[key];
+    else nextFilter[key] = opts;
+    patch({ filter: Object.keys(nextFilter).length ? nextFilter : undefined });
+  }
+
+  const sel = "w-full rounded-lg border border-gray-200 px-3 py-2 text-sm";
+  const lbl = "mb-1 block text-xs font-medium text-gray-600";
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div>
+          <label className={lbl}>
+            Nguồn dữ liệu (source)
+            <FieldHint hint="Bảng dữ liệu cần tổng hợp: revenues (doanh thu), costs (chi phí), gl_entries (bút toán tiền mặt/ngân hàng), stock_movements (xuất nhập kho)." />
+          </label>
+          <select
+            value={source}
+            onChange={(e) => {
+              const s = e.target.value as SourceKey;
+              patch({
+                source: s,
+                field: SOURCES_META[s]?.fields[0] ?? "Amount",
+                filter: undefined,
+              });
+            }}
+            className={sel}
+          >
+            {(
+              Object.entries(SOURCES_META) as [
+                SourceKey,
+                (typeof SOURCES_META)[SourceKey],
+              ][]
+            ).map(([k, v]) => (
+              <option key={k} value={k}>
+                {v.label} · {k}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label className={lbl}>
+            Trường (field)
+            <FieldHint hint="Cột cần tổng hợp trong bảng nguồn. Ví dụ: Amount (số tiền), QuantityDelta (số lượng thay đổi), DebitAmount / CreditAmount (nợ / có GL)." />
+          </label>
+          <select
+            value={field}
+            onChange={(e) => patch({ field: e.target.value })}
+            className={sel}
+          >
+            {sourceMeta.fields.map((f) => (
+              <option key={f} value={f}>
+                {f}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label className={lbl}>
+            Hàm tổng hợp
+            <FieldHint hint="SUM: cộng tổng · COUNT: đếm số bản ghi · AVG: trung bình cộng. Kết quả trả về 0 nếu không có dữ liệu." />
+          </label>
+          <select
+            value={aggFn}
+            onChange={(e) => patch({ aggregate: e.target.value })}
+            className={sel}
+          >
+            {AGGREGATE_FUNS.map((fn) => (
+              <option key={fn} value={fn}>
+                {fn}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label className={lbl}>
+            Scope
+            <FieldHint hint="book: lọc theo ngành nghề (business type) của sổ đang tính. location: lấy toàn bộ dữ liệu của địa điểm, không phân biệt ngành." />
+          </label>
+          <select
+            value={scope}
+            onChange={(e) => patch({ scope: e.target.value })}
+            className={sel}
+          >
+            <option value="book">book — Theo ngành / sổ</option>
+            <option value="location">location — Toàn địa điểm</option>
+          </select>
+        </div>
+
+        <div>
+          <label className={lbl}>
+            Period filter
+            <FieldHint hint="current: chỉ lấy phát sinh trong kỳ. before: lấy số dư / phát sinh trước kỳ (dùng cho tồn đầu kỳ). none: không lọc theo kỳ." />
+          </label>
+          <select
+            value={period}
+            onChange={(e) =>
+              patch({
+                periodFilter:
+                  e.target.value === "none" ? undefined : e.target.value,
+              })
+            }
+            className={sel}
+          >
+            <option value="current">current — Trong kỳ</option>
+            <option value="before">before — Trước kỳ (đầu kỳ)</option>
+            <option value="none">none — Không lọc kỳ</option>
+          </select>
+        </div>
+
+        <div>
+          <label className={lbl}>
+            Dấu (sign)
+            <FieldHint hint="all: tất cả bản ghi. positive: chỉ lấy bản ghi có giá trị > 0 (ví dụ: nhập kho). negative: chỉ lấy giá trị < 0 (ví dụ: xuất kho QuantityDelta âm)." />
+          </label>
+          <select
+            value={sign}
+            onChange={(e) =>
+              patch({
+                sign: e.target.value === "all" ? undefined : e.target.value,
+              })
+            }
+            className={sel}
+          >
+            <option value="all">all — Tất cả</option>
+            <option value="positive">positive — Chỉ dương (&gt; 0)</option>
+            <option value="negative">negative — Chỉ âm (&lt; 0)</option>
+          </select>
+        </div>
+      </div>
+
+      {Object.entries(sourceMeta.filterKeys).map(([key, options]) => {
+        const selected: string[] = Array.isArray(filter[key])
+          ? filter[key]
+          : [];
+        return (
+          <div key={key}>
+            <label className={lbl}>Lọc: {key}</label>
+            <div className="mt-1 flex flex-wrap gap-1.5">
+              {options.map((opt) => {
+                const active = selected.includes(opt);
+                return (
+                  <button
+                    key={opt}
+                    type="button"
+                    onClick={() =>
+                      patchFilter(
+                        key,
+                        active
+                          ? selected.filter((s) => s !== opt)
+                          : [...selected, opt],
+                      )
+                    }
+                    className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+                      active
+                        ? "border-[#2563eb]/40 bg-[#eff6ff] text-[#1d4ed8]"
+                        : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
+                    }`}
+                  >
+                    {opt}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+
+      <div className="rounded-lg bg-[#0b1324] px-3 py-2.5">
+        <p className="mb-1 text-[11px] text-gray-400">JSON preview</p>
+        <pre className="overflow-x-auto text-xs text-cyan-300">
+          {JSON.stringify(
+            (() => {
+              try {
+                return JSON.parse(exprJson);
+              } catch {
+                return {};
+              }
+            })(),
+            null,
+            2,
+          )}
+        </pre>
+      </div>
+    </div>
+  );
+}
+
+// ─── LookupEditor ─────────────────────────────────────────────────────────────
+function LookupEditor({
+  exprJson,
+  setExprJson,
+}: {
+  exprJson: string;
+  setExprJson: (v: string) => void;
+}) {
+  const lookupObj = useMemo<Record<string, unknown>>(() => {
+    try {
+      const p = JSON.parse(exprJson) as Record<string, unknown>;
+      if (p.lookup && typeof p.lookup === "object" && !Array.isArray(p.lookup))
+        return p.lookup as Record<string, unknown>;
+      return {};
+    } catch {
+      return {};
+    }
+  }, [exprJson]);
+
+  const entity = (
+    typeof lookupObj.entity === "string"
+      ? lookupObj.entity
+      : "AccountingPeriods"
+  ) as LookupEntityKey;
+  const field = typeof lookupObj.field === "string" ? lookupObj.field : "";
+  const filter =
+    typeof lookupObj.filter === "object" &&
+    lookupObj.filter &&
+    !Array.isArray(lookupObj.filter)
+      ? (lookupObj.filter as Record<string, string>)
+      : ({} as Record<string, string>);
+
+  const entityMeta = LOOKUP_META[entity] ?? LOOKUP_META["AccountingPeriods"];
+
+  function patchLookup(updates: Record<string, unknown>) {
+    const next: Record<string, unknown> = { ...lookupObj, ...updates };
+    Object.keys(next).forEach((k) => next[k] === undefined && delete next[k]);
+    setExprJson(JSON.stringify({ lookup: next }));
+  }
+
+  const sel = "w-full rounded-lg border border-gray-200 px-3 py-2 text-sm";
+  const lbl = "mb-1 block text-xs font-medium text-gray-600";
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div>
+          <label className={lbl}>
+            Bảng tra cứu (entity)
+            <FieldHint hint="IndustryTaxRates: bảng thuế suất theo ngành (VAT, PIT). AccountingPeriods: kỳ kế toán — dùng để lấy số dư đầu kỳ (OpeningCashBalance, OpeningBankBalance)." />
+          </label>
+          <select
+            value={entity}
+            onChange={(e) => {
+              const ent = e.target.value as LookupEntityKey;
+              patchLookup({
+                entity: ent,
+                field: LOOKUP_META[ent]?.fields[0] ?? "",
+                filter: undefined,
+              });
+            }}
+            className={sel}
+          >
+            {(
+              Object.entries(LOOKUP_META) as [
+                LookupEntityKey,
+                (typeof LOOKUP_META)[LookupEntityKey],
+              ][]
+            ).map(([k, v]) => (
+              <option key={k} value={k}>
+                {v.label} · {k}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label className={lbl}>
+            Trường (field)
+            <FieldHint hint="Cột giá trị cần lấy từ bảng tra cứu. Ví dụ: TaxRate (thuế suất), OpeningCashBalance (tiền mặt đầu kỳ), OpeningBankBalance (tiền gửi đầu kỳ)." />
+          </label>
+          <select
+            value={field}
+            onChange={(e) => patchLookup({ field: e.target.value })}
+            className={sel}
+          >
+            {entityMeta.fields.map((f) => (
+              <option key={f} value={f}>
+                {f}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {Object.entries(entityMeta.filterKeys).map(([key, options]) => {
+        const current = typeof filter[key] === "string" ? filter[key] : "";
+        return (
+          <div key={key}>
+            <label className={lbl}>Lọc: {key}</label>
+            <div className="mt-1 flex flex-wrap gap-1.5">
+              {options.map((opt) => (
+                <button
+                  key={opt}
+                  type="button"
+                  onClick={() =>
+                    patchLookup({ filter: { ...filter, [key]: opt } })
+                  }
+                  className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+                    current === opt
+                      ? "border-[#2563eb]/40 bg-[#eff6ff] text-[#1d4ed8]"
+                      : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
+                  }`}
+                >
+                  {opt}
+                </button>
+              ))}
+            </div>
+          </div>
+        );
+      })}
+
+      <div className="rounded-lg bg-[#0b1324] px-3 py-2.5">
+        <p className="mb-1 text-[11px] text-gray-400">JSON preview</p>
+        <pre className="overflow-x-auto text-xs text-cyan-300">
+          {JSON.stringify({ lookup: lookupObj }, null, 2)}
+        </pre>
+      </div>
+    </div>
+  );
+}
+
 export default function FormulaTab(props: FormulaTabProps) {
   const [formulaSearch, setFormulaSearch] = useState("");
   const [variableSearch, setVariableSearch] = useState("");
@@ -284,6 +775,11 @@ export default function FormulaTab(props: FormulaTabProps) {
   );
   const [editingNumValue, setEditingNumValue] = useState("");
   const [customNumInput, setCustomNumInput] = useState("");
+  // Tab override: tracks which formula ID was active when user manually clicked a tab
+  const [tabOverride, setTabOverride] = useState<{
+    fmId: string;
+    tab: BuilderTabKey;
+  } | null>(null);
   const tokenDragHandledRef = useRef(false);
   const lastSelectedFormulaIdRef = useRef("");
 
@@ -344,6 +840,26 @@ export default function FormulaTab(props: FormulaTabProps) {
       lastSelectedFormulaIdRef.current = props.fmId.trim();
     }
   }, [props.fmId]);
+
+  // Derive active builder tab: auto from fmFType, overridable per formula selection
+  const builderTab: BuilderTabKey = useMemo(() => {
+    const t = props.fmFType.trim().toUpperCase();
+    const auto: BuilderTabKey =
+      t === "AGGREGATE"
+        ? "AGGREGATE"
+        : t === "TAX_RATE"
+          ? "TAX_RATE"
+          : t === "EXTERNAL_LOOKUP"
+            ? "EXTERNAL_LOOKUP"
+            : "CELL_REF";
+    // Use manual override only if it's scoped to the same formula
+    if (tabOverride && tabOverride.fmId === props.fmId) return tabOverride.tab;
+    return auto;
+  }, [props.fmFType, props.fmId, tabOverride]);
+
+  function setBuilderTab(tab: BuilderTabKey) {
+    setTabOverride({ fmId: props.fmId, tab });
+  }
 
   const variables = useMemo<VariableItem[]>(() => {
     const map = new Map<string, VariableItem>();
@@ -1049,10 +1565,10 @@ export default function FormulaTab(props: FormulaTabProps) {
           </Dialog>
 
           <Card className="rounded-xl border border-gray-200 bg-white shadow-sm">
-            <CardHeader>
+            <CardHeader className="pb-0">
               <div className="flex items-center justify-between gap-2">
                 <CardTitle>Formula Builder</CardTitle>
-                {builderTokens.length > 0 && (
+                {builderTab === "CELL_REF" && builderTokens.length > 0 && (
                   <button
                     type="button"
                     onClick={() => syncTokens([])}
@@ -1062,270 +1578,359 @@ export default function FormulaTab(props: FormulaTabProps) {
                   </button>
                 )}
               </div>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.5fr_1fr]">
-                {/* ── Left: expression builder ── */}
-                <div className="space-y-3">
-                  {/* Drop zone */}
-                  <div
-                    onDragOver={(event) => event.preventDefault()}
-                    onDrop={onDropToBuilderEnd}
-                    className="min-h-36 rounded-xl border-2 border-dashed border-[#2563eb]/30 bg-[#f0f4ff] p-2"
+
+              {/* Tab bar */}
+              <div className="mt-3 flex flex-wrap gap-1.5 border-b border-gray-100 pb-3">
+                {BUILDER_TABS.map((tab) => (
+                  <button
+                    key={tab.key}
+                    type="button"
+                    onClick={() => setBuilderTab(tab.key)}
+                    className={`rounded-lg border px-3 py-1.5 text-left transition-colors ${
+                      builderTab === tab.key
+                        ? "border-[#2563eb]/40 bg-[#eff6ff] text-[#1d4ed8]"
+                        : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
+                    }`}
                   >
-                    <p className="mb-1.5 text-[11px] text-gray-400">
-                      Nhấn biến / toán tử để thêm · Kéo để sắp xếp · Nhấn ✕ để
-                      xóa token
-                    </p>
-                    <div className="flex min-h-20 flex-wrap items-start gap-1.5 rounded-lg bg-[#0b1324] px-3 py-2.5">
-                      {builderTokens.length === 0 ? (
-                        <span className="text-xs text-gray-500">
-                          Biểu thức trống — thêm biến hoặc số từ bên phải
-                        </span>
-                      ) : (
-                        builderTokens.map((token, index) =>
-                          token.type === "num" &&
-                          editingNumTokenId === token.id ? (
-                            <input
-                              key={token.id}
-                              autoFocus
-                              value={editingNumValue}
-                              onChange={(e) =>
-                                setEditingNumValue(e.target.value)
-                              }
-                              onBlur={commitEditNum}
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter") commitEditNum();
-                                if (e.key === "Escape")
-                                  setEditingNumTokenId(null);
-                              }}
-                              className="w-20 rounded-full bg-violet-900 px-2 py-0.5 text-center font-mono text-xs text-violet-200 outline-none ring-1 ring-violet-400"
-                            />
-                          ) : (
-                            <span
-                              key={token.id}
-                              draggable
-                              onDragStart={(event) =>
-                                onTokenDragStart(event, token.id)
-                              }
-                              onDragEnd={onTokenDragEnd}
-                              onDragOver={(event) => event.preventDefault()}
-                              onDrop={(event) => {
-                                const rect =
-                                  event.currentTarget.getBoundingClientRect();
-                                const insertAfter =
-                                  event.clientX > rect.left + rect.width / 2;
-                                onBuilderDropAt(
-                                  event,
-                                  index + (insertAfter ? 1 : 0),
-                                );
-                              }}
-                              onDoubleClick={() =>
-                                token.type === "num" && startEditNum(token)
-                              }
-                              className={`inline-flex cursor-grab items-center gap-1 rounded-full px-2 py-0.5 text-xs active:cursor-grabbing ${
-                                token.type === "var"
-                                  ? "bg-cyan-900/70 text-cyan-200"
-                                  : token.type === "num"
-                                    ? "bg-violet-900/70 text-violet-200"
-                                    : "bg-slate-800 text-slate-200"
-                              }`}
-                              title={
-                                token.type === "num"
-                                  ? "Nhấp đôi để sửa số"
-                                  : undefined
-                              }
-                            >
-                              {token.type === "var"
-                                ? `[${token.label}]`
-                                : token.label}
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  removeTokenById(token.id);
-                                }}
-                                className="ml-0.5 rounded-full text-[10px] leading-none opacity-50 hover:opacity-100"
-                                title="Xóa token này"
-                              >
-                                ✕
-                              </button>
-                            </span>
-                          ),
-                        )
-                      )}
-                    </div>
-                  </div>
+                    <span className="block text-xs font-semibold">
+                      {tab.label}
+                    </span>
+                    <span className="block text-[11px] text-gray-400">
+                      {tab.desc}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </CardHeader>
 
-                  {/* Hint / Error */}
-                  {builderHint ? (
-                    <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
-                      {builderHint}
-                    </div>
-                  ) : null}
-                  {builderError ? (
-                    <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
-                      {builderError}
-                    </div>
-                  ) : null}
+            <CardContent className="pt-4">
+              {/* ── AGGREGATE tab ── */}
+              {builderTab === "AGGREGATE" && (
+                <AggregateEditor
+                  exprJson={props.fmExprJson}
+                  setExprJson={props.setFmExprJson}
+                />
+              )}
 
-                  {/* Operator palette */}
-                  <div>
-                    <p className="mb-1.5 text-xs font-medium text-gray-500">
-                      Toán tử
-                    </p>
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      {["+", "-", "*", "/", "(", ")"].map((sign) => (
-                        <button
-                          key={sign}
-                          type="button"
-                          draggable
-                          onDragStart={(event) =>
-                            onPaletteTokenDragStart(event, {
-                              type:
-                                sign === "("
-                                  ? "lpar"
-                                  : sign === ")"
-                                    ? "rpar"
-                                    : "op",
-                              value: sign,
-                              label: sign,
-                            })
-                          }
-                          onClick={() =>
-                            addToken({
-                              type:
-                                sign === "("
-                                  ? "lpar"
-                                  : sign === ")"
-                                    ? "rpar"
-                                    : "op",
-                              value: sign,
-                              label: sign,
-                            })
-                          }
-                          className="flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 bg-white text-sm font-semibold text-gray-700 hover:border-[#2563eb]/40 hover:bg-[#eff6ff]"
-                        >
-                          {sign}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Custom number input */}
-                  <div>
-                    <p className="mb-1.5 text-xs font-medium text-gray-500">
-                      Thêm số cố định
-                    </p>
-                    <div className="flex gap-2">
-                      <input
-                        type="number"
-                        value={customNumInput}
-                        onChange={(e) => setCustomNumInput(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") addCustomNum();
-                        }}
-                        placeholder="VD: 100000"
-                        className="w-36 rounded-lg border border-gray-200 px-3 py-1.5 text-sm"
-                      />
-                      <button
-                        type="button"
-                        onClick={addCustomNum}
-                        className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:border-[#2563eb]/30 hover:bg-[#eff6ff]"
-                      >
-                        + Thêm
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Expression string preview */}
-                  <div className="rounded-lg border border-gray-100 bg-gray-50 px-3 py-2">
-                    <p className="text-[11px] text-gray-400">Biểu thức</p>
-                    <p className="mt-0.5 font-mono text-sm text-gray-800">
-                      {tokenExpression ? (
-                        tokenExpression
-                      ) : (
-                        <span className="text-xs text-gray-400">(trống)</span>
-                      )}
-                    </p>
-                  </div>
-                </div>
-
-                {/* ── Right: variable library ── */}
-                <div className="space-y-2">
-                  <p className="text-xs font-medium text-gray-500">
-                    Thư viện biến — nhấn để thêm vào biểu thức
-                  </p>
-                  <input
-                    value={variableSearch}
-                    onChange={(e) => setVariableSearch(e.target.value)}
-                    placeholder="Tìm biến..."
-                    className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-                  />
-                  <div className="flex flex-wrap gap-1.5">
-                    {[
-                      { key: "all", label: "Tất cả" },
-                      { key: "double", label: "Double" },
-                      { key: "integer", label: "Integer" },
-                      { key: "string", label: "String" },
-                    ].map((item) => (
-                      <button
-                        key={item.key}
-                        type="button"
-                        onClick={() => setVariableTypeFilter(item.key)}
-                        className={`rounded-full border px-2.5 py-0.5 text-xs font-medium ${
-                          variableTypeFilter === item.key
-                            ? "border-[#2563eb]/35 bg-[#eff6ff] text-[#1d4ed8]"
-                            : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
-                        }`}
-                      >
-                        {item.label}
-                      </button>
-                    ))}
-                  </div>
-                  <div className="max-h-96 overflow-auto rounded-xl border border-gray-100 bg-white p-2">
-                    {filteredVariables.length === 0 ? (
-                      <p className="p-2 text-xs text-gray-400">
-                        Không tìm thấy biến nào.
+              {/* ── CELL_REF / WEIGHTED_AVG tab ── */}
+              {builderTab === "CELL_REF" && (
+                <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.5fr_1fr]">
+                  {/* ── Left: expression builder ── */}
+                  <div className="space-y-3">
+                    {/* Drop zone */}
+                    <div
+                      onDragOver={(event) => event.preventDefault()}
+                      onDrop={onDropToBuilderEnd}
+                      className="min-h-36 rounded-xl border-2 border-dashed border-[#2563eb]/30 bg-[#f0f4ff] p-2"
+                    >
+                      <p className="mb-1.5 text-[11px] text-gray-400">
+                        Nhấn biến / toán tử để thêm · Kéo để sắp xếp · Nhấn ✕ để
+                        xóa token
                       </p>
-                    ) : (
-                      <div className="flex flex-wrap gap-1.5">
-                        {filteredVariables.map((variable) => (
+                      <div className="flex min-h-20 flex-wrap items-start gap-1.5 rounded-lg bg-[#0b1324] px-3 py-2.5">
+                        {builderTokens.length === 0 ? (
+                          <span className="text-xs text-gray-500">
+                            Biểu thức trống — thêm biến hoặc số từ bên phải
+                          </span>
+                        ) : (
+                          builderTokens.map((token, index) =>
+                            token.type === "num" &&
+                            editingNumTokenId === token.id ? (
+                              <input
+                                key={token.id}
+                                autoFocus
+                                value={editingNumValue}
+                                onChange={(e) =>
+                                  setEditingNumValue(e.target.value)
+                                }
+                                onBlur={commitEditNum}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") commitEditNum();
+                                  if (e.key === "Escape")
+                                    setEditingNumTokenId(null);
+                                }}
+                                className="w-20 rounded-full bg-violet-900 px-2 py-0.5 text-center font-mono text-xs text-violet-200 outline-none ring-1 ring-violet-400"
+                              />
+                            ) : (
+                              <span
+                                key={token.id}
+                                draggable
+                                onDragStart={(event) =>
+                                  onTokenDragStart(event, token.id)
+                                }
+                                onDragEnd={onTokenDragEnd}
+                                onDragOver={(event) => event.preventDefault()}
+                                onDrop={(event) => {
+                                  const rect =
+                                    event.currentTarget.getBoundingClientRect();
+                                  const insertAfter =
+                                    event.clientX > rect.left + rect.width / 2;
+                                  onBuilderDropAt(
+                                    event,
+                                    index + (insertAfter ? 1 : 0),
+                                  );
+                                }}
+                                onDoubleClick={() =>
+                                  token.type === "num" && startEditNum(token)
+                                }
+                                className={`inline-flex cursor-grab items-center gap-1 rounded-full px-2 py-0.5 text-xs active:cursor-grabbing ${
+                                  token.type === "var"
+                                    ? "bg-cyan-900/70 text-cyan-200"
+                                    : token.type === "num"
+                                      ? "bg-violet-900/70 text-violet-200"
+                                      : "bg-slate-800 text-slate-200"
+                                }`}
+                                title={
+                                  token.type === "num"
+                                    ? "Nhấp đôi để sửa số"
+                                    : undefined
+                                }
+                              >
+                                {token.type === "var"
+                                  ? `[${token.label}]`
+                                  : token.label}
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    removeTokenById(token.id);
+                                  }}
+                                  className="ml-0.5 rounded-full text-[10px] leading-none opacity-50 hover:opacity-100"
+                                  title="Xóa token này"
+                                >
+                                  ✕
+                                </button>
+                              </span>
+                            ),
+                          )
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Hint / Error */}
+                    {builderHint ? (
+                      <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                        {builderHint}
+                      </div>
+                    ) : null}
+                    {builderError ? (
+                      <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                        {builderError}
+                      </div>
+                    ) : null}
+
+                    {/* Operator palette */}
+                    <div>
+                      <p className="mb-1.5 text-xs font-medium text-gray-500">
+                        Toán tử
+                      </p>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {["+", "-", "*", "/", "(", ")"].map((sign) => (
                           <button
-                            key={variable.code}
+                            key={sign}
                             type="button"
                             draggable
-                            onDragStart={(event) => {
-                              event.dataTransfer.setData(
-                                "application/x-formula-var",
-                                JSON.stringify({
-                                  code: variable.code,
-                                  label: variable.label,
-                                }),
-                              );
-                            }}
-                            onClick={() =>
-                              addToken({
-                                type: "var",
-                                value: variable.code,
-                                label: variable.label,
+                            onDragStart={(event) =>
+                              onPaletteTokenDragStart(event, {
+                                type:
+                                  sign === "("
+                                    ? "lpar"
+                                    : sign === ")"
+                                      ? "rpar"
+                                      : "op",
+                                value: sign,
+                                label: sign,
                               })
                             }
-                            className="inline-flex items-center gap-1 rounded-full border border-cyan-200 bg-cyan-50 px-2.5 py-1 text-xs text-cyan-800 hover:border-cyan-300 hover:bg-cyan-100"
-                            title={`${variable.label} · ${variable.dataType}`}
+                            onClick={() =>
+                              addToken({
+                                type:
+                                  sign === "("
+                                    ? "lpar"
+                                    : sign === ")"
+                                      ? "rpar"
+                                      : "op",
+                                value: sign,
+                                label: sign,
+                              })
+                            }
+                            className="flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 bg-white text-sm font-semibold text-gray-700 hover:border-[#2563eb]/40 hover:bg-[#eff6ff]"
                           >
-                            <span className="h-1.5 w-1.5 rounded-full bg-cyan-500" />
-                            {variable.code}
+                            {sign}
                           </button>
                         ))}
                       </div>
-                    )}
+                    </div>
+
+                    {/* Custom number input */}
+                    <div>
+                      <p className="mb-1.5 text-xs font-medium text-gray-500">
+                        Thêm số cố định
+                      </p>
+                      <div className="flex gap-2">
+                        <input
+                          type="number"
+                          value={customNumInput}
+                          onChange={(e) => setCustomNumInput(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") addCustomNum();
+                          }}
+                          placeholder="VD: 100000"
+                          className="w-36 rounded-lg border border-gray-200 px-3 py-1.5 text-sm"
+                        />
+                        <button
+                          type="button"
+                          onClick={addCustomNum}
+                          className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:border-[#2563eb]/30 hover:bg-[#eff6ff]"
+                        >
+                          + Thêm
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Expression string preview */}
+                    <div className="rounded-lg border border-gray-100 bg-gray-50 px-3 py-2">
+                      <p className="text-[11px] text-gray-400">Biểu thức</p>
+                      <p className="mt-0.5 font-mono text-sm text-gray-800">
+                        {tokenExpression ? (
+                          tokenExpression
+                        ) : (
+                          <span className="text-xs text-gray-400">(trống)</span>
+                        )}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* ── Right: variable library ── */}
+                  <div className="space-y-2">
+                    <p className="text-xs font-medium text-gray-500">
+                      Thư viện biến — nhấn để thêm vào biểu thức
+                    </p>
+                    <input
+                      value={variableSearch}
+                      onChange={(e) => setVariableSearch(e.target.value)}
+                      placeholder="Tìm biến..."
+                      className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                    />
+                    <div className="flex flex-wrap gap-1.5">
+                      {[
+                        { key: "all", label: "Tất cả" },
+                        { key: "double", label: "Double" },
+                        { key: "integer", label: "Integer" },
+                        { key: "string", label: "String" },
+                      ].map((item) => (
+                        <button
+                          key={item.key}
+                          type="button"
+                          onClick={() => setVariableTypeFilter(item.key)}
+                          className={`rounded-full border px-2.5 py-0.5 text-xs font-medium ${
+                            variableTypeFilter === item.key
+                              ? "border-[#2563eb]/35 bg-[#eff6ff] text-[#1d4ed8]"
+                              : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
+                          }`}
+                        >
+                          {item.label}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="max-h-96 overflow-auto rounded-xl border border-gray-100 bg-white p-2">
+                      {filteredVariables.length === 0 ? (
+                        <p className="p-2 text-xs text-gray-400">
+                          Không tìm thấy biến nào.
+                        </p>
+                      ) : (
+                        <div className="flex flex-wrap gap-1.5">
+                          {filteredVariables.map((variable) => (
+                            <button
+                              key={variable.code}
+                              type="button"
+                              draggable
+                              onDragStart={(event) => {
+                                event.dataTransfer.setData(
+                                  "application/x-formula-var",
+                                  JSON.stringify({
+                                    code: variable.code,
+                                    label: variable.label,
+                                  }),
+                                );
+                              }}
+                              onClick={() =>
+                                addToken({
+                                  type: "var",
+                                  value: variable.code,
+                                  label: variable.label,
+                                })
+                              }
+                              className="inline-flex items-center gap-1 rounded-full border border-cyan-200 bg-cyan-50 px-2.5 py-1 text-xs text-cyan-800 hover:border-cyan-300 hover:bg-cyan-100"
+                              title={`${variable.label} · ${variable.dataType}`}
+                            >
+                              <span className="h-1.5 w-1.5 rounded-full bg-cyan-500" />
+                              {variable.code}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
+
+              {/* ── TAX_RATE tab ── */}
+              {builderTab === "TAX_RATE" && (
+                <div className="space-y-3">
+                  <div className="rounded-lg border border-amber-100 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                    Công thức TAX_RATE thường dùng cấu trúc phức tạp (op + fn +
+                    lookup) hoặc pattern{" "}
+                    <code className="rounded bg-amber-100 px-1">apply</code> cho
+                    per-industry. Chỉnh sửa trực tiếp JSON bên dưới.
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-gray-600">
+                      ExpressionJson (JSON)
+                    </label>
+                    <textarea
+                      value={(() => {
+                        try {
+                          return JSON.stringify(
+                            JSON.parse(props.fmExprJson),
+                            null,
+                            2,
+                          );
+                        } catch {
+                          return props.fmExprJson;
+                        }
+                      })()}
+                      onChange={(e) => {
+                        try {
+                          JSON.parse(e.target.value);
+                          props.setFmExprJson(e.target.value);
+                        } catch {
+                          props.setFmExprJson(e.target.value);
+                        }
+                      }}
+                      rows={16}
+                      spellCheck={false}
+                      className="w-full rounded-lg border border-gray-200 bg-[#0b1324] px-3 py-2.5 font-mono text-xs text-cyan-300 focus:outline-none focus:ring-1 focus:ring-[#2563eb]/40"
+                    />
+                  </div>
+                  <p className="text-[11px] text-gray-400">
+                    Ví dụ:{" "}
+                    <code className="rounded bg-gray-100 px-1">
+                      {`{"op":"MULTIPLY","left":{"ref":"S2A_QUARTERLY_TOTAL"},"right":{"lookup":{"entity":"IndustryTaxRates","field":"TaxRate","filter":{"TaxType":"VAT"}}}}`}
+                    </code>
+                  </p>
+                </div>
+              )}
+
+              {/* ── EXTERNAL_LOOKUP tab ── */}
+              {builderTab === "EXTERNAL_LOOKUP" && (
+                <LookupEditor
+                  exprJson={props.fmExprJson}
+                  setExprJson={props.setFmExprJson}
+                />
+              )}
             </CardContent>
           </Card>
-
           <Card className="rounded-xl border border-gray-200 bg-white shadow-sm">
             <CardHeader>
               <CardTitle>Preview Calculation</CardTitle>

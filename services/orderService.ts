@@ -39,13 +39,15 @@ type BackendOrderDto = {
   cashAmount: number;
   bankAmount: number;
   debtAmount: number;
-  status: "pending" | "completed" | "cancelled";
+  status: { code: "pending" | "completed" | "cancelled"; label: string };
   note?: string | null;
   createdAt: string;
   updatedAt: string;
   completedAt?: string | null;
   cancelledAt?: string | null;
   cancelReason?: string | null;
+  createdByProfileId?: string | null;
+  createdByProfileFullName?: string | null;
   items: BackendOrderDetailDto[];
 };
 
@@ -81,7 +83,7 @@ function resolvePaymentType(
 function resolvePaymentStatus(
   order: BackendOrderDto,
 ): "PAID" | "PARTIAL" | "UNPAID" {
-  if (order.status !== "completed") return "UNPAID";
+  if (order.status.code !== "completed") return "UNPAID";
   if (order.debtAmount > 0 && (order.cashAmount > 0 || order.bankAmount > 0)) {
     return "PARTIAL";
   }
@@ -102,7 +104,7 @@ function mapOrderDtoToRecord(order: BackendOrderDto): OrderRecord {
   return {
     orderId: order.orderId,
     orderCode: order.orderCode,
-    status: order.status,
+    status: order.status.code,
     businessLocationId: DEFAULT_LOCATION_ID,
     businessLocationName: "Cửa hàng",
     refOrderId: order.refOrderId ?? undefined,
@@ -120,8 +122,8 @@ function mapOrderDtoToRecord(order: BackendOrderDto): OrderRecord {
     paidAmount: order.cashAmount + order.bankAmount,
     note: order.note ?? undefined,
     isFromAI: false,
-    createdByUserId: "",
-    createdByUserName: "Hệ thống",
+    createdByUserId: order.createdByProfileId ?? "",
+    createdByUserName: order.createdByProfileFullName ?? "Hệ thống",
     createdAt: order.createdAt,
     updatedAt: order.updatedAt,
     completedAt: order.completedAt ?? undefined,
@@ -306,43 +308,7 @@ export async function confirmOrder(
   data: ConfirmOrderRequest,
 ): Promise<ApiResponse<OrderRecord>> {
   void data;
-  const detail = await getOrderDetail(orderId);
-  const record = mapOrderDtoToRecord({
-    orderId: detail.data.orderId,
-    orderCode: detail.data.orderCode,
-    refOrderId: detail.data.refOrderId,
-    debtorId: detail.data.debtorId,
-    customerName: detail.data.customerName,
-    customerPhone: detail.data.customerPhone,
-    subTotal: detail.data.subTotal,
-    discount: detail.data.discount,
-    totalAmount: detail.data.totalAmount,
-    cashAmount: detail.data.cashAmount,
-    bankAmount: detail.data.bankAmount,
-    debtAmount: detail.data.debtAmount,
-    status: detail.data.status,
-    note: detail.data.note,
-    createdAt: detail.data.createdAt,
-    updatedAt: detail.data.updatedAt ?? detail.data.createdAt,
-    completedAt: detail.data.completedAt,
-    cancelledAt: detail.data.cancelledAt,
-    cancelReason: detail.data.cancelReason,
-    items: detail.data.items.map((item) => ({
-      orderDetailId: item.orderDetailId,
-      saleItemId: item.saleItemId,
-      productId: item.productId,
-      productName: item.productName,
-      unit: item.unit,
-      quantity: item.quantity,
-      unitPrice: item.unitPrice,
-      discount: item.discount,
-      amount: item.amount,
-    })),
-  });
-  return {
-    ...detail,
-    data: record,
-  };
+  return getOrderDetail(orderId);
 }
 
 export async function cancelOrder(
