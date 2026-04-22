@@ -8,6 +8,7 @@ import {
   Bell,
   BellRing,
   Check,
+  Globe,
   LogOut,
   MapPin,
   Settings,
@@ -48,6 +49,12 @@ import {
   setupWebPushNotifications,
   type DashboardNotificationItem,
 } from "@/lib/notifications/pushClient";
+import {
+  getStoredLocale,
+  setStoredLocale,
+  LOCALE_CHANGED_EVENT,
+  type AppLocale,
+} from "@/lib/auth/tokenManager";
 
 type HeaderContent = {
   title: string;
@@ -365,6 +372,7 @@ export default function DashboardHeader() {
   const content = useMemo(() => getHeaderContent(pathname), [pathname]);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [profile, setProfile] = useState<HeaderProfile>(defaultProfile);
+  const [locale, setLocale] = useState<AppLocale>(() => getStoredLocale());
   const [notifications, setNotifications] = useState<
     DashboardNotificationItem[]
   >([]);
@@ -506,6 +514,21 @@ export default function DashboardHeader() {
     }
     window.location.assign(ANOMALIES_ROUTE);
   };
+
+  const toggleLocale = () => {
+    const next: AppLocale = locale === "vi" ? "en" : "vi";
+    setStoredLocale(next);
+    setLocale(next);
+  };
+
+  useEffect(() => {
+    const onLocaleChanged = (e: Event) => {
+      setLocale((e as CustomEvent<AppLocale>).detail);
+    };
+    window.addEventListener(LOCALE_CHANGED_EVENT, onLocaleChanged);
+    return () =>
+      window.removeEventListener(LOCALE_CHANGED_EVENT, onLocaleChanged);
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -725,6 +748,23 @@ export default function DashboardHeader() {
           <div className="flex items-center gap-3">
             <Button variant="ghost" size="icon">
               <Sun className="w-5 h-5 text-gray-600" />
+            </Button>
+
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={toggleLocale}
+              title={
+                locale === "vi"
+                  ? "Chuyển sang Tiếng Anh"
+                  : "Switch to Vietnamese"
+              }
+              className="h-9 gap-1.5 px-2.5 text-gray-600 hover:text-gray-900"
+            >
+              <Globe className="w-4 h-4 shrink-0" />
+              <span className="text-xs font-semibold tracking-wide">
+                {locale === "vi" ? "VI" : "EN"}
+              </span>
             </Button>
 
             <Button

@@ -9,6 +9,23 @@ const REFRESH_TOKEN_KEY = "bizflow_refresh_token";
 const AUTH_CREDENTIALS_KEY = "bizflow_auth_credentials";
 const AUTH_ACCOUNT_KEY = "bizflow_auth_account";
 const AUTH_UPDATED_EVENT = "bizflow-auth-updated";
+export const LOCALE_KEY = "bizflow_locale";
+export const LOCALE_CHANGED_EVENT = "bizflow-locale-changed";
+export type AppLocale = "vi" | "en";
+
+export function getStoredLocale(): AppLocale {
+  if (!isBrowser()) return "vi";
+  const stored = window.localStorage.getItem(LOCALE_KEY);
+  return stored === "en" ? "en" : "vi";
+}
+
+export function setStoredLocale(locale: AppLocale) {
+  if (!isBrowser()) return;
+  window.localStorage.setItem(LOCALE_KEY, locale);
+  window.dispatchEvent(
+    new CustomEvent(LOCALE_CHANGED_EVENT, { detail: locale }),
+  );
+}
 
 type RefreshResponse = {
   success?: boolean;
@@ -186,6 +203,9 @@ export async function authFetch(
   if (accessToken) {
     headers.set("Authorization", `Bearer ${accessToken}`);
   }
+  if (!headers.has("Accept-Language")) {
+    headers.set("Accept-Language", getStoredLocale());
+  }
 
   const response = await fetch(input, {
     ...init,
@@ -200,6 +220,9 @@ export async function authFetch(
     const refreshedAccessToken = await refreshAndPersistToken();
     const retryHeaders = new Headers(init.headers ?? {});
     retryHeaders.set("Authorization", `Bearer ${refreshedAccessToken}`);
+    if (!retryHeaders.has("Accept-Language")) {
+      retryHeaders.set("Accept-Language", getStoredLocale());
+    }
 
     return fetch(input, {
       ...init,

@@ -21,6 +21,7 @@ export async function POST(
     }
 
     const { orderId } = await params;
+    const acceptLanguage = request.headers.get("Accept-Language") ?? "vi";
     const body = await request.json();
     const response = await fetch(
       `${BACKEND_API_URL}/api/my-business/accounting/orders/${orderId}/cancel`,
@@ -30,6 +31,7 @@ export async function POST(
           "Content-Type": "application/json",
           accept: "*/*",
           Authorization: authHeader,
+          "Accept-Language": acceptLanguage,
         },
         body: JSON.stringify(body),
       },

@@ -115,7 +115,22 @@ export async function getProducts(
     throw new Error(`Failed to fetch products: ${response.status}`);
   }
 
-  return response.json();
+  const result = (await response.json()) as ApiResponse<ProductPagination>;
+  return {
+    ...result,
+    data: result.data
+      ? {
+          ...result.data,
+          items: (result.data.items ?? []).map((item) => ({
+            ...item,
+            status:
+              typeof item.status === "object" && item.status !== null
+                ? (item.status as { code: string }).code
+                : item.status,
+          })),
+        }
+      : result.data,
+  };
 }
 
 /**

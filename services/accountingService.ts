@@ -19,6 +19,7 @@ import type {
   AccountingBook,
   CostRecord,
   GLEntryPagination,
+  GLEntryListItem,
   GLEntryFilters,
   GLReferenceCatalog,
   GLViewMode,
@@ -70,6 +71,34 @@ function appendArrayQueryParam(
   });
 }
 
+// Extracts the string code from a BE ReferenceOptionDto { code, label } or returns the value as-is.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function extractRefCode(val: any): string | undefined {
+  if (val === null || val === undefined) return undefined;
+  if (typeof val === "object") return String(val.code);
+  return String(val);
+}
+
+function normalizePeriod(p: AccountingPeriod): AccountingPeriod {
+  return {
+    ...p,
+    periodType: (extractRefCode(p.periodType) ??
+      p.periodType) as AccountingPeriod["periodType"],
+    status: (extractRefCode(p.status) ??
+      p.status) as AccountingPeriod["status"],
+  };
+}
+
+async function parseNormalizedPeriod(
+  response: Response,
+): Promise<ApiResponse<AccountingPeriod>> {
+  const result = await parseApiResponse<AccountingPeriod>(response);
+  return {
+    ...result,
+    data: result.data ? normalizePeriod(result.data) : result.data,
+  };
+}
+
 async function getStringReferenceValues(
   endpoint: string,
 ): Promise<ApiResponse<string[]>> {
@@ -119,7 +148,23 @@ export async function getCosts(
     throw new Error(`Failed to fetch accounting costs: ${response.status}`);
   }
 
-  return parseApiResponse<CostPagination>(response);
+  const result = await parseApiResponse<CostPagination>(response);
+  return {
+    ...result,
+    data: result.data
+      ? {
+          ...result.data,
+          items: (result.data.items ?? []).map((item) => ({
+            ...item,
+            costType: (extractRefCode(item.costType) ??
+              item.costType) as CostRecord["costType"],
+            paymentMethod: extractRefCode(
+              item.paymentMethod,
+            ) as CostRecord["paymentMethod"],
+          })),
+        }
+      : result.data,
+  };
 }
 
 function toCostFormData(
@@ -298,7 +343,14 @@ export async function getRevenuesWithFilters(
       ...result.data,
       items: (result.data?.items ?? []).map((item) => ({
         ...item,
-        paymentMethod: item.moneyChannel,
+        revenueType: (extractRefCode(item.revenueType) ??
+          item.revenueType) as RevenueRecord["revenueType"],
+        moneyChannel: extractRefCode(
+          item.moneyChannel,
+        ) as RevenueRecord["moneyChannel"],
+        paymentMethod: extractRefCode(
+          item.moneyChannel,
+        ) as RevenueRecord["moneyChannel"],
         createdByUserName: item.createdBy || item.createdByUserName || "System",
       })) as RevenueRecord[],
     },
@@ -413,7 +465,17 @@ export async function getAccountingPeriods(
     throw new Error(`Failed to fetch accounting periods: ${response.status}`);
   }
 
-  return parseApiResponse<AccountingPeriod[]>(response);
+  const result = await parseApiResponse<AccountingPeriod[]>(response);
+  return {
+    ...result,
+    data: (result.data ?? []).map((p) => ({
+      ...p,
+      periodType: (extractRefCode(p.periodType) ??
+        p.periodType) as AccountingPeriod["periodType"],
+      status: (extractRefCode(p.status) ??
+        p.status) as AccountingPeriod["status"],
+    })),
+  };
 }
 
 export async function getAccountingPeriodDetail(
@@ -435,7 +497,19 @@ export async function getAccountingPeriodDetail(
     );
   }
 
-  return parseApiResponse<AccountingPeriod>(response);
+  const result = await parseApiResponse<AccountingPeriod>(response);
+  return {
+    ...result,
+    data: result.data
+      ? {
+          ...result.data,
+          periodType: (extractRefCode(result.data.periodType) ??
+            result.data.periodType) as AccountingPeriod["periodType"],
+          status: (extractRefCode(result.data.status) ??
+            result.data.status) as AccountingPeriod["status"],
+        }
+      : result.data,
+  };
 }
 
 export async function deleteAccountingPeriod(
@@ -474,7 +548,7 @@ export async function createAccountingPeriod(
     throw new Error(`Failed to create accounting period: ${response.status}`);
   }
 
-  return parseApiResponse<AccountingPeriod>(response);
+  return parseNormalizedPeriod(response);
 }
 
 export async function createCustomPeriod(
@@ -496,7 +570,7 @@ export async function createCustomPeriod(
     );
   }
 
-  return parseApiResponse<AccountingPeriod>(response);
+  return parseNormalizedPeriod(response);
 }
 
 export async function getOpeningBalanceSuggestion(
@@ -537,7 +611,7 @@ export async function finalizePeriod(
     throw new Error(`Failed to finalize period: ${response.status}`);
   }
 
-  return parseApiResponse<AccountingPeriod>(response);
+  return parseNormalizedPeriod(response);
 }
 
 export async function reopenPeriod(
@@ -558,7 +632,7 @@ export async function reopenPeriod(
     throw new Error(`Failed to reopen period: ${response.status}`);
   }
 
-  return parseApiResponse<AccountingPeriod>(response);
+  return parseNormalizedPeriod(response);
 }
 
 export async function getPeriodAuditLogs(
@@ -584,6 +658,8 @@ export async function getPeriodAuditLogs(
     ...result,
     data: (result.data ?? []).map((log) => ({
       ...log,
+      action: (extractRefCode(log.action) ??
+        log.action) as PeriodAuditLog["action"],
       createdByUserName:
         log.createdByUserName || log.createdByUserId || "Unknown user",
     })),
@@ -704,7 +780,33 @@ export async function getGLEntries(
     throw new Error(`Failed to fetch GL entries: ${response.status}`);
   }
 
-  return parseApiResponse<GLEntryPagination>(response);
+  const result = await parseApiResponse<GLEntryPagination>(response);
+  return {
+    ...result,
+    data: result.data
+      ? {
+          ...result.data,
+          items: (result.data.items ?? []).map((entry) => ({
+            ...entry,
+            transactionType: (extractRefCode(entry.transactionType) ??
+              entry.transactionType) as string,
+            moneyChannel: extractRefCode(
+              entry.moneyChannel,
+            ) as GLEntryListItem["moneyChannel"],
+            effectiveStatus: extractRefCode(
+              entry.effectiveStatus,
+            ) as GLEntryListItem["effectiveStatus"],
+            source: entry.source
+              ? {
+                  ...entry.source,
+                  referenceType: (extractRefCode(entry.source.referenceType) ??
+                    entry.source.referenceType) as string,
+                }
+              : entry.source,
+          })),
+        }
+      : result.data,
+  };
 }
 
 export async function getGLReferenceCatalog(): Promise<
