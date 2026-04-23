@@ -82,14 +82,27 @@ export async function getProducts(
   if (filters.search) params.append("Search", filters.search);
   if (filters.name) params.append("Name", filters.name);
   if (filters.sku) params.append("Sku", filters.sku);
-  if (filters.businessTypeIds && filters.businessTypeIds.length > 0)
-    filters.businessTypeIds.forEach((id) =>
-      params.append("BusinessTypeIds", id),
-    );
-  if (filters.minCostPrice !== undefined)
-    params.append("MinCostPrice", String(filters.minCostPrice));
-  if (filters.maxCostPrice !== undefined)
-    params.append("MaxCostPrice", String(filters.maxCostPrice));
+  if (filters.businessTypeId) {
+    params.append("BusinessTypeId", filters.businessTypeId);
+  } else if (filters.businessTypeIds && filters.businessTypeIds.length > 0) {
+    // Backend currently supports a single BusinessTypeId.
+    params.append("BusinessTypeId", filters.businessTypeIds[0]);
+  }
+
+  const minSellingPrice =
+    filters.minSellingPrice !== undefined
+      ? filters.minSellingPrice
+      : filters.minCostPrice;
+  if (minSellingPrice !== undefined)
+    params.append("MinSellingPrice", String(minSellingPrice));
+
+  const maxSellingPrice =
+    filters.maxSellingPrice !== undefined
+      ? filters.maxSellingPrice
+      : filters.maxCostPrice;
+  if (maxSellingPrice !== undefined)
+    params.append("MaxSellingPrice", String(maxSellingPrice));
+
   if (filters.minStock !== undefined)
     params.append("MinStock", String(filters.minStock));
   if (filters.maxStock !== undefined)
@@ -121,13 +134,21 @@ export async function getProducts(
     data: result.data
       ? {
           ...result.data,
-          items: (result.data.items ?? []).map((item) => ({
-            ...item,
-            status:
-              typeof item.status === "object" && item.status !== null
-                ? (item.status as { code: string }).code
-                : item.status,
-          })),
+          items: (result.data.items ?? []).map((item) => {
+            const imageFromPayload =
+              (item as Product & { ImageUrl?: string | null }).imageUrl ??
+              (item as Product & { ImageUrl?: string | null }).ImageUrl ??
+              null;
+
+            return {
+              ...item,
+              imageUrl: imageFromPayload,
+              status:
+                typeof item.status === "object" && item.status !== null
+                  ? (item.status as { code: string }).code
+                  : item.status,
+            };
+          }),
         }
       : result.data,
   };

@@ -12,6 +12,7 @@ import {
 } from "@tanstack/react-query";
 import {
   getOrders,
+  getAllOrders,
   getOrderDetail,
   createOrder,
   updateOrder,
@@ -38,6 +39,9 @@ export const orderKeys = {
   all: ["orders"] as const,
   lists: () => [...orderKeys.all, "list"] as const,
   list: (filters: OrderFilters) => [...orderKeys.lists(), filters] as const,
+  listsAllPages: () => [...orderKeys.all, "list-all-pages"] as const,
+  listAllPages: (filters: OrderFilters) =>
+    [...orderKeys.listsAllPages(), filters] as const,
   details: () => [...orderKeys.all, "detail"] as const,
   detail: (id: number) => [...orderKeys.details(), id] as const,
 };
@@ -54,6 +58,17 @@ export function useOrders(filters: OrderFilters, enabled = true) {
       return response.data;
     },
     placeholderData: keepPreviousData,
+    enabled,
+  });
+}
+
+export function useAllOrders(filters: OrderFilters, enabled = true) {
+  return useQuery<OrderPagination>({
+    queryKey: orderKeys.listAllPages(filters),
+    queryFn: async () => {
+      const response = await getAllOrders(filters);
+      return response.data;
+    },
     enabled,
   });
 }

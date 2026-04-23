@@ -1,16 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  AlertTriangle,
-  Braces,
-  CheckCircle2,
-  Code,
-  CircleHelp,
-  FileText,
-  GitBranch,
-  Sigma,
-  Sparkles,
-  Type,
-} from "lucide-react";
+import { CircleHelp } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -134,6 +123,61 @@ const DB_FORMULA_TYPES = [
   "EXTERNAL_LOOKUP",
 ] as const;
 
+const TAX_TYPE_OPTIONS = [
+  { value: "VAT", label: "VAT" },
+  { value: "PIT_METHOD_1", label: "PIT_METHOD_1" },
+  { value: "PIT_METHOD_2", label: "PIT_METHOD_2" },
+] as const;
+
+const TAX_RATE_CONTEXT_OPTIONS = [
+  "group_amount",
+  "group_cost",
+  "group_deduction",
+  "total_amount",
+];
+
+const TAX_TYPE_ALIAS: Record<string, string> = {
+  PIT_M1: "PIT_METHOD_1",
+  PIT_METHOD1: "PIT_METHOD_1",
+  PIT_MEHTHOD_1: "PIT_METHOD_1",
+  PIT_MEHTOD_1: "PIT_METHOD_1",
+  PIT_METHOD_01: "PIT_METHOD_1",
+  PIT_M2: "PIT_METHOD_2",
+  PIT_METHOD2: "PIT_METHOD_2",
+  PIT_MEHTHOD_2: "PIT_METHOD_2",
+  PIT_MEHTOD_2: "PIT_METHOD_2",
+  PIT_METHOD_02: "PIT_METHOD_2",
+};
+
+function normalizeTaxType(value: string): string {
+  const normalized = value
+    .trim()
+    .toUpperCase()
+    .replace(/[\s-]+/g, "_");
+  if (!normalized) return "";
+  return TAX_TYPE_ALIAS[normalized] ?? normalized;
+}
+
+function normalizeFormulaType(value: string): string {
+  const normalized = value
+    .trim()
+    .toUpperCase()
+    .replace(/[\s-]+/g, "_");
+  if (!normalized || normalized === "NONE") return "";
+  if (normalized === "LOOKED_UP" || normalized === "LOOKUP") {
+    return "EXTERNAL_LOOKUP";
+  }
+  return normalized;
+}
+
+function formatFormulaTypeLabel(formulaType: string): string {
+  const normalized = normalizeFormulaType(formulaType);
+  if (normalized === "EXTERNAL_LOOKUP") {
+    return "LOOKED_UP (EXTERNAL_LOOKUP)";
+  }
+  return normalized || formulaType;
+}
+
 // ─── Aggregate / Lookup metadata ─────────────────────────────────────────────
 const AGGREGATE_FUNS = ["SUM", "COUNT", "AVG"] as const;
 
@@ -181,16 +225,7 @@ const LOOKUP_META: Record<
     label: "Thuế suất ngành",
     fields: ["TaxRate"],
     filterKeys: {
-      TaxType: [
-        "VAT",
-        "PIT_M1",
-        "PIT_M2",
-        "PIT_M3",
-        "PIT_M4",
-        "PIT_M5",
-        "PIT_M6",
-        "PIT_M7",
-      ],
+      TaxType: TAX_TYPE_OPTIONS.map((item) => item.value),
     },
   },
   AccountingPeriods: {
@@ -223,7 +258,18 @@ const BUILDER_TABS = [
     desc: "Tra giá trị từ bảng tham chiếu",
   },
 ] as const;
-type BuilderTabKey = (typeof BUILDER_TABS)[number]["key"];
+type BuilderTabKey = (typeof BUILDER_TABS)[number]["key"] | "NONE";
+
+function formulaTypeToBuilderTab(formulaType: string): BuilderTabKey {
+  const normalized = normalizeFormulaType(formulaType);
+  if (normalized === "AGGREGATE") return "AGGREGATE";
+  if (normalized === "TAX_RATE") return "TAX_RATE";
+  if (normalized === "EXTERNAL_LOOKUP") return "EXTERNAL_LOOKUP";
+  if (normalized === "CELL_REF" || normalized === "WEIGHTED_AVG") {
+    return "CELL_REF";
+  }
+  return "NONE";
+}
 
 const FORMULA_RECIPES: FormulaRecipe[] = [
   {
@@ -264,7 +310,7 @@ const FORMULA_RECIPES: FormulaRecipe[] = [
         lookup: {
           entity: "IndustryTaxRates",
           field: "TaxRate",
-          filter: { TaxType: "PIT_M1" },
+          filter: { TaxType: "PIT_METHOD_1" },
         },
       },
     },
@@ -849,15 +895,16 @@ function AggregateEditor({
     }
   }, [exprJson]);
 
-  const source = (
-    typeof parsed.source === "string" ? parsed.source : "revenues"
-  ) as SourceKey;
-  const field = typeof parsed.field === "string" ? parsed.field : "Amount";
-  const aggFn = typeof parsed.aggregate === "string" ? parsed.aggregate : "SUM";
-  const scope = typeof parsed.scope === "string" ? parsed.scope : "book";
+  const source =
+    typeof parsed.source === "string" && parsed.source in SOURCES_META
+      ? (parsed.source as SourceKey)
+      : "";
+  const field = typeof parsed.field === "string" ? parsed.field : "";
+  const aggFn = typeof parsed.aggregate === "string" ? parsed.aggregate : "";
+  const scope = typeof parsed.scope === "string" ? parsed.scope : "";
   const period =
-    typeof parsed.periodFilter === "string" ? parsed.periodFilter : "none";
-  const sign = typeof parsed.sign === "string" ? parsed.sign : "all";
+    typeof parsed.periodFilter === "string" ? parsed.periodFilter : "";
+  const sign = typeof parsed.sign === "string" ? parsed.sign : "";
   const filter =
     typeof parsed.filter === "object" &&
     parsed.filter &&
@@ -865,7 +912,7 @@ function AggregateEditor({
       ? (parsed.filter as Record<string, string[]>)
       : ({} as Record<string, string[]>);
 
-  const sourceMeta = SOURCES_META[source] ?? SOURCES_META["revenues"];
+  const sourceMeta = source ? SOURCES_META[source] : null;
 
   function patch(updates: Record<string, unknown>) {
     const next: Record<string, unknown> = { ...parsed, ...updates };
@@ -894,15 +941,24 @@ function AggregateEditor({
           <select
             value={source}
             onChange={(e) => {
-              const s = e.target.value as SourceKey;
+              const s = e.target.value as SourceKey | "";
+              if (!s) {
+                patch({
+                  source: undefined,
+                  field: undefined,
+                  filter: undefined,
+                });
+                return;
+              }
               patch({
                 source: s,
-                field: SOURCES_META[s]?.fields[0] ?? "Amount",
+                field: undefined,
                 filter: undefined,
               });
             }}
             className={sel}
           >
+            <option value="">none</option>
             {(
               Object.entries(SOURCES_META) as [
                 SourceKey,
@@ -923,10 +979,14 @@ function AggregateEditor({
           </label>
           <select
             value={field}
-            onChange={(e) => patch({ field: e.target.value })}
+            onChange={(e) =>
+              patch({ field: e.target.value ? e.target.value : undefined })
+            }
             className={sel}
+            disabled={!sourceMeta}
           >
-            {sourceMeta.fields.map((f) => (
+            <option value="">none</option>
+            {sourceMeta?.fields.map((f) => (
               <option key={f} value={f}>
                 {f}
               </option>
@@ -941,9 +1001,14 @@ function AggregateEditor({
           </label>
           <select
             value={aggFn}
-            onChange={(e) => patch({ aggregate: e.target.value })}
+            onChange={(e) =>
+              patch({
+                aggregate: e.target.value ? e.target.value : undefined,
+              })
+            }
             className={sel}
           >
+            <option value="">none</option>
             {AGGREGATE_FUNS.map((fn) => (
               <option key={fn} value={fn}>
                 {fn}
@@ -959,9 +1024,12 @@ function AggregateEditor({
           </label>
           <select
             value={scope}
-            onChange={(e) => patch({ scope: e.target.value })}
+            onChange={(e) =>
+              patch({ scope: e.target.value ? e.target.value : undefined })
+            }
             className={sel}
           >
+            <option value="">none</option>
             <option value="book">book — Theo ngành / sổ</option>
             <option value="location">location — Toàn địa điểm</option>
           </select>
@@ -976,15 +1044,14 @@ function AggregateEditor({
             value={period}
             onChange={(e) =>
               patch({
-                periodFilter:
-                  e.target.value === "none" ? undefined : e.target.value,
+                periodFilter: e.target.value ? e.target.value : undefined,
               })
             }
             className={sel}
           >
+            <option value="">none</option>
             <option value="current">Trong kỳ (current)</option>
             <option value="before">Trước kỳ (before)</option>
-            <option value="none">Không lọc theo kỳ (none)</option>
           </select>
         </div>
 
@@ -997,11 +1064,12 @@ function AggregateEditor({
             value={sign}
             onChange={(e) =>
               patch({
-                sign: e.target.value === "all" ? undefined : e.target.value,
+                sign: e.target.value ? e.target.value : undefined,
               })
             }
             className={sel}
           >
+            <option value="">none</option>
             <option value="all">Tất cả (all)</option>
             <option value="positive">Chỉ dương (positive)</option>
             <option value="negative">Chỉ âm (negative)</option>
@@ -1009,42 +1077,44 @@ function AggregateEditor({
         </div>
       </div>
 
-      {Object.entries(sourceMeta.filterKeys).map(([key, options]) => {
-        const selected: string[] = Array.isArray(filter[key])
-          ? filter[key]
-          : [];
-        return (
-          <div key={key}>
-            <label className={lbl}>Lọc: {key}</label>
-            <div className="mt-1 flex flex-wrap gap-1.5">
-              {options.map((opt) => {
-                const active = selected.includes(opt);
-                return (
-                  <button
-                    key={opt}
-                    type="button"
-                    onClick={() =>
-                      patchFilter(
-                        key,
-                        active
-                          ? selected.filter((s) => s !== opt)
-                          : [...selected, opt],
-                      )
-                    }
-                    className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
-                      active
-                        ? "border-[#2563eb]/40 bg-[#eff6ff] text-[#1d4ed8]"
-                        : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
-                    }`}
-                  >
-                    {opt}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        );
-      })}
+      {sourceMeta
+        ? Object.entries(sourceMeta.filterKeys).map(([key, options]) => {
+            const selected: string[] = Array.isArray(filter[key])
+              ? filter[key]
+              : [];
+            return (
+              <div key={key}>
+                <label className={lbl}>Lọc: {key}</label>
+                <div className="mt-1 flex flex-wrap gap-1.5">
+                  {options.map((opt) => {
+                    const active = selected.includes(opt);
+                    return (
+                      <button
+                        key={opt}
+                        type="button"
+                        onClick={() =>
+                          patchFilter(
+                            key,
+                            active
+                              ? selected.filter((s) => s !== opt)
+                              : [...selected, opt],
+                          )
+                        }
+                        className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+                          active
+                            ? "border-[#2563eb]/40 bg-[#eff6ff] text-[#1d4ed8]"
+                            : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
+                        }`}
+                      >
+                        {opt}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })
+        : null}
 
       <div className="rounded-lg bg-[#0b1324] px-3 py-2.5">
         <p className="mb-1 text-[11px] text-gray-400">Xem trước dữ liệu JSON</p>
@@ -1070,9 +1140,11 @@ function AggregateEditor({
 function LookupEditor({
   exprJson,
   setExprJson,
+  isCreateMode,
 }: {
   exprJson: string;
   setExprJson: (v: string) => void;
+  isCreateMode: boolean;
 }) {
   const lookupObj = useMemo<Record<string, unknown>>(() => {
     try {
@@ -1085,12 +1157,18 @@ function LookupEditor({
     }
   }, [exprJson]);
 
-  const entity = (
-    typeof lookupObj.entity === "string"
-      ? lookupObj.entity
-      : "AccountingPeriods"
-  ) as LookupEntityKey;
-  const field = typeof lookupObj.field === "string" ? lookupObj.field : "";
+  const entity =
+    typeof lookupObj.entity === "string" && lookupObj.entity in LOOKUP_META
+      ? (lookupObj.entity as LookupEntityKey)
+      : isCreateMode
+        ? ""
+        : "AccountingPeriods";
+  const field =
+    typeof lookupObj.field === "string"
+      ? lookupObj.field
+      : entity
+        ? (LOOKUP_META[entity].fields[0] ?? "")
+        : "";
   const filter =
     typeof lookupObj.filter === "object" &&
     lookupObj.filter &&
@@ -1098,11 +1176,15 @@ function LookupEditor({
       ? (lookupObj.filter as Record<string, string>)
       : ({} as Record<string, string>);
 
-  const entityMeta = LOOKUP_META[entity] ?? LOOKUP_META["AccountingPeriods"];
+  const entityMeta = entity ? LOOKUP_META[entity] : null;
 
   function patchLookup(updates: Record<string, unknown>) {
     const next: Record<string, unknown> = { ...lookupObj, ...updates };
     Object.keys(next).forEach((k) => next[k] === undefined && delete next[k]);
+    if (Object.keys(next).length === 0) {
+      setExprJson("{}");
+      return;
+    }
     setExprJson(JSON.stringify({ lookup: next }));
   }
 
@@ -1120,15 +1202,24 @@ function LookupEditor({
           <select
             value={entity}
             onChange={(e) => {
-              const ent = e.target.value as LookupEntityKey;
+              const ent = e.target.value as LookupEntityKey | "";
+              if (!ent) {
+                patchLookup({
+                  entity: undefined,
+                  field: undefined,
+                  filter: undefined,
+                });
+                return;
+              }
               patchLookup({
                 entity: ent,
-                field: LOOKUP_META[ent]?.fields[0] ?? "",
+                field: undefined,
                 filter: undefined,
               });
             }}
             className={sel}
           >
+            <option value="">none</option>
             {(
               Object.entries(LOOKUP_META) as [
                 LookupEntityKey,
@@ -1149,10 +1240,16 @@ function LookupEditor({
           </label>
           <select
             value={field}
-            onChange={(e) => patchLookup({ field: e.target.value })}
+            onChange={(e) =>
+              patchLookup({
+                field: e.target.value ? e.target.value : undefined,
+              })
+            }
             className={sel}
+            disabled={!entityMeta}
           >
-            {entityMeta.fields.map((f) => (
+            <option value="">none</option>
+            {entityMeta?.fields.map((f) => (
               <option key={f} value={f}>
                 {f}
               </option>
@@ -1161,37 +1258,767 @@ function LookupEditor({
         </div>
       </div>
 
-      {Object.entries(entityMeta.filterKeys).map(([key, options]) => {
-        const current = typeof filter[key] === "string" ? filter[key] : "";
-        return (
-          <div key={key}>
-            <label className={lbl}>Lọc: {key}</label>
-            <div className="mt-1 flex flex-wrap gap-1.5">
-              {options.map((opt) => (
-                <button
-                  key={opt}
-                  type="button"
-                  onClick={() =>
-                    patchLookup({ filter: { ...filter, [key]: opt } })
-                  }
-                  className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
-                    current === opt
-                      ? "border-[#2563eb]/40 bg-[#eff6ff] text-[#1d4ed8]"
-                      : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
-                  }`}
-                >
-                  {opt}
-                </button>
-              ))}
-            </div>
-          </div>
-        );
-      })}
+      {entityMeta
+        ? Object.entries(entityMeta.filterKeys).map(([key, options]) => {
+            const current =
+              typeof filter[key] === "string"
+                ? normalizeTaxType(filter[key])
+                : "";
+            return (
+              <div key={key}>
+                <label className={lbl}>Lọc: {key}</label>
+                <div className="mt-1 flex flex-wrap gap-1.5">
+                  {options.map((opt) => (
+                    <button
+                      key={opt}
+                      type="button"
+                      onClick={() =>
+                        patchLookup({
+                          filter: {
+                            ...filter,
+                            [key]:
+                              key === "TaxType" ? normalizeTaxType(opt) : opt,
+                          },
+                        })
+                      }
+                      className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+                        current === opt
+                          ? "border-[#2563eb]/40 bg-[#eff6ff] text-[#1d4ed8]"
+                          : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
+                      }`}
+                    >
+                      {opt}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            );
+          })
+        : null}
 
       <div className="rounded-lg bg-[#0b1324] px-3 py-2.5">
         <p className="mb-1 text-[11px] text-gray-400">Xem trước dữ liệu JSON</p>
         <pre className="overflow-x-auto text-xs text-cyan-300">
           {JSON.stringify({ lookup: lookupObj }, null, 2)}
+        </pre>
+      </div>
+    </div>
+  );
+}
+
+const TAX_RATE_OPERATOR_OPTIONS = [
+  { value: "ADD", label: "Cộng" },
+  { value: "SUBTRACT", label: "Trừ" },
+  { value: "MULTIPLY", label: "Nhân" },
+  { value: "DIVIDE", label: "Chia" },
+] as const;
+
+const TAX_RATE_OPERATOR_SIGN: Record<string, string> = {
+  ADD: "+",
+  SUBTRACT: "-",
+  MULTIPLY: "*",
+  DIVIDE: "/",
+};
+
+const MAX0_SUB_REF_LIT_PREFIX = "MAX0_SUB_REF_LIT:";
+const MAX0_SUB_REF_LIT_CUSTOM = "__MAX0_SUB_REF_LIT_CUSTOM__";
+
+function buildTaxLookupNode(taxType: string): Record<string, unknown> {
+  return {
+    lookup: {
+      entity: "IndustryTaxRates",
+      field: "TaxRate",
+      filter: {
+        TaxType: normalizeTaxType(taxType) || "VAT",
+      },
+    },
+  };
+}
+
+function parseMaxZeroSubtractPreset(
+  preset: string,
+): { refCode: string; threshold: number } | null {
+  if (!preset.startsWith(MAX0_SUB_REF_LIT_PREFIX)) return null;
+
+  const payload = preset.slice(MAX0_SUB_REF_LIT_PREFIX.length);
+  const splitIndex = payload.lastIndexOf(":");
+  if (splitIndex <= 0) return null;
+
+  const refCode = payload.slice(0, splitIndex).trim();
+  const thresholdRaw = payload.slice(splitIndex + 1).trim();
+  const threshold = Number(thresholdRaw);
+
+  if (!refCode || !Number.isFinite(threshold)) return null;
+  return { refCode, threshold };
+}
+
+function buildMaxZeroSubtractPreset(
+  refCode: string,
+  threshold: number,
+): string {
+  const safeRefCode = refCode.trim() || "FORMULA_CODE";
+  const safeThreshold = Number.isFinite(threshold) ? threshold : 0;
+  return `${MAX0_SUB_REF_LIT_PREFIX}${safeRefCode}:${safeThreshold}`;
+}
+
+function toTaxRateOperandPreset(node: unknown): string | null {
+  const record = asRecord(node);
+  if (!record) return null;
+
+  if (typeof record.ref === "string" && record.ref.trim()) {
+    return `REF:${record.ref.trim()}`;
+  }
+
+  if (typeof record.context === "string" && record.context.trim()) {
+    return `CONTEXT:${record.context.trim()}`;
+  }
+
+  if (typeof record.literal === "number" && Number.isFinite(record.literal)) {
+    return `LITERAL:${record.literal}`;
+  }
+
+  const fnName =
+    typeof record.fn === "string" ? record.fn.trim().toUpperCase() : "";
+  if (
+    fnName === "MAX" &&
+    Array.isArray(record.args) &&
+    record.args.length === 2
+  ) {
+    const firstArg = asRecord(record.args[0]);
+    const secondArg = asRecord(record.args[1]);
+
+    const firstIsZero =
+      typeof firstArg?.literal === "number" && Number(firstArg.literal) === 0;
+    const secondIsZero =
+      typeof secondArg?.literal === "number" && Number(secondArg.literal) === 0;
+
+    if (
+      firstIsZero &&
+      typeof secondArg?.ref === "string" &&
+      secondArg.ref.trim()
+    ) {
+      return `MAX0_REF:${secondArg.ref.trim()}`;
+    }
+    if (
+      secondIsZero &&
+      typeof firstArg?.ref === "string" &&
+      firstArg.ref.trim()
+    ) {
+      return `MAX0_REF:${firstArg.ref.trim()}`;
+    }
+
+    const subtractArg = firstIsZero
+      ? secondArg
+      : secondIsZero
+        ? firstArg
+        : null;
+    const subtractOp =
+      typeof subtractArg?.op === "string"
+        ? subtractArg.op.trim().toUpperCase()
+        : "";
+    if (subtractOp === "SUBTRACT") {
+      const subtractLeft = asRecord(subtractArg?.left);
+      const subtractRight = asRecord(subtractArg?.right);
+      const refCode =
+        typeof subtractLeft?.ref === "string" ? subtractLeft.ref.trim() : "";
+      const threshold = Number(subtractRight?.literal);
+
+      if (refCode && Number.isFinite(threshold)) {
+        return `MAX0_SUB_REF_LIT:${refCode}:${threshold}`;
+      }
+    }
+  }
+
+  const lookup = asRecord(record.lookup);
+  if (!lookup) return null;
+
+  const entity = String(lookup.entity ?? "")
+    .trim()
+    .toUpperCase();
+  const field = String(lookup.field ?? "")
+    .trim()
+    .toUpperCase();
+  if (entity !== "INDUSTRYTAXRATES" || field !== "TAXRATE") return null;
+
+  const filter = asRecord(lookup.filter);
+  const taxType = normalizeTaxType(String(filter?.TaxType ?? "VAT"));
+  return `LOOKUP:${taxType || "VAT"}`;
+}
+
+function parseTaxRateOperandPreset(preset: string): Record<string, unknown> {
+  if (preset.startsWith("LOOKUP:")) {
+    return buildTaxLookupNode(preset.slice("LOOKUP:".length));
+  }
+
+  if (preset.startsWith("MAX0_REF:")) {
+    const refCode = preset.slice("MAX0_REF:".length).trim();
+    return {
+      fn: "MAX",
+      args: [{ literal: 0 }, { ref: refCode }],
+    };
+  }
+
+  const maxZeroSubtract = parseMaxZeroSubtractPreset(preset);
+  if (maxZeroSubtract) {
+    return {
+      fn: "MAX",
+      args: [
+        { literal: 0 },
+        {
+          op: "SUBTRACT",
+          left: { ref: maxZeroSubtract.refCode },
+          right: { literal: maxZeroSubtract.threshold },
+        },
+      ],
+    };
+  }
+
+  if (preset.startsWith("REF:")) {
+    return { ref: preset.slice("REF:".length) };
+  }
+
+  if (preset.startsWith("CONTEXT:")) {
+    return { context: preset.slice("CONTEXT:".length) };
+  }
+
+  if (preset.startsWith("LITERAL:")) {
+    const parsed = Number(preset.slice("LITERAL:".length));
+    return { literal: Number.isFinite(parsed) ? parsed : 0 };
+  }
+
+  return { literal: 0 };
+}
+
+function TaxRateEditor({
+  exprJson,
+  setExprJson,
+  formulaList,
+  isCreateMode,
+}: {
+  exprJson: string;
+  setExprJson: (v: string) => void;
+  formulaList: AccountingFormulaSummary[];
+  isCreateMode: boolean;
+}) {
+  const parsedRoot = useMemo(() => {
+    const parsed = parseExpressionJson(exprJson);
+    return asRecord(parsed) ?? ({} as Record<string, unknown>);
+  }, [exprJson]);
+
+  const leftFallback = useMemo(
+    () => asRecord(parsedRoot.left) ?? { context: "group_amount" },
+    [parsedRoot.left],
+  );
+
+  const rightFallback = useMemo(
+    () => asRecord(parsedRoot.right) ?? buildTaxLookupNode("VAT"),
+    [parsedRoot.right],
+  );
+  const parsedOp =
+    typeof parsedRoot.op === "string" ? parsedRoot.op.toUpperCase() : "";
+  const defaultOp = TAX_RATE_OPERATOR_SIGN[parsedOp] ? parsedOp : "MULTIPLY";
+  const hasTaxRateShape =
+    typeof parsedRoot.op === "string" ||
+    "left" in parsedRoot ||
+    "right" in parsedRoot;
+
+  const leftPreset = toTaxRateOperandPreset(leftFallback);
+  const rightPreset = toTaxRateOperandPreset(rightFallback);
+
+  const referenceFormulas = useMemo(
+    () =>
+      formulaList.filter(
+        (formula) => String(formula.code ?? "").trim().length > 0,
+      ),
+    [formulaList],
+  );
+
+  const externalLookupFormulas = useMemo(
+    () =>
+      referenceFormulas.filter(
+        (formula) =>
+          normalizeFormulaType(String(formula.formulaType ?? "")) ===
+          "EXTERNAL_LOOKUP",
+      ),
+    [referenceFormulas],
+  );
+
+  const maxZeroRefPresets = useMemo(
+    () =>
+      referenceFormulas.map((formula) => {
+        const code = String(formula.code).trim();
+        return {
+          value: `MAX0_REF:${code}`,
+          label: `MAX(0, ${code}) - ${formula.name}`,
+        };
+      }),
+    [referenceFormulas],
+  );
+
+  const supportedValues = useMemo(() => {
+    const values = new Set<string>();
+    TAX_TYPE_OPTIONS.forEach((item) => values.add(`LOOKUP:${item.value}`));
+    TAX_RATE_CONTEXT_OPTIONS.forEach((contextKey) =>
+      values.add(`CONTEXT:${contextKey}`),
+    );
+    ["LITERAL:0", "LITERAL:1"].forEach((item) => values.add(item));
+    referenceFormulas.forEach((formula) => {
+      values.add(`REF:${String(formula.code).trim()}`);
+      values.add(`MAX0_REF:${String(formula.code).trim()}`);
+    });
+    if (leftPreset?.startsWith(MAX0_SUB_REF_LIT_PREFIX)) values.add(leftPreset);
+    if (rightPreset?.startsWith(MAX0_SUB_REF_LIT_PREFIX))
+      values.add(rightPreset);
+    return values;
+  }, [referenceFormulas, leftPreset, rightPreset]);
+
+  const selectedOp = isCreateMode && !hasTaxRateShape ? "" : defaultOp;
+  const selectedLeft =
+    isCreateMode && !hasTaxRateShape
+      ? ""
+      : leftPreset && supportedValues.has(leftPreset)
+        ? leftPreset
+        : "__UNSUPPORTED__";
+  const selectedRight =
+    isCreateMode && !hasTaxRateShape
+      ? ""
+      : rightPreset && supportedValues.has(rightPreset)
+        ? rightPreset
+        : "__UNSUPPORTED__";
+
+  function resolveNodeFromPreset(
+    preset: string,
+    unsupportedFallback: Record<string, unknown>,
+  ): Record<string, unknown> | null {
+    if (!preset) return null;
+    if (preset === "__UNSUPPORTED__") return unsupportedFallback;
+    return parseTaxRateOperandPreset(preset);
+  }
+
+  const leftNodeForEditor = useMemo(
+    () => resolveNodeFromPreset(selectedLeft, leftFallback),
+    [selectedLeft, leftFallback],
+  );
+
+  const rightNodeForEditor = useMemo(
+    () => resolveNodeFromPreset(selectedRight, rightFallback),
+    [selectedRight, rightFallback],
+  );
+
+  const leftMaxZeroSubtract = parseMaxZeroSubtractPreset(selectedLeft);
+  const rightMaxZeroSubtract = parseMaxZeroSubtractPreset(selectedRight);
+
+  function formatMaxZeroSubtractLabel(preset: string): string {
+    const parsed = parseMaxZeroSubtractPreset(preset);
+    if (!parsed) return "MAX(0, REF - threshold)";
+    return `MAX(0, ${parsed.refCode} - ${parsed.threshold})`;
+  }
+
+  function resolveCustomMaxZeroSubtractPreset(
+    target: "left" | "right",
+    candidatePreset: string,
+  ): string {
+    if (candidatePreset !== MAX0_SUB_REF_LIT_CUSTOM) return candidatePreset;
+
+    const currentPreset = target === "left" ? selectedLeft : selectedRight;
+    const parsedCurrent = parseMaxZeroSubtractPreset(currentPreset);
+    const fallbackRefCode =
+      String(referenceFormulas[0]?.code ?? "FORMULA_CODE").trim() ||
+      "FORMULA_CODE";
+
+    return buildMaxZeroSubtractPreset(
+      parsedCurrent?.refCode ?? fallbackRefCode,
+      parsedCurrent?.threshold ?? 0,
+    );
+  }
+
+  function composeTaxRateExpression(
+    nextOp: string,
+    nextLeft: string,
+    nextRight: string,
+  ): Record<string, unknown> {
+    const next: Record<string, unknown> = {};
+
+    if (nextOp) {
+      next.op = nextOp;
+    }
+
+    if (nextLeft) {
+      next.left =
+        nextLeft === "__UNSUPPORTED__"
+          ? leftFallback
+          : parseTaxRateOperandPreset(nextLeft);
+    }
+
+    if (nextRight) {
+      next.right =
+        nextRight === "__UNSUPPORTED__"
+          ? rightFallback
+          : parseTaxRateOperandPreset(nextRight);
+    }
+
+    return next;
+  }
+
+  function persistTaxRateExpressionWithNodes(
+    nextOp: string,
+    nextLeftNode: Record<string, unknown> | null,
+    nextRightNode: Record<string, unknown> | null,
+  ) {
+    const next: Record<string, unknown> = {};
+
+    if (nextOp) {
+      next.op = nextOp;
+    }
+
+    if (nextLeftNode) {
+      next.left = nextLeftNode;
+    }
+
+    if (nextRightNode) {
+      next.right = nextRightNode;
+    }
+
+    if (Object.keys(next).length === 0) {
+      setExprJson("{}");
+      return;
+    }
+
+    setExprJson(JSON.stringify(next, null, 2));
+  }
+
+  function updateLeftNode(nextLeftNode: Record<string, unknown>) {
+    const rightNode = resolveNodeFromPreset(selectedRight, rightFallback);
+    persistTaxRateExpressionWithNodes(selectedOp, nextLeftNode, rightNode);
+  }
+
+  function updateRightNode(nextRightNode: Record<string, unknown>) {
+    const leftNode = resolveNodeFromPreset(selectedLeft, leftFallback);
+    persistTaxRateExpressionWithNodes(selectedOp, leftNode, nextRightNode);
+  }
+
+  function persistTaxRateExpression(
+    nextOp: string,
+    nextLeft: string,
+    nextRight: string,
+  ) {
+    const next = composeTaxRateExpression(nextOp, nextLeft, nextRight);
+    if (Object.keys(next).length === 0) {
+      setExprJson("{}");
+      return;
+    }
+    setExprJson(JSON.stringify(next, null, 2));
+  }
+
+  const inputClass =
+    "w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm";
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-lg border border-cyan-100 bg-cyan-50 px-3 py-2 text-xs text-cyan-900">
+        <div className="flex items-start justify-between gap-2">
+          <p>
+            Chỉnh thuế suất bằng UI: chọn phép toán và chọn 2 vế. Rê vào icon
+            trợ giúp để xem nghĩa của từng nhóm trong dropdown.
+          </p>
+          <FieldHint hint="Lookup thuế suất: trả về tỷ lệ thuế (0.01, 0.03...), chưa phải số tiền. EXTERNAL_LOOKUP: lấy số đầu kỳ hoặc giá trị đã định nghĩa sẵn từ formula khác. Hàm chuẩn MAX(0,...): chặn âm để tránh ra thuế âm trước khi nhân thuế suất." />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-3">
+        <div>
+          <label className="mb-1 block text-xs font-medium text-gray-600">
+            Phép toán
+          </label>
+          <select
+            value={selectedOp}
+            onChange={(event) => {
+              const nextOp = event.target.value;
+              persistTaxRateExpression(nextOp, selectedLeft, selectedRight);
+            }}
+            className={inputClass}
+          >
+            <option value="">none</option>
+            {TAX_RATE_OPERATOR_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label} ({TAX_RATE_OPERATOR_SIGN[option.value]})
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <div className="w-1/2">
+            <label className="mb-1 block text-xs font-medium text-gray-600">
+              Vế trái
+            </label>
+            <select
+              value={selectedLeft}
+              onChange={(event) => {
+                const nextLeft = resolveCustomMaxZeroSubtractPreset(
+                  "left",
+                  event.target.value,
+                );
+                persistTaxRateExpression(selectedOp, nextLeft, selectedRight);
+              }}
+              className={inputClass}
+            >
+              <option value="">none</option>
+              {selectedLeft === "__UNSUPPORTED__" ? (
+                <option value="__UNSUPPORTED__">
+                  Giá trị hiện tại chưa hỗ trợ UI
+                </option>
+              ) : null}
+
+              <optgroup label="Lookup thuế suất">
+                {TAX_TYPE_OPTIONS.map((item) => (
+                  <option key={item.value} value={`LOOKUP:${item.value}`}>
+                    TaxRate {item.label}
+                  </option>
+                ))}
+              </optgroup>
+
+              <optgroup label="Công thức EXTERNAL_LOOKUP">
+                {externalLookupFormulas.length > 0 ? (
+                  externalLookupFormulas.map((formula) => {
+                    const code = String(formula.code).trim();
+                    return (
+                      <option
+                        key={`ext-${formula.formulaId}`}
+                        value={`REF:${code}`}
+                      >
+                        {code} - {formula.name}
+                      </option>
+                    );
+                  })
+                ) : (
+                  <option value="" disabled>
+                    Chưa có công thức EXTERNAL_LOOKUP
+                  </option>
+                )}
+              </optgroup>
+
+              <optgroup label="Hàm chuẩn">
+                {maxZeroRefPresets.length > 0 ? (
+                  maxZeroRefPresets.map((item) => (
+                    <option key={`max-left-${item.value}`} value={item.value}>
+                      {item.label}
+                    </option>
+                  ))
+                ) : (
+                  <option value="" disabled>
+                    Chưa có công thức để tạo MAX(0, REF)
+                  </option>
+                )}
+              </optgroup>
+
+              <optgroup label="Mẫu linh động">
+                <option value={MAX0_SUB_REF_LIT_CUSTOM}>
+                  MAX(0, REF - threshold) (dùng input)
+                </option>
+                {leftMaxZeroSubtract ? (
+                  <option value={selectedLeft}>
+                    {formatMaxZeroSubtractLabel(selectedLeft)}
+                  </option>
+                ) : null}
+              </optgroup>
+
+              <optgroup label="Công thức tham chiếu">
+                {referenceFormulas.map((formula) => {
+                  const code = String(formula.code).trim();
+                  return (
+                    <option
+                      key={`ref-${formula.formulaId}`}
+                      value={`REF:${code}`}
+                    >
+                      {code} - {formula.name}
+                    </option>
+                  );
+                })}
+              </optgroup>
+
+              <optgroup label="Giá trị cố định">
+                <option value="LITERAL:0">0</option>
+                <option value="LITERAL:1">1</option>
+              </optgroup>
+
+              <optgroup label="Biến ngữ cảnh">
+                {TAX_RATE_CONTEXT_OPTIONS.map((contextKey) => (
+                  <option key={contextKey} value={`CONTEXT:${contextKey}`}>
+                    {contextKey}
+                  </option>
+                ))}
+              </optgroup>
+            </select>
+
+            <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50 p-2">
+              <p className="mb-1 text-[11px] font-medium text-slate-600">
+                Cây vế trái: chọn node, dùng + để thêm cùng cấp, ++ để thêm node
+                con, X để xóa.
+              </p>
+              <VisualNodeEditor
+                title="Root left"
+                node={normalizeFormulaNodeOrFallback(leftNodeForEditor)}
+                formulaList={formulaList}
+                onChange={updateLeftNode}
+                onAddSibling={() =>
+                  updateLeftNode({
+                    fn: "MAX",
+                    args: [
+                      normalizeFormulaNodeOrFallback(leftNodeForEditor),
+                      { literal: 0 },
+                    ],
+                  })
+                }
+                onDelete={() => updateLeftNode({ literal: 0 })}
+              />
+            </div>
+          </div>
+
+          <div className="mt-6 flex h-10 w-14 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-lg font-semibold text-slate-600">
+            {TAX_RATE_OPERATOR_SIGN[selectedOp] ?? "*"}
+          </div>
+
+          <div className="w-1/2">
+            <label className="mb-1 block text-xs font-medium text-gray-600">
+              Vế phải
+            </label>
+            <select
+              value={selectedRight}
+              onChange={(event) => {
+                const nextRight = resolveCustomMaxZeroSubtractPreset(
+                  "right",
+                  event.target.value,
+                );
+                persistTaxRateExpression(selectedOp, selectedLeft, nextRight);
+              }}
+              className={inputClass}
+            >
+              <option value="">none</option>
+              {selectedRight === "__UNSUPPORTED__" ? (
+                <option value="__UNSUPPORTED__">
+                  Giá trị hiện tại chưa hỗ trợ UI
+                </option>
+              ) : null}
+
+              <optgroup label="Lookup thuế suất">
+                {TAX_TYPE_OPTIONS.map((item) => (
+                  <option key={item.value} value={`LOOKUP:${item.value}`}>
+                    TaxRate {item.label}
+                  </option>
+                ))}
+              </optgroup>
+
+              <optgroup label="Công thức EXTERNAL_LOOKUP">
+                {externalLookupFormulas.length > 0 ? (
+                  externalLookupFormulas.map((formula) => {
+                    const code = String(formula.code).trim();
+                    return (
+                      <option
+                        key={`ext-right-${formula.formulaId}`}
+                        value={`REF:${code}`}
+                      >
+                        {code} - {formula.name}
+                      </option>
+                    );
+                  })
+                ) : (
+                  <option value="" disabled>
+                    Chưa có công thức EXTERNAL_LOOKUP
+                  </option>
+                )}
+              </optgroup>
+
+              <optgroup label="Hàm chuẩn">
+                {maxZeroRefPresets.length > 0 ? (
+                  maxZeroRefPresets.map((item) => (
+                    <option key={`max-right-${item.value}`} value={item.value}>
+                      {item.label}
+                    </option>
+                  ))
+                ) : (
+                  <option value="" disabled>
+                    Chưa có công thức để tạo MAX(0, REF)
+                  </option>
+                )}
+              </optgroup>
+
+              <optgroup label="Mẫu linh động">
+                <option value={MAX0_SUB_REF_LIT_CUSTOM}>
+                  MAX(0, REF - threshold) (dùng input)
+                </option>
+                {rightMaxZeroSubtract ? (
+                  <option value={selectedRight}>
+                    {formatMaxZeroSubtractLabel(selectedRight)}
+                  </option>
+                ) : null}
+              </optgroup>
+
+              <optgroup label="Công thức tham chiếu">
+                {referenceFormulas.map((formula) => {
+                  const code = String(formula.code).trim();
+                  return (
+                    <option
+                      key={`ref-right-${formula.formulaId}`}
+                      value={`REF:${code}`}
+                    >
+                      {code} - {formula.name}
+                    </option>
+                  );
+                })}
+              </optgroup>
+
+              <optgroup label="Giá trị cố định">
+                <option value="LITERAL:0">0</option>
+                <option value="LITERAL:1">1</option>
+              </optgroup>
+
+              <optgroup label="Biến ngữ cảnh">
+                {TAX_RATE_CONTEXT_OPTIONS.map((contextKey) => (
+                  <option
+                    key={`right-${contextKey}`}
+                    value={`CONTEXT:${contextKey}`}
+                  >
+                    {contextKey}
+                  </option>
+                ))}
+              </optgroup>
+            </select>
+
+            <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50 p-2">
+              <p className="mb-1 text-[11px] font-medium text-slate-600">
+                Cây vế phải: chọn node, dùng + để thêm cùng cấp, ++ để thêm node
+                con, X để xóa.
+              </p>
+              <VisualNodeEditor
+                title="Root right"
+                node={normalizeFormulaNodeOrFallback(rightNodeForEditor)}
+                formulaList={formulaList}
+                onChange={updateRightNode}
+                onAddSibling={() =>
+                  updateRightNode({
+                    fn: "MAX",
+                    args: [
+                      normalizeFormulaNodeOrFallback(rightNodeForEditor),
+                      { literal: 0 },
+                    ],
+                  })
+                }
+                onDelete={() => updateRightNode({ literal: 0 })}
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="rounded-lg bg-[#0b1324] px-3 py-2.5">
+        <p className="mb-1 text-[11px] text-gray-400">Xem trước dữ liệu JSON</p>
+        <pre className="overflow-x-auto text-xs text-cyan-300">
+          {JSON.stringify(
+            composeTaxRateExpression(selectedOp, selectedLeft, selectedRight),
+            null,
+            2,
+          )}
         </pre>
       </div>
     </div>
@@ -1218,6 +2045,65 @@ const VISUAL_NODE_TYPES: Array<{ value: VisualNodeType; label: string }> = [
   { value: "foreach", label: "Lặp theo nhóm" },
   { value: "context", label: "Giá trị runtime" },
 ];
+
+const VISUAL_NODE_LABELS: Record<VisualNodeType, string> = {
+  literal: "Giá trị cố định",
+  ref: "Tham chiếu formula",
+  aggregate: "Tổng hợp dữ liệu",
+  lookup: "Tra cứu bảng phụ",
+  op: "Phép toán 2 vế",
+  fn: "Hàm toán học",
+  foreach: "Lặp theo nhóm",
+  context: "Giá trị runtime",
+};
+
+const VISUAL_NODE_GUIDE: Record<
+  VisualNodeType,
+  { purpose: string; whenToUse: string; example: string }
+> = {
+  literal: {
+    purpose: "Nhập một số cố định, không phụ thuộc dữ liệu DB.",
+    whenToUse: "Đặt ngưỡng miễn thuế, hệ số %, hoặc giá trị fallback 0.",
+    example: "literal = 500000000",
+  },
+  ref: {
+    purpose: "Lấy kết quả từ một formula đã có.",
+    whenToUse:
+      "Tái sử dụng kết quả trung gian như tổng doanh thu, tổng chi phí.",
+    example: 'ref = "S2C_TOTAL_REVENUE"',
+  },
+  aggregate: {
+    purpose: "Tổng hợp dữ liệu thật từ bảng revenues/costs/gl/stock.",
+    whenToUse: "Cần SUM/AVG/COUNT từ giao dịch trong kỳ hoặc trước kỳ.",
+    example: 'SUM source="revenues" field="Amount"',
+  },
+  lookup: {
+    purpose:
+      "Tra một giá trị từ bảng cấu hình như thuế suất hoặc số dư đầu kỳ.",
+    whenToUse: "Cần TaxRate VAT/PIT hoặc OpeningCash/OpeningBank.",
+    example: 'lookup IndustryTaxRates.TaxRate (TaxType="VAT")',
+  },
+  op: {
+    purpose: "Ghép 2 nhánh bằng ADD/SUBTRACT/MULTIPLY/DIVIDE.",
+    whenToUse: "Tính DT - CP, hoặc Thuế = cơ sở tính thuế x thuế suất.",
+    example: "MULTIPLY(left, right)",
+  },
+  fn: {
+    purpose: "Dùng hàm MAX/MIN/ABS cho logic bảo vệ số liệu.",
+    whenToUse: "Chặn số âm bằng MAX(0, x), hoặc lấy trị tuyệt đối ABS(x).",
+    example: "MAX(0, ref)",
+  },
+  foreach: {
+    purpose: "Lặp theo từng nhóm ngành rồi gộp kết quả (SUM/MAX/MIN).",
+    whenToUse: "HKD nhiều ngành, mỗi ngành có thuế suất khác nhau.",
+    example: "foreach revenues -> apply -> reduce SUM",
+  },
+  context: {
+    purpose: "Đọc biến runtime trong foreach như group_amount/group_cost.",
+    whenToUse: "Chỉ dùng bên trong apply của foreach.",
+    example: 'context = "group_amount"',
+  },
+};
 
 const VISUAL_CONTEXT_KEYS = [
   "group_amount",
@@ -1296,20 +2182,69 @@ function normalizeFormulaNodeOrFallback(
   return record;
 }
 
+function appendChildToVisualNode(
+  node: Record<string, unknown>,
+): Record<string, unknown> {
+  const nodeType = detectVisualNodeType(node);
+
+  if (nodeType === "fn") {
+    const args = Array.isArray(node.args) ? [...node.args] : [];
+    args.push({ literal: 0 });
+    return { ...node, args };
+  }
+
+  if (nodeType === "op") {
+    const left = normalizeFormulaNodeOrFallback(node.left);
+    const right = normalizeFormulaNodeOrFallback(node.right);
+    return {
+      ...node,
+      right: {
+        fn: "MAX",
+        args: [right, { literal: 0 }],
+      },
+      left,
+    };
+  }
+
+  if (nodeType === "foreach") {
+    const apply = normalizeFormulaNodeOrFallback(node.apply);
+    return {
+      ...node,
+      apply: {
+        fn: "MAX",
+        args: [apply, { literal: 0 }],
+      },
+    };
+  }
+
+  return {
+    fn: "MAX",
+    args: [node, { literal: 0 }],
+  };
+}
+
 function VisualNodeEditor({
   node,
   onChange,
   formulaList,
   title,
   depth = 0,
+  onAddSibling,
+  onDelete,
+  onAddChild,
 }: {
   node: Record<string, unknown>;
   onChange: (next: Record<string, unknown>) => void;
   formulaList: AccountingFormulaSummary[];
   title: string;
   depth?: number;
+  onAddSibling?: () => void;
+  onDelete?: () => void;
+  onAddChild?: () => void;
 }) {
   const nodeType = detectVisualNodeType(node);
+  const nodeGuide = VISUAL_NODE_GUIDE[nodeType];
+  const nodeTypeLabel = VISUAL_NODE_LABELS[nodeType];
 
   function switchType(nextType: VisualNodeType) {
     onChange(createDefaultVisualNode(nextType));
@@ -1318,6 +2253,11 @@ function VisualNodeEditor({
   const inputClass =
     "w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm";
   const labelClass = "mb-1 block text-xs font-medium text-slate-600";
+  const nodeGuideHint =
+    `Node hiện tại: ${nodeTypeLabel}. ` +
+    `${nodeGuide.purpose} ` +
+    `Dùng khi: ${nodeGuide.whenToUse}. ` +
+    `Ví dụ: ${nodeGuide.example}.`;
 
   return (
     <div
@@ -1325,18 +2265,60 @@ function VisualNodeEditor({
       style={{ marginLeft: depth > 0 ? depth * 10 : 0 }}
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-sm font-semibold text-slate-800">{title}</p>
-        <select
-          value={nodeType}
-          onChange={(e) => switchType(e.target.value as VisualNodeType)}
-          className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-medium text-slate-700"
-        >
-          {VISUAL_NODE_TYPES.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
+        <div className="flex items-center">
+          <p className="text-sm font-semibold text-slate-800">{title}</p>
+          <FieldHint hint={nodeGuideHint} />
+        </div>
+        <div className="flex items-center gap-1.5">
+          <select
+            value={nodeType}
+            onChange={(e) => switchType(e.target.value as VisualNodeType)}
+            className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-medium text-slate-700"
+          >
+            {VISUAL_NODE_TYPES.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+
+          {onAddSibling ? (
+            <button
+              type="button"
+              className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+              onClick={onAddSibling}
+              title="Thêm node cùng cấp"
+            >
+              +
+            </button>
+          ) : null}
+
+          <button
+            type="button"
+            className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+            onClick={() => {
+              if (onAddChild) {
+                onAddChild();
+                return;
+              }
+              onChange(appendChildToVisualNode(node));
+            }}
+            title="Thêm node con"
+          >
+            ++
+          </button>
+
+          {onDelete ? (
+            <button
+              type="button"
+              className="rounded-md border border-rose-300 bg-rose-50 px-2 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-100"
+              onClick={onDelete}
+              title="Xóa node"
+            >
+              X
+            </button>
+          ) : null}
+        </div>
       </div>
 
       {nodeType === "literal" ? (
@@ -1474,7 +2456,9 @@ function VisualNodeEditor({
               value={
                 typeof asRecord(asRecord(node.lookup)?.filter)?.TaxType ===
                 "string"
-                  ? (asRecord(asRecord(node.lookup)?.filter)?.TaxType as string)
+                  ? normalizeTaxType(
+                      String(asRecord(asRecord(node.lookup)?.filter)?.TaxType),
+                    )
                   : "VAT"
               }
               onChange={(e) => {
@@ -1483,19 +2467,19 @@ function VisualNodeEditor({
                 onChange({
                   lookup: {
                     ...lookup,
-                    filter: { ...filter, TaxType: e.target.value },
+                    filter: {
+                      ...filter,
+                      TaxType: normalizeTaxType(e.target.value),
+                    },
                   },
                 });
               }}
             >
-              <option value="VAT">VAT</option>
-              <option value="PIT_M1">PIT_M1</option>
-              <option value="PIT_M2">PIT_M2</option>
-              <option value="PIT_M3">PIT_M3</option>
-              <option value="PIT_M4">PIT_M4</option>
-              <option value="PIT_M5">PIT_M5</option>
-              <option value="PIT_M6">PIT_M6</option>
-              <option value="PIT_M7">PIT_M7</option>
+              {TAX_TYPE_OPTIONS.map((item) => (
+                <option key={item.value} value={item.value}>
+                  {item.label}
+                </option>
+              ))}
             </select>
           </div>
         </div>
@@ -1594,6 +2578,20 @@ function VisualNodeEditor({
                   depth={depth + 1}
                   formulaList={formulaList}
                   node={normalizeFormulaNodeOrFallback(arg)}
+                  onAddSibling={() => {
+                    const currentArgs = Array.isArray(node.args)
+                      ? [...node.args]
+                      : [];
+                    currentArgs.splice(index + 1, 0, { literal: 0 });
+                    onChange({ ...node, args: currentArgs });
+                  }}
+                  onDelete={() => {
+                    const currentArgs = Array.isArray(node.args)
+                      ? [...node.args]
+                      : [];
+                    currentArgs.splice(index, 1);
+                    onChange({ ...node, args: currentArgs });
+                  }}
                   onChange={(updatedArg) => {
                     const currentArgs = Array.isArray(node.args)
                       ? [...node.args]
@@ -1745,6 +2743,7 @@ export default function FormulaTab(props: FormulaTabProps) {
   const lastSelectedFormulaIdRef = useRef("");
 
   const isCreateMode = !props.fmId.trim();
+  const isFormulaTypeEditable = isCreateMode;
   const isActiveFormula =
     props.fmIsActive === "true" ||
     props.fmActive.trim().toLowerCase() === "active";
@@ -1854,17 +2853,18 @@ export default function FormulaTab(props: FormulaTabProps) {
 
   // Derive active builder tab from formulaType.
   const builderTab: BuilderTabKey = useMemo(() => {
-    const t = props.fmFType.trim().toUpperCase();
-    return t === "AGGREGATE"
-      ? "AGGREGATE"
-      : t === "TAX_RATE"
-        ? "TAX_RATE"
-        : t === "EXTERNAL_LOOKUP"
-          ? "EXTERNAL_LOOKUP"
-          : "CELL_REF";
+    return formulaTypeToBuilderTab(props.fmFType);
   }, [props.fmFType]);
 
   function setBuilderTab(tab: BuilderTabKey) {
+    if (tab === "NONE") {
+      setBuilderTokens([]);
+      setBuilderError("");
+      props.setFmFType("");
+      props.setFmExprJson("{}");
+      return;
+    }
+
     // Khi thay đổi formula type, làm sạch token builder của tab CELL_REF
     if (tab === "CELL_REF" && builderTokens.length === 0) {
       // Nếu chuyển sang CELL_REF và chưa có token, hãy tải token từ expression hiện tại
@@ -2007,7 +3007,7 @@ export default function FormulaTab(props: FormulaTabProps) {
   }, [formulaSearch, props.formulaList]);
 
   const formulaTypeOptions = useMemo(() => {
-    const current = props.fmFType.trim();
+    const current = normalizeFormulaType(props.fmFType);
     if (
       !current ||
       DB_FORMULA_TYPES.includes(current as (typeof DB_FORMULA_TYPES)[number])
@@ -2412,8 +3412,8 @@ export default function FormulaTab(props: FormulaTabProps) {
         </Card>
       </div>
 
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.15fr_1.85fr]">
-        <Card className="rounded-xl border border-gray-200 bg-white shadow-sm">
+      <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-[1.15fr_1.85fr]">
+        <Card className="h-fit self-start rounded-xl border border-gray-200 bg-white shadow-sm">
           <CardHeader>
             <CardTitle>Thư viện công thức</CardTitle>
           </CardHeader>
@@ -2424,7 +3424,7 @@ export default function FormulaTab(props: FormulaTabProps) {
               placeholder="Tìm công thức..."
               className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
             />
-            <div className="max-h-1/3 space-y-2 overflow-auto pr-1">
+            <div className="max-h-128 space-y-2 overflow-y-auto pr-1">
               {filteredFormulas.map((formula) => (
                 <button
                   key={formula.formulaId}
@@ -2465,103 +3465,6 @@ export default function FormulaTab(props: FormulaTabProps) {
         </Card>
 
         <div className="space-y-6">
-          {/* <Card className="overflow-hidden rounded-2xl border border-slate-200 bg-[radial-gradient(circle_at_top_left,rgba(59,130,246,0.14),transparent_42%),linear-gradient(135deg,#0f172a_0%,#111827_48%,#172554_100%)] shadow-sm">
-            <CardContent className="grid gap-5 p-5 lg:grid-cols-[1.35fr_1fr]">
-              <div className="space-y-4 text-white">
-                <div className="flex items-center gap-2 text-sky-200">
-                  <Sparkles className="h-4 w-4" />
-                  <p className="text-xs font-semibold uppercase tracking-[0.24em]">
-                    Admin Formula Studio
-                  </p>
-                </div>
-                <div>
-                  <p className="text-2xl font-semibold leading-tight">
-                    {props.fmName.trim() || "Chưa chọn formula"}
-                  </p>
-                  <p className="mt-2 font-mono text-sm text-sky-100/85">
-                    {props.fmCode.trim() || "CODE_PENDING"}
-                  </p>
-                  <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-200">
-                    {props.fmExplanation ||
-                      "Formula engine của BE evaluate ExpressionJson theo AST. UI này ưu tiên node thật của engine, explanation từ backend và khả năng sửa JSON gốc an toàn."}
-                  </p>
-                </div>
-                <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-                  <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
-                    <p className="text-[11px] uppercase tracking-wide text-slate-300">
-                      Node count
-                    </p>
-                    <p className="mt-1 text-xl font-semibold">{astNodeCount}</p>
-                  </div>
-                  <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
-                    <p className="text-[11px] uppercase tracking-wide text-slate-300">
-                      Refs
-                    </p>
-                    <p className="mt-1 text-xl font-semibold">
-                      {referencedFormulaCodes.length}
-                    </p>
-                  </div>
-                  <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
-                    <p className="text-[11px] uppercase tracking-wide text-slate-300">
-                      Builder mode
-                    </p>
-                    <p className="mt-1 text-sm font-semibold capitalize">
-                      {compatibleBuilderMode}
-                    </p>
-                  </div>
-                  <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
-                    <p className="text-[11px] uppercase tracking-wide text-slate-300">
-                      Status
-                    </p>
-                    <p className="mt-1 text-sm font-semibold">
-                      {isCreateMode ? "Draft mới" : isActiveFormula ? "Active" : "Draft"}
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="space-y-4 rounded-2xl border border-white/10 bg-white/6 p-4 backdrop-blur">
-                <div className="flex items-center gap-2 text-slate-100">
-                  <Braces className="h-4 w-4 text-cyan-300" />
-                  <p className="text-sm font-semibold">Engine coverage</p>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {usedNodeTypes.length > 0 ? (
-                    usedNodeTypes.map((nodeType) => (
-                      <Badge
-                        key={nodeType}
-                        variant="secondary"
-                        className="bg-white/10 text-cyan-100 hover:bg-white/10"
-                      >
-                        {nodeType}
-                      </Badge>
-                    ))
-                  ) : (
-                    <span className="text-xs text-slate-300">
-                      Formula này chưa có node nào.
-                    </span>
-                  )}
-                </div>
-                <div className="space-y-2">
-                  {compatibleBuilderMode === "advanced" ? (
-                    <div className="rounded-xl border border-amber-400/25 bg-amber-300/10 px-3 py-2 text-sm text-amber-100">
-                      Node hiện tại dùng AST nâng cao. Nên sửa ở JSON Studio hoặc dùng recipe theo schema thay vì drag-drop cơ bản.
-                    </div>
-                  ) : (
-                    <div className="rounded-xl border border-emerald-400/25 bg-emerald-300/10 px-3 py-2 text-sm text-emerald-100">
-                      Formula này tương thích với builder cơ bản {`(literal/ref/op)`}.
-                    </div>
-                  )}
-                  {nodeSchemaError ? (
-                    <div className="rounded-xl border border-rose-400/25 bg-rose-300/10 px-3 py-2 text-sm text-rose-100">
-                      {nodeSchemaError}
-                    </div>
-                  ) : null}
-                </div>
-              </div>
-            </CardContent>
-          </Card> */}
-
           <Card className="rounded-xl border border-gray-200 bg-white shadow-sm">
             <CardHeader>
               <div className="flex items-center justify-between gap-2">
@@ -2626,17 +3529,25 @@ export default function FormulaTab(props: FormulaTabProps) {
                     Loại công thức
                   </label>
                   <select
-                    value={props.fmFType}
-                    onChange={(e) => props.setFmFType(e.target.value)}
+                    value={normalizeFormulaType(props.fmFType)}
+                    onChange={(e) =>
+                      setBuilderTab(formulaTypeToBuilderTab(e.target.value))
+                    }
                     className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+                    disabled={!isFormulaTypeEditable}
                   >
-                    <option value="">Chọn loại công thức</option>
+                    <option value="">none</option>
                     {formulaTypeOptions.map((type) => (
                       <option key={type} value={type}>
-                        {type}
+                        {formatFormulaTypeLabel(type)}
                       </option>
                     ))}
                   </select>
+                  {!isFormulaTypeEditable ? (
+                    <p className="mt-1 text-[11px] text-amber-700">
+                      FormulaType bị khóa sau khi tạo. Clone/Edit không cho đổi.
+                    </p>
+                  ) : null}
                 </div>
                 <div className="md:col-span-2">
                   <label className="mb-1 block text-xs font-medium text-gray-600">
@@ -2885,25 +3796,27 @@ export default function FormulaTab(props: FormulaTabProps) {
               </div>
 
               <div className="mt-3 flex flex-wrap gap-1.5 border-b border-gray-100 pb-3">
-                {BUILDER_TABS.map((tab) => (
-                  <button
-                    key={tab.key}
-                    type="button"
-                    onClick={() => setBuilderTab(tab.key)}
-                    className={`rounded-lg border px-3 py-1.5 text-left transition-colors ${
-                      builderTab === tab.key
-                        ? "border-[#2563eb]/40 bg-[#eff6ff] text-[#1d4ed8]"
-                        : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
-                    }`}
-                  >
-                    <span className="block text-xs font-semibold">
-                      {tab.label}
-                    </span>
-                    <span className="block text-[11px] text-gray-400">
-                      {tab.desc}
-                    </span>
-                  </button>
-                ))}
+                {builderTab === "NONE" ? (
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                    Chọn formulaType để mở trình tạo công thức tương ứng.
+                  </div>
+                ) : (
+                  BUILDER_TABS.filter((tab) => tab.key === builderTab).map(
+                    (tab) => (
+                      <div
+                        key={tab.key}
+                        className="rounded-lg border border-[#2563eb]/40 bg-[#eff6ff] px-3 py-1.5 text-left text-[#1d4ed8]"
+                      >
+                        <span className="block text-xs font-semibold">
+                          {tab.label}
+                        </span>
+                        <span className="block text-[11px] text-[#1d4ed8]/75">
+                          {tab.desc}
+                        </span>
+                      </div>
+                    ),
+                  )
+                )}
               </div>
             </CardHeader>
 
@@ -3316,48 +4229,12 @@ export default function FormulaTab(props: FormulaTabProps) {
 
                 {/* ── TAX_RATE tab ── */}
                 {builderTab === "TAX_RATE" && (
-                  <div className="space-y-3">
-                    <div className="rounded-lg border border-amber-100 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                      Công thức thuế thường có nhiều bước tính. Nếu cần chỉnh
-                      sâu, bạn có thể sửa trực tiếp ở phần dữ liệu JSON bên
-                      dưới.
-                    </div>
-                    <div>
-                      <label className="mb-1 block text-xs font-medium text-gray-600">
-                        Công thức gốc (JSON)
-                      </label>
-                      <textarea
-                        value={(() => {
-                          try {
-                            return JSON.stringify(
-                              JSON.parse(props.fmExprJson),
-                              null,
-                              2,
-                            );
-                          } catch {
-                            return props.fmExprJson;
-                          }
-                        })()}
-                        onChange={(e) => {
-                          try {
-                            JSON.parse(e.target.value);
-                            props.setFmExprJson(e.target.value);
-                          } catch {
-                            props.setFmExprJson(e.target.value);
-                          }
-                        }}
-                        rows={16}
-                        spellCheck={false}
-                        className="w-full rounded-lg border border-gray-200 bg-[#0b1324] px-3 py-2.5 font-mono text-xs text-cyan-300 focus:outline-none focus:ring-1 focus:ring-[#2563eb]/40"
-                      />
-                    </div>
-                    <p className="text-[11px] text-gray-400">
-                      Ví dụ:{" "}
-                      <code className="rounded bg-gray-100 px-1">
-                        {`{"op":"MULTIPLY","left":{"ref":"S2A_QUARTERLY_TOTAL"},"right":{"lookup":{"entity":"IndustryTaxRates","field":"TaxRate","filter":{"TaxType":"VAT"}}}}`}
-                      </code>
-                    </p>
-                  </div>
+                  <TaxRateEditor
+                    exprJson={props.fmExprJson}
+                    setExprJson={props.setFmExprJson}
+                    formulaList={props.formulaList}
+                    isCreateMode={isCreateMode}
+                  />
                 )}
 
                 {/* ── EXTERNAL_LOOKUP tab ── */}
@@ -3365,6 +4242,7 @@ export default function FormulaTab(props: FormulaTabProps) {
                   <LookupEditor
                     exprJson={props.fmExprJson}
                     setExprJson={props.setFmExprJson}
+                    isCreateMode={isCreateMode}
                   />
                 )}
 
@@ -3460,11 +4338,20 @@ export default function FormulaTab(props: FormulaTabProps) {
           <Card className="rounded-xl border border-gray-200 bg-white shadow-sm">
             <CardHeader>
               <CardTitle>
-                {builderTab === "CELL_REF" ? "Xem thử kết quả" : "Logic Trace"}
+                {builderTab === "CELL_REF"
+                  ? "Xem thử kết quả"
+                  : builderTab === "NONE"
+                    ? "Xem thử kết quả"
+                    : "Logic Trace"}
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              {builderTab === "CELL_REF" ? (
+              {builderTab === "NONE" ? (
+                <p className="text-sm text-gray-500">
+                  Chọn formulaType trước để sử dụng trình tạo công thức và xem
+                  thử.
+                </p>
+              ) : builderTab === "CELL_REF" ? (
                 <>
                   {variableCodesInBuilder.length ? (
                     <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
@@ -3768,12 +4655,6 @@ export default function FormulaTab(props: FormulaTabProps) {
                     })()}
                 </div>
               )}
-
-              {schemaValidationIssues.length > 0 ? (
-                <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                  Cảnh báo cấu trúc công thức: {schemaValidationIssues[0]}
-                </div>
-              ) : null}
             </CardContent>
           </Card>
         </div>

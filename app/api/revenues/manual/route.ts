@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createLocaleForwardHeaders } from "@/app/api/_utils/localeHeader";
 import { getBearerAuthorizationHeader } from "../../_utils/authHeader";
 
 const BACKEND_API_URL = process.env.BACKEND_API_URL || "http://localhost:5139";
@@ -17,17 +18,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const body = await request.json();
+    const formData = await request.formData();
     const response = await fetch(
       `${BACKEND_API_URL}/api/my-business/accounting/revenues/manual`,
       {
         method: "POST",
         headers: {
-          "Content-Type": "application/json",
+          ...createLocaleForwardHeaders(request),
           accept: "*/*",
           Authorization: authHeader,
         },
-        body: JSON.stringify(body),
+        body: formData,
       },
     );
 

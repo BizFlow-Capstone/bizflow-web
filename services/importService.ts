@@ -104,6 +104,45 @@ export async function getImports(
       : result.data,
   };
 }
+
+export async function getAllImports(
+  filters: ImportFilters,
+): Promise<ApiResponse<ImportPagination>> {
+  const pageSize = 100;
+  const firstPage = await getImports({
+    ...filters,
+    PageNumber: 1,
+    PageSize: pageSize,
+  });
+
+  const firstData = firstPage.data;
+  const totalPages = Math.max(firstData.totalPages ?? 1, 1);
+  const allItems: ImportRecord[] = [...(firstData.items ?? [])];
+
+  for (let page = 2; page <= totalPages; page += 1) {
+    const nextPage = await getImports({
+      ...filters,
+      PageNumber: page,
+      PageSize: pageSize,
+    });
+    allItems.push(...(nextPage.data.items ?? []));
+  }
+
+  return {
+    ...firstPage,
+    data: {
+      ...firstData,
+      items: allItems,
+      totalCount: firstData.totalCount ?? allItems.length,
+      pageNumber: 1,
+      pageSize: allItems.length || pageSize,
+      totalPages: 1,
+      hasPreviousPage: false,
+      hasNextPage: false,
+    },
+  };
+}
+
 export async function getImportDetail(
   importId: number,
 ): Promise<ApiResponse<ImportDetail>> {

@@ -5,6 +5,16 @@ import type {
   FirebaseCustomTokenData,
   GoogleAuthData,
 } from "@/lib/types/auth";
+import { getStoredLocale, LOCALE_HEADER } from "@/lib/auth/tokenManager";
+
+function localeFetch(input: RequestInfo | URL, init: RequestInit = {}) {
+  const headers = new Headers(init.headers ?? {});
+  headers.set(LOCALE_HEADER, getStoredLocale());
+  return fetch(input, {
+    ...init,
+    headers,
+  });
+}
 
 function parseResponse<T>(raw: unknown): AuthApiResponse<T> {
   if (!raw || typeof raw !== "object") {
@@ -18,7 +28,7 @@ export async function loginWithPhone(
   password: string,
   deviceInfo = "",
 ): Promise<AuthApiResponse<GoogleAuthData>> {
-  const response = await fetch("/api/auth/login/phone", {
+  const response = await localeFetch("/api/auth/login/phone", {
     method: "POST",
     headers: { "Content-Type": "application/json", accept: "*/*" },
     body: JSON.stringify({ phone, password, deviceInfo }),
@@ -39,7 +49,7 @@ export async function loginWithEmail(
   password: string,
   deviceInfo = "",
 ): Promise<AuthApiResponse<GoogleAuthData>> {
-  const response = await fetch("/api/auth/login/email", {
+  const response = await localeFetch("/api/auth/login/email", {
     method: "POST",
     headers: { "Content-Type": "application/json", accept: "*/*" },
     body: JSON.stringify({ email, password, deviceInfo }),
@@ -62,7 +72,7 @@ export async function registerWithPhone(
   fullName: string,
   deviceInfo = "",
 ): Promise<AuthApiResponse<GoogleAuthData>> {
-  const response = await fetch("/api/auth/register/phone", {
+  const response = await localeFetch("/api/auth/register/phone", {
     method: "POST",
     headers: { "Content-Type": "application/json", accept: "*/*" },
     body: JSON.stringify({
@@ -90,7 +100,7 @@ export async function linkPhone(
   accessToken: string,
   password?: string,
 ): Promise<AuthApiResponse<unknown>> {
-  const response = await fetch("/api/auth/link/phone", {
+  const response = await localeFetch("/api/auth/link/phone", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -118,7 +128,7 @@ export async function loginWithGoogle(
   idToken: string,
   deviceInfo = "",
 ): Promise<AuthApiResponse<GoogleAuthData>> {
-  const response = await fetch("/api/auth/google", {
+  const response = await localeFetch("/api/auth/google", {
     method: "POST",
     headers: { "Content-Type": "application/json", accept: "*/*" },
     body: JSON.stringify({ idToken, deviceInfo }),
@@ -138,7 +148,7 @@ export async function setAccountPassword(
   password: string,
   accessToken: string,
 ): Promise<AuthApiResponse<null>> {
-  const response = await fetch("/api/auth/set-password", {
+  const response = await localeFetch("/api/auth/set-password", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -163,7 +173,7 @@ export async function changeAccountPassword(
   newPassword: string,
   accessToken: string,
 ): Promise<AuthApiResponse<null>> {
-  const response = await fetch("/api/auth/change-password", {
+  const response = await localeFetch("/api/auth/change-password", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -186,16 +196,17 @@ export async function changeAccountPassword(
 export async function forgotPasswordSendOtp(
   email: string,
 ): Promise<AuthApiResponse<{ destination?: string; expiryMinutes?: number }>> {
-  const response = await fetch("/api/auth/forgot-password/send-otp", {
+  const response = await localeFetch("/api/auth/forgot-password/send-otp", {
     method: "POST",
     headers: { "Content-Type": "application/json", accept: "*/*" },
     body: JSON.stringify({ email }),
   });
 
   const raw = await response.json();
-  const result = parseResponse<{ destination?: string; expiryMinutes?: number }>(
-    raw,
-  );
+  const result = parseResponse<{
+    destination?: string;
+    expiryMinutes?: number;
+  }>(raw);
 
   if (!response.ok || !result.success) {
     throw new Error(result.message || "Send OTP failed");
@@ -208,7 +219,7 @@ export async function forgotPasswordVerifyOtp(
   email: string,
   otpCode: string,
 ): Promise<AuthApiResponse<{ verified?: boolean; accessToken?: string }>> {
-  const response = await fetch("/api/auth/forgot-password/verify-otp", {
+  const response = await localeFetch("/api/auth/forgot-password/verify-otp", {
     method: "POST",
     headers: { "Content-Type": "application/json", accept: "*/*" },
     body: JSON.stringify({ email, otpCode }),
@@ -230,7 +241,7 @@ export async function forgotPasswordReset(
   password: string,
   resetAccessToken: string,
 ): Promise<AuthApiResponse<null>> {
-  const response = await fetch("/api/auth/forgot-password/reset", {
+  const response = await localeFetch("/api/auth/forgot-password/reset", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -253,7 +264,7 @@ export async function forgotPasswordReset(
 export async function getAuthProfile(
   accessToken: string,
 ): Promise<AuthApiResponse<AuthUserProfile>> {
-  const response = await fetch("/api/auth/profile", {
+  const response = await localeFetch("/api/auth/profile", {
     method: "GET",
     headers: {
       accept: "*/*",
@@ -276,7 +287,7 @@ export async function updateAuthProfile(
   payload: { fullName?: string | null; taxCode?: string | null },
   accessToken: string,
 ): Promise<AuthApiResponse<AuthUserProfile>> {
-  const response = await fetch("/api/auth/profile", {
+  const response = await localeFetch("/api/auth/profile", {
     method: "PUT",
     headers: {
       "Content-Type": "application/json",
@@ -310,7 +321,7 @@ export async function updateAuthProfileAvatar(
     formData.append("removeAvatar", "true");
   }
 
-  const response = await fetch("/api/auth/profile/avatar", {
+  const response = await localeFetch("/api/auth/profile/avatar", {
     method: "PUT",
     headers: {
       accept: "*/*",
@@ -333,7 +344,7 @@ export async function deleteAuthAccount(
   password: string,
   accessToken: string,
 ): Promise<AuthApiResponse<null>> {
-  const response = await fetch("/api/auth/delete-account", {
+  const response = await localeFetch("/api/auth/delete-account", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -356,7 +367,7 @@ export async function deleteAuthAccount(
 export async function getFirebaseCustomToken(
   accessToken: string,
 ): Promise<AuthApiResponse<FirebaseCustomTokenData>> {
-  const response = await fetch("/api/auth/firebase/custom-token", {
+  const response = await localeFetch("/api/auth/firebase/custom-token", {
     method: "POST",
     headers: {
       accept: "*/*",
@@ -377,7 +388,7 @@ export async function getFirebaseCustomToken(
 export async function getAuthCredentials(
   accessToken: string,
 ): Promise<AuthApiResponse<AuthCredentialsData>> {
-  const response = await fetch("/api/auth/credentials", {
+  const response = await localeFetch("/api/auth/credentials", {
     method: "GET",
     headers: {
       accept: "*/*",
@@ -400,7 +411,7 @@ export async function refreshAuthToken(
   refreshToken: string,
   deviceInfo = "",
 ): Promise<AuthApiResponse<GoogleAuthData>> {
-  const response = await fetch("/api/auth/refresh", {
+  const response = await localeFetch("/api/auth/refresh", {
     method: "POST",
     headers: { "Content-Type": "application/json", accept: "*/*" },
     body: JSON.stringify({ refreshToken, deviceInfo }),
@@ -430,7 +441,7 @@ export async function logoutAuth(
     headers.Authorization = `Bearer ${accessToken}`;
   }
 
-  const response = await fetch("/api/auth/logout", {
+  const response = await localeFetch("/api/auth/logout", {
     method: "POST",
     headers,
     body: JSON.stringify({ refreshToken, deviceInfo }),
@@ -457,7 +468,7 @@ export async function logoutAllAuth(
     headers.Authorization = `Bearer ${accessToken}`;
   }
 
-  const response = await fetch("/api/auth/logout-all", {
+  const response = await localeFetch("/api/auth/logout-all", {
     method: "POST",
     headers,
   });

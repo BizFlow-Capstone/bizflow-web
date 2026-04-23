@@ -42,6 +42,33 @@ function asNumber(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
+function buildRowDedupKey(row: BookRow): string {
+  const idCandidates = [
+    "rowId",
+    "RowId",
+    "lineId",
+    "lineNumber",
+    "revenueId",
+    "costId",
+    "glEntryId",
+    "stockMovementId",
+    "id",
+    "Id",
+  ];
+
+  for (const key of idCandidates) {
+    const value = row[key];
+    if (typeof value === "string" && value.trim()) {
+      return `${key}:${value.trim()}`;
+    }
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return `${key}:${value}`;
+    }
+  }
+
+  return JSON.stringify(row);
+}
+
 type BookSummaryMeta = Record<string, unknown> & {
   columns?: Array<Record<string, unknown>>;
   templateName?: string;
@@ -193,6 +220,7 @@ export const BookRowsTable: React.FC<BookRowsTableProps> = ({
     null,
   );
   const loaderRef = useRef<HTMLDivElement | null>(null);
+  const canAutoLoadRef = useRef(true);
 
   const isDocumentTemplate = TT152_TEMPLATE_CODES.includes(templateCode ?? "");
 
@@ -226,7 +254,15 @@ export const BookRowsTable: React.FC<BookRowsTableProps> = ({
       let nextRowsCount = 0;
 
       setRows((prev) => {
-        const nextRows = [...prev, ...result.rows];
+        const seen = new Set(prev.map((row) => buildRowDedupKey(row)));
+        const uniqueIncoming = result.rows.filter((row) => {
+          const dedupKey = buildRowDedupKey(row);
+          if (seen.has(dedupKey)) return false;
+          seen.add(dedupKey);
+          return true;
+        });
+
+        const nextRows = [...prev, ...uniqueIncoming];
         const cappedRows =
           totalEst > 0 && nextRows.length > totalEst
             ? nextRows.slice(0, totalEst)
@@ -256,6 +292,7 @@ export const BookRowsTable: React.FC<BookRowsTableProps> = ({
       setRows([]);
       setPage(1);
       setHasMore(true);
+      canAutoLoadRef.current = true;
       setColumns([]);
       setSummaryMeta(null);
       setSectionsMeta(null);
@@ -338,7 +375,13 @@ export const BookRowsTable: React.FC<BookRowsTableProps> = ({
     const observer = new IntersectionObserver(
       (entries) => {
         const target = entries[0];
-        if (target.isIntersecting && !loading && hasMore) {
+        if (!target.isIntersecting) {
+          canAutoLoadRef.current = true;
+          return;
+        }
+
+        if (canAutoLoadRef.current && !loading && hasMore) {
+          canAutoLoadRef.current = false;
           void loadMoreRows();
         }
       },

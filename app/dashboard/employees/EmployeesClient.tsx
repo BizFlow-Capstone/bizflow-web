@@ -77,6 +77,14 @@ export default function EmployeesClient() {
   const [inviteQuery, setInviteQuery] = useState("");
   const [debouncedInviteQuery, setDebouncedInviteQuery] = useState("");
 
+  const { isOwner, isLoading: isRoleLoading } = useLocationRole();
+
+  useEffect(() => {
+    if (!isRoleLoading && !isOwner && activeTab === "employees") {
+      setActiveTab("invitations");
+    }
+  }, [activeTab, isOwner, isRoleLoading]);
+
   useEffect(() => {
     const timer = window.setTimeout(() => {
       setDebouncedInviteQuery(inviteQuery.trim());
@@ -129,8 +137,6 @@ export default function EmployeesClient() {
     [employees?.length],
   );
 
-  const { isOwner, isLoading: isRoleLoading } = useLocationRole();
-
   if (isRoleLoading) {
     return (
       <div className="flex-1 flex items-center justify-center">
@@ -139,31 +145,31 @@ export default function EmployeesClient() {
     );
   }
 
-  if (!isOwner) {
-    return <OwnerOnlyScreen featureName="Quản Lý Nhân Viên" />;
-  }
-
   return (
     <div className="flex-1 flex flex-col">
       <main className="flex-1 p-8 bg-gray-50">
         <div className="mb-4 flex flex-wrap items-center gap-3 justify-between">
           <div className="flex items-center gap-2">
-            <Badge variant="secondary" className="text-sm px-3 py-1">
-              <Users className="w-4 h-4 mr-1" />
-              {employeeSummary}
-            </Badge>
+            {isOwner && (
+              <Badge variant="secondary" className="text-sm px-3 py-1">
+                <Users className="w-4 h-4 mr-1" />
+                {employeeSummary}
+              </Badge>
+            )}
             <Badge variant="outline" className="text-sm px-3 py-1">
               {invitations?.length ?? 0} lời mời chờ xử lý
             </Badge>
           </div>
 
-          <Button
-            className="bg-[#23C4C1] hover:bg-[#1aa8a5]"
-            onClick={() => setIsInviteDialogOpen(true)}
-          >
-            <UserPlus className="w-4 h-4 mr-1" />
-            Mời nhân viên
-          </Button>
+          {isOwner && (
+            <Button
+              className="bg-[#23C4C1] hover:bg-[#1aa8a5]"
+              onClick={() => setIsInviteDialogOpen(true)}
+            >
+              <UserPlus className="w-4 h-4 mr-1" />
+              Mời nhân viên
+            </Button>
+          )}
         </div>
 
         <div className="mb-5 flex gap-2">
@@ -171,6 +177,7 @@ export default function EmployeesClient() {
             variant={activeTab === "employees" ? "default" : "outline"}
             className={activeTab === "employees" ? "bg-gray-900" : ""}
             onClick={() => setActiveTab("employees")}
+            disabled={!isOwner}
           >
             Danh sách nhân viên
           </Button>
@@ -184,27 +191,35 @@ export default function EmployeesClient() {
         </div>
 
         {activeTab === "employees" && (
-          <div className="relative mb-6 max-w-md">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <Input
-              placeholder="Tìm nhân viên..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="pl-10"
-            />
-          </div>
+          <>
+            {isOwner && (
+              <div className="relative mb-6 max-w-md">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <Input
+                  placeholder="Tìm nhân viên..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="pl-10"
+                />
+              </div>
+            )}
+            {!isOwner && <OwnerOnlyScreen featureName="Quản Lý Nhân Viên" />}
+          </>
         )}
 
-        {activeTab === "employees" && isLoading ? (
+        {activeTab === "employees" && isOwner && isLoading ? (
           <div className="flex justify-center py-16">
             <Loader2 className="w-8 h-8 animate-spin text-[#23C4C1]" />
           </div>
-        ) : activeTab === "employees" && error ? (
+        ) : activeTab === "employees" && isOwner && error ? (
           <div className="bg-white rounded-xl border p-8 text-center text-red-500">
             <p>Không thể tải danh sách nhân viên</p>
             <p className="text-sm mt-1 text-gray-500">{String(error)}</p>
           </div>
-        ) : activeTab === "employees" && filtered && filtered.length > 0 ? (
+        ) : activeTab === "employees" &&
+          isOwner &&
+          filtered &&
+          filtered.length > 0 ? (
           <div className="bg-white rounded-xl border">
             <Table>
               <TableHeader>
@@ -267,25 +282,27 @@ export default function EmployeesClient() {
               </TableBody>
             </Table>
           </div>
-        ) : activeTab === "employees" ? (
+        ) : activeTab === "employees" && isOwner ? (
           <div className="bg-white rounded-xl border p-12 text-center text-gray-500">
             <User className="w-12 h-12 mx-auto mb-3 text-gray-300" />
             <p className="font-medium">
               {search ? "Không tìm thấy nhân viên" : "Chưa có nhân viên"}
             </p>
           </div>
-        ) : invitationLoading ? (
+        ) : activeTab === "invitations" && invitationLoading ? (
           <div className="flex justify-center py-16">
             <Loader2 className="w-8 h-8 animate-spin text-[#23C4C1]" />
           </div>
-        ) : invitationError ? (
+        ) : activeTab === "invitations" && invitationError ? (
           <div className="bg-white rounded-xl border p-8 text-center text-red-500">
             <p>Không thể tải lời mời</p>
             <p className="text-sm mt-1 text-gray-500">
               {String(invitationError)}
             </p>
           </div>
-        ) : invitations && invitations.length > 0 ? (
+        ) : activeTab === "invitations" &&
+          invitations &&
+          invitations.length > 0 ? (
           <div className="bg-white rounded-xl border divide-y">
             {invitations.map((invite) => (
               <div
@@ -329,12 +346,12 @@ export default function EmployeesClient() {
               </div>
             ))}
           </div>
-        ) : (
+        ) : activeTab === "invitations" ? (
           <div className="bg-white rounded-xl border p-12 text-center text-gray-500">
             <User className="w-12 h-12 mx-auto mb-3 text-gray-300" />
             <p className="font-medium">Không có lời mời nào đang chờ</p>
           </div>
-        )}
+        ) : null}
 
         {(inviteMutation.error || removeMutation.error) && (
           <p className="mt-4 text-sm text-red-600">

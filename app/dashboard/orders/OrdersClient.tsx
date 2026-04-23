@@ -68,6 +68,7 @@ import {
 } from "@/components/ui/dialog";
 import {
   useOrders,
+  useAllOrders,
   useCancelOrder,
   useConfirmOrder,
   useCompleteOrder,
@@ -278,24 +279,37 @@ export default function OrdersClient() {
   );
 
   // Build filters
-  const filters: OrderFilters = useMemo(
-    () => ({
+  const filters: OrderFilters = useMemo(() => {
+    const normalizedSearchQuery = searchQuery.trim();
+
+    return {
       ...(statusFilter !== "ALL" && { Status: statusFilter }),
       ...(paymentTypeFilter !== "ALL" && { PaymentType: paymentTypeFilter }),
+      ...(paymentTypeFilter === "ALL" &&
+        normalizedSearchQuery && { SearchQuery: normalizedSearchQuery }),
       ...(fromDate && { FromDate: fromDate }),
       ...(toDate && { ToDate: toDate }),
       ...(selectedLocationId && { BusinessLocationId: selectedLocationId }),
       PageNumber: pageNumber,
       PageSize: pageSize,
+    };
+  }, [
+    statusFilter,
+    paymentTypeFilter,
+    fromDate,
+    toDate,
+    searchQuery,
+    pageNumber,
+    selectedLocationId,
+  ]);
+
+  const statsBaseFilters: OrderFilters = useMemo(
+    () => ({
+      ...(fromDate && { FromDate: fromDate }),
+      ...(toDate && { ToDate: toDate }),
+      ...(selectedLocationId && { BusinessLocationId: selectedLocationId }),
     }),
-    [
-      statusFilter,
-      paymentTypeFilter,
-      fromDate,
-      toDate,
-      pageNumber,
-      selectedLocationId,
-    ],
+    [fromDate, toDate, selectedLocationId],
   );
 
   const hasActiveFilters = paymentTypeFilter !== "ALL" || fromDate || toDate;
@@ -316,6 +330,11 @@ export default function OrdersClient() {
     refetch,
   } = useOrders(filters, hasLocations && !!selectedLocationId);
 
+  const { data: allOrdersData } = useAllOrders(
+    statsBaseFilters,
+    hasLocations && !!selectedLocationId,
+  );
+
   const cancelMutation = useCancelOrder();
   const confirmMutation = useConfirmOrder();
   const completeMutation = useCompleteOrder();
@@ -326,36 +345,96 @@ export default function OrdersClient() {
   const hasPreviousPage = orderData?.hasPreviousPage ?? false;
   const hasNextPage = orderData?.hasNextPage ?? false;
 
-  // Client-side search filter
-  const filteredOrders = useMemo(() => {
-    if (!searchQuery) return orders;
+  const allOrders = useMemo(() => allOrdersData?.items ?? [], [allOrdersData]);
+  const statsSourceOrders = allOrdersData ? allOrders : orders;
+  const paymentFilterSourceOrders = allOrdersData ? allOrders : orders;
+
+  const ordersForStats = useMemo(() => {
+    if (paymentTypeFilter === "ALL") {
+      return statsSourceOrders;
+    }
+
+    return statsSourceOrders.filter((o) => o.paymentType === paymentTypeFilter);
+  }, [statsSourceOrders, paymentTypeFilter]);
+
+  const paymentFilteredOrders = useMemo(() => {
+    if (paymentTypeFilter === "ALL") {
+      return orders;
+    }
+
+    return paymentFilterSourceOrders.filter((o) => {
+      const statusMatch = statusFilter === "ALL" || o.status === statusFilter;
+      return statusMatch && o.paymentType === paymentTypeFilter;
+    });
+  }, [paymentTypeFilter, orders, paymentFilterSourceOrders, statusFilter]);
+
+  // Search is server-side when no payment type filter is applied.
+  const searchedOrders = useMemo(() => {
+    if (paymentTypeFilter === "ALL") {
+      return orders;
+    }
+
+    if (!searchQuery) return paymentFilteredOrders;
     const q = searchQuery.toLowerCase();
-    return orders.filter(
+    return paymentFilteredOrders.filter(
       (o) =>
         o.orderCode.toLowerCase().includes(q) ||
         o.createdByUserName.toLowerCase().includes(q) ||
         (o.debtorName && o.debtorName.toLowerCase().includes(q)) ||
         (o.note && o.note.toLowerCase().includes(q)),
     );
-  }, [orders, searchQuery]);
+  }, [paymentTypeFilter, orders, paymentFilteredOrders, searchQuery]);
+
+  const displayedOrders = useMemo(() => {
+    if (paymentTypeFilter === "ALL") {
+      return searchedOrders;
+    }
+
+    const start = (pageNumber - 1) * pageSize;
+    return searchedOrders.slice(start, start + pageSize);
+  }, [paymentTypeFilter, searchedOrders, pageNumber]);
+
+  const localTotalCount = searchedOrders.length;
+  const localTotalPages = Math.ceil(localTotalCount / pageSize);
+
+  const effectiveTotalCount =
+    paymentTypeFilter === "ALL" ? totalCount : localTotalCount;
+  const effectiveTotalPages =
+    paymentTypeFilter === "ALL" ? totalPages : localTotalPages;
+  const effectiveHasPreviousPage =
+    paymentTypeFilter === "ALL" ? hasPreviousPage : pageNumber > 1;
+  const effectiveHasNextPage =
+    paymentTypeFilter === "ALL" ? hasNextPage : pageNumber < localTotalPages;
+
+  useEffect(() => {
+    const maxPage = Math.max(effectiveTotalPages, 1);
+    if (pageNumber > maxPage) {
+      setPageNumber(maxPage);
+    }
+  }, [effectiveTotalPages, pageNumber]);
 
   // Stats
   const stats = useMemo(
     () => ({
-      total: totalCount,
-      pending: orders.filter((o) => o.status === "pending").length,
-      completed: orders.filter((o) => o.status === "completed").length,
-      cancelled: orders.filter((o) => o.status === "cancelled").length,
+      total: ordersForStats.length,
+      pending: ordersForStats.filter((o) => o.status === "pending").length,
+      completed: ordersForStats.filter((o) => o.status === "completed").length,
+      cancelled: ordersForStats.filter((o) => o.status === "cancelled").length,
     }),
-    [orders, totalCount],
+    [ordersForStats],
   );
 
   // Revenue from completed orders
   const totalRevenue = useMemo(() => {
-    return orders
+    return ordersForStats
       .filter((o) => o.status === "completed")
       .reduce((sum, o) => sum + o.totalAmount, 0);
-  }, [orders]);
+  }, [ordersForStats]);
+
+  const isNoOrderData =
+    paymentTypeFilter === "ALL"
+      ? orders.length === 0
+      : paymentFilteredOrders.length === 0;
 
   // Handle cancel
   const handleCancel = async () => {
@@ -568,7 +647,10 @@ export default function OrdersClient() {
                   placeholder="Tìm theo mã đơn, khách hàng, ghi chú..."
                   className="pl-10 border-0 rounded-none focus:border-0 focus:ring-0 shadow-none bg-transparent"
                   value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onChange={(e) => {
+                    setSearchQuery(e.target.value);
+                    setPageNumber(1);
+                  }}
                 />
               </div>
               <Button
@@ -788,9 +870,9 @@ export default function OrdersClient() {
         )}
 
         {/* Order Cards */}
-        {!isLoading && !error && filteredOrders.length > 0 && (
+        {!isLoading && !error && displayedOrders.length > 0 && (
           <div className="space-y-4">
-            {filteredOrders.map((order) => {
+            {displayedOrders.map((order) => {
               const isExpanded = expandedOrderId === order.orderId;
               return (
                 <div
@@ -1059,16 +1141,17 @@ export default function OrdersClient() {
             })}
 
             {/* Pagination */}
-            {totalPages > 1 && (
+            {effectiveTotalPages > 1 && (
               <div className="flex items-center justify-between pt-2">
                 <p className="text-sm text-gray-600">
-                  Trang {pageNumber} / {totalPages} — Tổng {totalCount} đơn
+                  Trang {pageNumber} / {effectiveTotalPages} — Tổng{" "}
+                  {effectiveTotalCount} đơn
                 </p>
                 <div className="flex gap-2">
                   <Button
                     variant="outline"
                     size="sm"
-                    disabled={!hasPreviousPage}
+                    disabled={!effectiveHasPreviousPage}
                     onClick={() => setPageNumber((p) => Math.max(1, p - 1))}
                   >
                     <ChevronLeft className="w-4 h-4 mr-1" />
@@ -1077,7 +1160,7 @@ export default function OrdersClient() {
                   <Button
                     variant="outline"
                     size="sm"
-                    disabled={!hasNextPage}
+                    disabled={!effectiveHasNextPage}
                     onClick={() => setPageNumber((p) => p + 1)}
                   >
                     Sau
@@ -1090,22 +1173,22 @@ export default function OrdersClient() {
         )}
 
         {/* Empty State */}
-        {!isLoading && !error && filteredOrders.length === 0 && (
+        {!isLoading && !error && displayedOrders.length === 0 && (
           <div className="text-center py-20 bg-white rounded-xl border border-dashed border-gray-300">
             <div className="mx-auto bg-gray-50 w-16 h-16 rounded-full flex items-center justify-center mb-4">
               <ClipboardList className="w-8 h-8 text-gray-400" />
             </div>
             <h3 className="text-lg font-medium text-gray-900">
-              {orders.length === 0
+              {isNoOrderData
                 ? "Chưa có đơn hàng nào"
                 : "Không tìm thấy kết quả"}
             </h3>
             <p className="text-gray-600 mt-1">
-              {orders.length === 0
+              {isNoOrderData
                 ? "Bắt đầu bằng cách tạo đơn hàng mới."
                 : "Thử thay đổi từ khóa hoặc bộ lọc trạng thái."}
             </p>
-            {orders.length === 0 && (
+            {isNoOrderData && (
               <Link href="/dashboard/orders/create">
                 <Button className="mt-4 bg-[#23C4C1] hover:bg-[#1da8a5]">
                   <Plus className="w-4 h-4 mr-2" />

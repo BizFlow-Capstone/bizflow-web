@@ -14,6 +14,20 @@ import type {
 } from "@/lib/types/location";
 import { authFetch } from "@/lib/auth/tokenManager";
 
+type RawLocation = {
+  id: number;
+  name: string;
+  address: string;
+  district?: string | null;
+  city?: string | null;
+  phone?: string | null;
+  taxCode?: string | null;
+  isActive: boolean;
+  ownerName?: string | null;
+  isOwner?: boolean;
+  accessType?: "owned" | "work-at";
+};
+
 /**
  * Get all accessible locations for the current user
  * Includes both owned locations and locations assigned via work-at access
@@ -30,7 +44,30 @@ export async function getLocations(): Promise<ApiResponse<Location[]>> {
     throw new Error(`Failed to fetch locations: ${response.status}`);
   }
 
-  return response.json();
+  const result = (await response.json()) as ApiResponse<RawLocation[]>;
+  const normalized: Location[] = (result.data ?? []).map((location) => {
+    const accessType = location.accessType ?? "owned";
+    const isOwner = location.isOwner ?? accessType === "owned";
+
+    return {
+      id: location.id,
+      name: location.name,
+      address: location.address,
+      district: location.district ?? "",
+      city: location.city ?? "",
+      phone: location.phone ?? "",
+      taxCode: location.taxCode ?? null,
+      isActive: location.isActive,
+      ownerName: location.ownerName ?? "",
+      isOwner,
+      accessType,
+    };
+  });
+
+  return {
+    ...result,
+    data: normalized,
+  };
 }
 
 type RawLocationDetailEmployee = {

@@ -11,6 +11,7 @@ const AUTH_ACCOUNT_KEY = "bizflow_auth_account";
 const AUTH_UPDATED_EVENT = "bizflow-auth-updated";
 export const LOCALE_KEY = "bizflow_locale";
 export const LOCALE_CHANGED_EVENT = "bizflow-locale-changed";
+export const LOCALE_HEADER = "Accept-Language";
 export type AppLocale = "vi" | "en";
 
 export function getStoredLocale(): AppLocale {
@@ -140,7 +141,11 @@ export async function refreshAndPersistToken(): Promise<string> {
 
   const response = await fetch("/api/auth/refresh", {
     method: "POST",
-    headers: { "Content-Type": "application/json", accept: "*/*" },
+    headers: {
+      "Content-Type": "application/json",
+      accept: "*/*",
+      [LOCALE_HEADER]: getStoredLocale(),
+    },
     body: JSON.stringify({ refreshToken, deviceInfo: getDeviceInfo() }),
   });
 
@@ -203,6 +208,7 @@ export async function authFetch(
   if (accessToken) {
     headers.set("Authorization", `Bearer ${accessToken}`);
   }
+  headers.set(LOCALE_HEADER, getStoredLocale());
   if (!headers.has("Accept-Language")) {
     headers.set("Accept-Language", getStoredLocale());
   }
@@ -220,6 +226,7 @@ export async function authFetch(
     const refreshedAccessToken = await refreshAndPersistToken();
     const retryHeaders = new Headers(init.headers ?? {});
     retryHeaders.set("Authorization", `Bearer ${refreshedAccessToken}`);
+    retryHeaders.set(LOCALE_HEADER, getStoredLocale());
     if (!retryHeaders.has("Accept-Language")) {
       retryHeaders.set("Accept-Language", getStoredLocale());
     }

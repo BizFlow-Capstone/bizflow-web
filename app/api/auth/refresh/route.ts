@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createLocaleForwardHeaders } from "@/app/api/_utils/localeHeader";
 
 const BACKEND_URL = process.env.BACKEND_API_URL;
 
@@ -11,6 +12,7 @@ export async function POST(request: NextRequest) {
       headers: {
         accept: "*/*",
         "Content-Type": "application/json",
+        ...createLocaleForwardHeaders(request),
       },
       body: JSON.stringify({
         refreshToken: body?.refreshToken ?? "",

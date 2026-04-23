@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -61,7 +61,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
-  useImports,
+  useAllImports,
   useDeleteImport,
   useConfirmImport,
 } from "@/hooks/useImports";
@@ -239,25 +239,21 @@ export default function ImportsClient() {
   // Confirm dialog state
   const [confirmTarget, setConfirmTarget] = useState<ImportRecord | null>(null);
 
-  // Build filters
-  const filters: ImportFilters = useMemo(
+  const baseFilters: ImportFilters = useMemo(
     () => ({
-      ...(statusFilter !== "ALL" && { Status: statusFilter }),
-      ...(selectedLocationId && { BusinessLocationId: selectedLocationId }),
-      PageNumber: pageNumber,
-      PageSize: pageSize,
+      ...(activeLocationId && { BusinessLocationId: activeLocationId }),
     }),
-    [statusFilter, pageNumber, selectedLocationId],
+    [activeLocationId],
   );
 
   // Data fetching
   const {
-    data: importData,
+    data: allImportData,
     isLoading,
     isRefetching,
     error,
     refetch,
-  } = useImports(filters, hasLocations);
+  } = useAllImports(baseFilters, hasLocations && !!activeLocationId);
 
   const { data: reorderSuggestions = [], isLoading: reorderLoading } =
     useReorderSuggestions(activeLocationId);
@@ -269,11 +265,7 @@ export default function ImportsClient() {
   const deleteMutation = useDeleteImport();
   const confirmMutation = useConfirmImport();
 
-  const imports = importData?.items ?? [];
-  const totalCount = importData?.totalCount ?? 0;
-  const totalPages = importData?.totalPages ?? 0;
-  const hasPreviousPage = importData?.hasPreviousPage ?? false;
-  const hasNextPage = importData?.hasNextPage ?? false;
+  const allImports = allImportData?.items ?? [];
 
   const productNameMap = useMemo(() => {
     const map = new Map<number, string>();
@@ -317,29 +309,50 @@ export default function ImportsClient() {
     [reorderSuggestions, productNameMap, reorderProductLookup],
   );
 
-  // Client-side search filter (on top of server-side filter)
-  const filteredImports = useMemo(() => {
-    if (!searchQuery) return imports;
-    const q = searchQuery.toLowerCase();
-    return imports.filter(
+  const searchedImports = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return allImports;
+    return allImports.filter(
       (imp) =>
         imp.importCode.toLowerCase().includes(q) ||
         imp.businessLocationName.toLowerCase().includes(q) ||
         (imp.supplier && imp.supplier.toLowerCase().includes(q)) ||
         (imp.note && imp.note.toLowerCase().includes(q)),
     );
-  }, [imports, searchQuery]);
+  }, [allImports, searchQuery]);
 
-  // Stats from current page data
+  const filteredImports = useMemo(() => {
+    if (statusFilter === "ALL") return searchedImports;
+    return searchedImports.filter((imp) => imp.status === statusFilter);
+  }, [searchedImports, statusFilter]);
+
+  const totalCount = filteredImports.length;
+  const totalPages = Math.max(Math.ceil(totalCount / pageSize), 1);
+  const hasPreviousPage = pageNumber > 1;
+  const hasNextPage = pageNumber < totalPages;
+
+  const displayedImports = useMemo(() => {
+    const start = (pageNumber - 1) * pageSize;
+    return filteredImports.slice(start, start + pageSize);
+  }, [filteredImports, pageNumber, pageSize]);
+
   const stats = useMemo(
     () => ({
-      total: totalCount,
-      draft: imports.filter((i) => i.status === "DRAFT").length,
-      confirmed: imports.filter((i) => i.status === "CONFIRMED").length,
-      cancelled: imports.filter((i) => i.status === "CANCELLED").length,
+      total: searchedImports.length,
+      draft: searchedImports.filter((i) => i.status === "DRAFT").length,
+      confirmed: searchedImports.filter((i) => i.status === "CONFIRMED").length,
+      cancelled: searchedImports.filter((i) => i.status === "CANCELLED").length,
     }),
-    [imports, totalCount],
+    [searchedImports],
   );
+
+  useEffect(() => {
+    setPageNumber((prev) => {
+      if (prev < 1) return 1;
+      if (prev > totalPages) return totalPages;
+      return prev;
+    });
+  }, [totalPages]);
 
   // Handle delete
   const handleDelete = async () => {
@@ -545,7 +558,10 @@ export default function ImportsClient() {
               placeholder="Tìm theo mã phiếu, nhà cung cấp, ghi chú..."
               className="pl-10 border-0 rounded-none focus:border-0 focus:ring-0 shadow-none bg-transparent"
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setPageNumber(1);
+              }}
             />
           </div>
         </div>
@@ -617,7 +633,7 @@ export default function ImportsClient() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredImports.map((imp) => (
+                {displayedImports.map((imp) => (
                   <TableRow
                     key={imp.importId}
                     className="hover:bg-gray-50/50 cursor-pointer transition-colors"
@@ -765,16 +781,16 @@ export default function ImportsClient() {
               <ClipboardList className="w-8 h-8 text-gray-400" />
             </div>
             <h3 className="text-lg font-medium text-gray-900">
-              {imports.length === 0
+              {allImports.length === 0
                 ? "Chưa có phiếu nhập kho nào"
                 : "Không tìm thấy kết quả"}
             </h3>
             <p className="text-gray-600 mt-1">
-              {imports.length === 0
+              {allImports.length === 0
                 ? "Bắt đầu bằng cách tạo phiếu nhập kho mới."
                 : "Thử thay đổi từ khóa hoặc bộ lọc trạng thái."}
             </p>
-            {imports.length === 0 && (
+            {allImports.length === 0 && (
               <Link href="/dashboard/imports/create">
                 <Button className="mt-4 bg-[#23C4C1] hover:bg-[#1da8a5]">
                   <Plus className="w-4 h-4 mr-2" />

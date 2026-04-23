@@ -1,12 +1,14 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   getCosts,
+  getAllCosts,
   createManualCost,
   updateManualCost,
   deleteManualCost,
   getCostReferenceCatalog,
   getRevenues,
   getRevenuesWithFilters,
+  getAllRevenuesWithFilters,
   createManualRevenue,
   deleteManualRevenue,
   getRevenueForecast,
@@ -23,6 +25,7 @@ import {
   getAccountingTemplates,
   getAccountingBooks,
   getGLEntries,
+  getAllGLEntries,
   getGLReferenceCatalog,
   deleteAccountingBook,
 } from "@/services/accountingService";
@@ -46,10 +49,14 @@ export const accountingKeys = {
   all: ["accounting"] as const,
   costs: (filters: CostFilters) =>
     [...accountingKeys.all, "costs", filters] as const,
+  costsAllPages: (filters: CostFilters) =>
+    [...accountingKeys.all, "costs-all-pages", filters] as const,
   revenues: (locationId: number) =>
     [...accountingKeys.all, "revenues", locationId] as const,
   revenuesByFilters: (filters: RevenueFilters) =>
     [...accountingKeys.all, "revenues", filters] as const,
+  revenuesByFiltersAllPages: (filters: RevenueFilters) =>
+    [...accountingKeys.all, "revenues-all-pages", filters] as const,
   cashFlow: (locationId: number, start: string, end: string) =>
     [...accountingKeys.all, "cashflow", locationId, start, end] as const,
   revenueForecast: (locationId: number) =>
@@ -65,6 +72,8 @@ export const accountingKeys = {
     [...accountingKeys.all, "books", locationId, periodId] as const,
   glEntries: (filters: GLEntryFilters) =>
     [...accountingKeys.all, "gl-entries", filters] as const,
+  glEntriesAllPages: (filters: GLEntryFilters) =>
+    [...accountingKeys.all, "gl-entries-all-pages", filters] as const,
   glReferences: () => [...accountingKeys.all, "gl-reference-catalog"] as const,
   costReferences: () =>
     [...accountingKeys.all, "cost-reference-catalog"] as const,
@@ -75,6 +84,18 @@ export function useCosts(filters: CostFilters) {
     queryKey: accountingKeys.costs(filters),
     queryFn: async () => {
       const result = await getCosts(filters);
+      if (!result.success) throw new Error(result.message);
+      return result.data;
+    },
+    enabled: filters.locationId > 0,
+  });
+}
+
+export function useAllCosts(filters: CostFilters) {
+  return useQuery({
+    queryKey: accountingKeys.costsAllPages(filters),
+    queryFn: async () => {
+      const result = await getAllCosts(filters);
       if (!result.success) throw new Error(result.message);
       return result.data;
     },
@@ -157,6 +178,18 @@ export function useRevenuesByFilters(filters: RevenueFilters) {
     queryKey: accountingKeys.revenuesByFilters(filters),
     queryFn: async () => {
       const result = await getRevenuesWithFilters(filters);
+      if (!result.success) throw new Error(result.message);
+      return result.data;
+    },
+    enabled: filters.locationId > 0,
+  });
+}
+
+export function useAllRevenuesByFilters(filters: RevenueFilters) {
+  return useQuery({
+    queryKey: accountingKeys.revenuesByFiltersAllPages(filters),
+    queryFn: async () => {
+      const result = await getAllRevenuesWithFilters(filters);
       if (!result.success) throw new Error(result.message);
       return result.data;
     },
@@ -342,6 +375,18 @@ export function useGLEntries(filters: GLEntryFilters) {
     queryKey: accountingKeys.glEntries(filters),
     queryFn: async () => {
       const result = await getGLEntries(filters);
+      if (!result.success) throw new Error(result.message);
+      return result.data;
+    },
+    enabled: filters.locationId > 0,
+  });
+}
+
+export function useAllGLEntries(filters: GLEntryFilters) {
+  return useQuery({
+    queryKey: accountingKeys.glEntriesAllPages(filters),
+    queryFn: async () => {
+      const result = await getAllGLEntries(filters);
       if (!result.success) throw new Error(result.message);
       return result.data;
     },

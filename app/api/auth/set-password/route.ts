@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getBearerAuthorizationHeader } from "../../_utils/authHeader";
+import { createLocaleForwardHeaders } from "@/app/api/_utils/localeHeader";
 
 const BACKEND_URL = process.env.BACKEND_API_URL;
 
@@ -24,6 +25,7 @@ export async function POST(request: NextRequest) {
         accept: "*/*",
         "Content-Type": "application/json",
         Authorization: authHeader,
+        ...createLocaleForwardHeaders(request),
       },
       body: JSON.stringify({ password: body?.password ?? "" }),
     });

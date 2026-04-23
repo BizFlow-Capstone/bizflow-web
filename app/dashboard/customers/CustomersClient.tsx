@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -54,7 +54,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
-  useDebtors,
+  useAllDebtors,
   useDebtSummary,
   useDeleteDebtor,
   useUpdateDebtorStatus,
@@ -158,30 +158,17 @@ export default function CustomersClient() {
   const hasLocations = locations.length > 0;
   const { isOwner } = useLocationRole();
 
-  // Build filters
-  const filters: DebtorFilters = useMemo(
+  // Backend currently supports only location/search/activity filters.
+  const queryFilters: DebtorFilters = useMemo(
     () => ({
-      ...(balanceFilter === "DEBT" && { hasDebt: true }),
       ...(activityFilter === "ACTIVE" && { isActive: true }),
       ...(activityFilter === "INACTIVE" && { isActive: false }),
       ...(selectedLocationIds.length > 0 && {
         businessLocationIds: selectedLocationIds,
       }),
       search: searchQuery || undefined,
-      sortBy,
-      sortDir,
-      page: pageNumber,
-      pageSize,
     }),
-    [
-      balanceFilter,
-      activityFilter,
-      selectedLocationIds,
-      searchQuery,
-      sortBy,
-      sortDir,
-      pageNumber,
-    ],
+    [activityFilter, selectedLocationIds, searchQuery],
   );
 
   const hasActiveFilters =
@@ -213,29 +200,63 @@ export default function CustomersClient() {
 
   // Data
   const {
-    data: debtorData,
+    data: allDebtorData,
     isLoading,
     isRefetching,
     error,
     refetch,
-  } = useDebtors(filters, hasLocations);
+  } = useAllDebtors(queryFilters, hasLocations);
   const { data: summary } = useDebtSummary(hasLocations);
   const deleteMutation = useDeleteDebtor();
   const statusMutation = useUpdateDebtorStatus();
 
-  const debtors = useMemo(() => debtorData?.items ?? [], [debtorData?.items]);
-  const totalCount = debtorData?.totalCount ?? 0;
-  const totalPages = debtorData?.totalPages ?? 0;
-  const hasPreviousPage = debtorData?.hasPreviousPage ?? false;
-  const hasNextPage = debtorData?.hasNextPage ?? false;
+  const debtors = useMemo(() => allDebtorData?.items ?? [], [allDebtorData]);
 
-  // Client-side balance filter (for CREDIT and CLEARED which aren't server-side)
+  // Client-side balance filter because backend does not support debt/credit/cleared buckets.
   const filteredDebtors = useMemo(() => {
-    if (balanceFilter === "ALL" || balanceFilter === "DEBT") return debtors;
+    if (balanceFilter === "ALL") return debtors;
     return debtors.filter(
       (d) => getBalanceStatus(d.currentBalance) === balanceFilter,
     );
   }, [debtors, balanceFilter]);
+
+  const sortedDebtors = useMemo(() => {
+    const items = [...filteredDebtors];
+    const factor = sortDir === "asc" ? 1 : -1;
+
+    items.sort((a, b) => {
+      if (sortBy === "name") {
+        return a.name.localeCompare(b.name, "vi") * factor;
+      }
+
+      if (sortBy === "balance") {
+        return (a.currentBalance - b.currentBalance) * factor;
+      }
+
+      const aTime = new Date(a.createdAt).getTime();
+      const bTime = new Date(b.createdAt).getTime();
+      return ((aTime || 0) - (bTime || 0)) * factor;
+    });
+
+    return items;
+  }, [filteredDebtors, sortBy, sortDir]);
+
+  const displayedDebtors = useMemo(() => {
+    const start = (pageNumber - 1) * pageSize;
+    return sortedDebtors.slice(start, start + pageSize);
+  }, [sortedDebtors, pageNumber]);
+
+  const totalCount = sortedDebtors.length;
+  const totalPages = Math.ceil(totalCount / pageSize);
+  const hasPreviousPage = pageNumber > 1;
+  const hasNextPage = pageNumber < totalPages;
+
+  useEffect(() => {
+    const maxPage = Math.max(totalPages, 1);
+    if (pageNumber > maxPage) {
+      setPageNumber(maxPage);
+    }
+  }, [totalPages, pageNumber]);
 
   // Handle delete
   const handleDelete = async () => {
@@ -598,9 +619,9 @@ export default function CustomersClient() {
         )}
 
         {/* Customer Cards */}
-        {!isLoading && !error && filteredDebtors.length > 0 && (
+        {!isLoading && !error && displayedDebtors.length > 0 && (
           <div className="space-y-3">
-            {filteredDebtors.map((debtor) => {
+            {displayedDebtors.map((debtor) => {
               const isExpanded = expandedId === debtor.debtorId;
               const balanceStatus = getBalanceStatus(debtor.currentBalance);
               return (
@@ -964,7 +985,7 @@ export default function CustomersClient() {
         )}
 
         {/* Empty */}
-        {!isLoading && !error && filteredDebtors.length === 0 && (
+        {!isLoading && !error && displayedDebtors.length === 0 && (
           <div className="text-center py-20 bg-white rounded-xl border border-dashed border-gray-300">
             <div className="mx-auto bg-gray-50 w-16 h-16 rounded-full flex items-center justify-center mb-4">
               <ClipboardList className="w-8 h-8 text-gray-400" />

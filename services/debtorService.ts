@@ -162,6 +162,49 @@ export async function getDebtors(
   };
 }
 
+export async function getAllDebtors(
+  filters: DebtorFilters,
+): Promise<ApiResponse<DebtorPagination>> {
+  const pageSize = 100;
+  const firstPage = await getDebtors({
+    ...filters,
+    page: 1,
+    pageSize,
+  });
+
+  const firstData = firstPage.data;
+  const totalPages = Math.max(firstData.totalPages ?? 1, 1);
+  const allItems: DebtorRecord[] = [...(firstData.items ?? [])];
+
+  for (let page = 2; page <= totalPages; page += 1) {
+    const nextPage = await getDebtors({
+      ...filters,
+      page,
+      pageSize,
+    });
+    allItems.push(...(nextPage.data.items ?? []));
+  }
+
+  const totalDebt = allItems
+    .filter((item) => item.currentBalance < 0)
+    .reduce((sum, item) => sum + item.outstandingDebt, 0);
+
+  return {
+    ...firstPage,
+    data: {
+      ...firstData,
+      items: allItems,
+      totalCount: firstData.totalCount ?? allItems.length,
+      page: 1,
+      pageSize: allItems.length || pageSize,
+      totalPages: 1,
+      hasPreviousPage: false,
+      hasNextPage: false,
+      totalDebt,
+    },
+  };
+}
+
 export async function getDebtorDetail(
   debtorId: number,
 ): Promise<ApiResponse<DebtorFull>> {
@@ -379,7 +422,7 @@ export async function getDebtSummary(): Promise<ApiResponse<DebtSummary>> {
   }
 
   // Fallback: derive summary from list endpoint when summary API is not ready.
-  const debtorsResponse = await getDebtors({ page: 1, pageSize: 200 });
+  const debtorsResponse = await getAllDebtors({});
   const debtors = debtorsResponse.data.items;
   const debtorsWithDebt = debtors.filter((item) => item.currentBalance < 0);
   const debtorsWithCredit = debtors.filter((item) => item.currentBalance > 0);

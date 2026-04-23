@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getBearerAuthorizationHeader } from "../../_utils/authHeader";
+import { createLocaleForwardHeaders } from "@/app/api/_utils/localeHeader";
 
 const BACKEND_URL = process.env.BACKEND_API_URL;
 
@@ -58,6 +59,7 @@ export async function GET(request: NextRequest) {
       headers: {
         accept: "*/*",
         Authorization: auth.authorization,
+        ...createLocaleForwardHeaders(request),
       },
       cache: "no-store",
     });
@@ -86,6 +88,7 @@ export async function PUT(request: NextRequest) {
         accept: "*/*",
         "Content-Type": "application/json",
         Authorization: auth.authorization,
+        ...createLocaleForwardHeaders(request),
       },
       body: JSON.stringify(body ?? {}),
     });

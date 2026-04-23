@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createLocaleForwardHeaders } from "@/app/api/_utils/localeHeader";
 import { getBearerAuthorizationHeader } from "../../_utils/authHeader";
 
 const BACKEND_API_URL = process.env.BACKEND_API_URL || "http://localhost:5139";
@@ -21,15 +22,14 @@ export async function GET(
     }
 
     const { orderId } = await params;
-    const acceptLanguage = request.headers.get("Accept-Language") ?? "vi";
     const response = await fetch(
       `${BACKEND_API_URL}/api/my-business/accounting/orders/${orderId}`,
       {
         method: "GET",
         headers: {
+          ...createLocaleForwardHeaders(request),
           accept: "*/*",
           Authorization: authHeader,
-          "Accept-Language": acceptLanguage,
         },
         cache: "no-store",
       },
@@ -68,16 +68,15 @@ export async function PUT(
 
     const { orderId } = await params;
     const body = await request.json();
-    const acceptLanguage = request.headers.get("Accept-Language") ?? "vi";
     const response = await fetch(
       `${BACKEND_API_URL}/api/my-business/accounting/orders/${orderId}`,
       {
         method: "PUT",
         headers: {
+          ...createLocaleForwardHeaders(request),
           "Content-Type": "application/json",
           accept: "*/*",
           Authorization: authHeader,
-          "Accept-Language": acceptLanguage,
         },
         body: JSON.stringify(body),
       },

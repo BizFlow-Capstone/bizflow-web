@@ -6,6 +6,7 @@ import {
 } from "@tanstack/react-query";
 import {
   getDebtors,
+  getAllDebtors,
   getDebtorDetail,
   createDebtor,
   updateDebtor,
@@ -32,6 +33,9 @@ export const debtorKeys = {
   all: ["debtors"] as const,
   lists: () => [...debtorKeys.all, "list"] as const,
   list: (filters: DebtorFilters) => [...debtorKeys.lists(), filters] as const,
+  listsAllPages: () => [...debtorKeys.all, "list-all-pages"] as const,
+  listAllPages: (filters: DebtorFilters) =>
+    [...debtorKeys.listsAllPages(), filters] as const,
   details: () => [...debtorKeys.all, "detail"] as const,
   detail: (id: number) => [...debtorKeys.details(), id] as const,
   payments: (id: number) => [...debtorKeys.all, "payments", id] as const,
@@ -46,6 +50,17 @@ export function useDebtors(filters: DebtorFilters, enabled = true) {
       return response.data;
     },
     placeholderData: keepPreviousData,
+    enabled,
+  });
+}
+
+export function useAllDebtors(filters: DebtorFilters, enabled = true) {
+  return useQuery<DebtorPagination>({
+    queryKey: debtorKeys.listAllPages(filters),
+    queryFn: async () => {
+      const response = await getAllDebtors(filters);
+      return response.data;
+    },
     enabled,
   });
 }

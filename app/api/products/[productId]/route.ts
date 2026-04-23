@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createLocaleForwardHeaders } from "@/app/api/_utils/localeHeader";
 import { getBearerAuthorizationHeader } from "../../_utils/authHeader";
 
 const BACKEND_API_URL = process.env.BACKEND_API_URL || "http://localhost:5139";
@@ -31,6 +32,7 @@ export async function GET(
       {
         method: "GET",
         headers: {
+          ...createLocaleForwardHeaders(request),
           "Content-Type": "application/json",
           Authorization: authHeader,
         },
@@ -85,6 +87,7 @@ export async function PUT(
         {
           method: "PUT",
           headers: {
+            ...createLocaleForwardHeaders(request),
             Authorization: authHeader,
           },
           body: incomingFormData,
@@ -130,6 +133,7 @@ export async function PUT(
       {
         method: "PUT",
         headers: {
+          ...createLocaleForwardHeaders(request),
           Authorization: authHeader,
         },
         body: formData,
@@ -178,6 +182,7 @@ export async function DELETE(
       {
         method: "DELETE",
         headers: {
+          ...createLocaleForwardHeaders(request),
           "Content-Type": "application/json",
           Authorization: authHeader,
         },

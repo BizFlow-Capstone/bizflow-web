@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createLocaleForwardHeaders } from "@/app/api/_utils/localeHeader";
 
 const BACKEND_URL = process.env.BACKEND_API_URL;
 
@@ -30,14 +31,18 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
 
-    const response = await fetch(`${BACKEND_URL}/api/auth/forgot-password/send-otp`, {
-      method: "POST",
-      headers: {
-        accept: "*/*",
-        "Content-Type": "application/json",
+    const response = await fetch(
+      `${BACKEND_URL}/api/auth/forgot-password/send-otp`,
+      {
+        method: "POST",
+        headers: {
+          accept: "*/*",
+          "Content-Type": "application/json",
+          ...createLocaleForwardHeaders(request),
+        },
+        body: JSON.stringify({ email: body?.email ?? "" }),
       },
-      body: JSON.stringify({ email: body?.email ?? "" }),
-    });
+    );
 
     return await toJsonResponse(response);
   } catch (error) {

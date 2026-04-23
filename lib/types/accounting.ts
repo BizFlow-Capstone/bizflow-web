@@ -113,6 +113,7 @@ export interface RevenueFilters {
 
 export interface CreateManualRevenueRequest {
   businessLocationId: number;
+  businessTypeId: string;
   amount: number;
   revenueDate: string;
   description: string;

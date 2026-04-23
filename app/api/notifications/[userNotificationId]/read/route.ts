@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createLocaleForwardHeaders } from "@/app/api/_utils/localeHeader";
 import { getBearerAuthorizationHeader } from "../../../_utils/authHeader";
 
 const BACKEND_API_URL = process.env.BACKEND_API_URL || "http://localhost:5139";
@@ -30,6 +31,7 @@ export async function PUT(
     const response = await fetch(`${BACKEND_API_URL}/api/notifications/${userNotificationId}/read`, {
       method: "PUT",
       headers: {
+        ...createLocaleForwardHeaders(request),
         Authorization: authHeader,
         "Content-Type": "application/json",
       },

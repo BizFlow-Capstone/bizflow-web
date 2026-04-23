@@ -12,6 +12,7 @@ import {
 } from "@tanstack/react-query";
 import {
   getImports,
+  getAllImports,
   getImportDetail,
   createImport,
   updateImport,
@@ -35,6 +36,9 @@ export const importKeys = {
   all: ["imports"] as const,
   lists: () => [...importKeys.all, "list"] as const,
   list: (filters: ImportFilters) => [...importKeys.lists(), filters] as const,
+  allPages: () => [...importKeys.all, "all-pages"] as const,
+  allPagesList: (filters: ImportFilters) =>
+    [...importKeys.allPages(), filters] as const,
   details: () => [...importKeys.all, "detail"] as const,
   detail: (id: number) => [...importKeys.details(), id] as const,
   template: () => [...importKeys.all, "template"] as const,
@@ -52,6 +56,17 @@ export function useImports(filters: ImportFilters, enabled = true) {
       return response.data;
     },
     placeholderData: keepPreviousData,
+    enabled,
+  });
+}
+
+export function useAllImports(filters: ImportFilters, enabled = true) {
+  return useQuery<ImportPagination>({
+    queryKey: importKeys.allPagesList(filters),
+    queryFn: async () => {
+      const response = await getAllImports(filters);
+      return response.data;
+    },
     enabled,
   });
 }
@@ -81,6 +96,7 @@ export function useCreateImport() {
     mutationFn: (data: CreateImportRequest) => createImport(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: importKeys.lists() });
+      queryClient.invalidateQueries({ queryKey: importKeys.allPages() });
     },
   });
 }
@@ -102,6 +118,7 @@ export function useUpdateImport() {
     }) => updateImport(importId, data),
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: importKeys.lists() });
+      queryClient.invalidateQueries({ queryKey: importKeys.allPages() });
       queryClient.invalidateQueries({
         queryKey: importKeys.detail(variables.importId),
       });
@@ -126,6 +143,7 @@ export function useConfirmImport() {
     }) => confirmImport(importId, data),
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: importKeys.lists() });
+      queryClient.invalidateQueries({ queryKey: importKeys.allPages() });
       queryClient.invalidateQueries({
         queryKey: importKeys.detail(variables.importId),
       });
@@ -144,6 +162,7 @@ export function useDeleteImport() {
     mutationFn: (importId: number) => deleteImport(importId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: importKeys.lists() });
+      queryClient.invalidateQueries({ queryKey: importKeys.allPages() });
     },
   });
 }

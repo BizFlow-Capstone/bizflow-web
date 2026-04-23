@@ -12,9 +12,14 @@ export interface EmployeeDetail {
   email: string;
   phone?: string;
   isActive?: boolean;
-  status?: string;
+  status?: EmployeeStatusOption | string | null;
   startAt?: string | null;
   endAt?: string;
+}
+
+export interface EmployeeStatusOption {
+  code: string;
+  label: string;
 }
 
 export interface EmployeeSearchResult {
