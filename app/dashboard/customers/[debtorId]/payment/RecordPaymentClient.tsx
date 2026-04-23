@@ -47,7 +47,7 @@ export default function RecordPaymentClient() {
     const errs: Record<string, string> = {};
     if (!parsedAmount) {
       errs.amount =
-        "Vui lòng nhập số điều chỉnh khác 0. Số âm giảm nợ, số dương tăng nợ.";
+        "Vui lòng nhập số điều chỉnh khác 0. Số dương giảm nợ/tăng dư, số âm tăng nợ.";
     }
     setFormErrors(errs);
     return Object.keys(errs).length === 0;
@@ -119,7 +119,7 @@ export default function RecordPaymentClient() {
             Đã ghi nhận điều chỉnh{" "}
             <strong
               className={
-                parsedAmount < 0 ? "text-green-600" : "text-orange-600"
+                parsedAmount > 0 ? "text-green-600" : "text-orange-600"
               }
             >
               {parsedAmount > 0 ? "+" : ""}
@@ -224,7 +224,7 @@ export default function RecordPaymentClient() {
               <Input
                 id="amount"
                 type="number"
-                placeholder="Âm: giảm nợ, dương: tăng nợ"
+                placeholder="Dương: giảm nợ/tăng dư, âm: tăng nợ"
                 className={`text-lg font-semibold h-12 ${
                   formErrors.amount ? "border-red-400" : ""
                 }`}
@@ -264,9 +264,9 @@ export default function RecordPaymentClient() {
               <Button
                 variant="outline"
                 className="w-full gap-2 border-green-200 text-green-600 hover:bg-green-50"
-                onClick={() => setAmount(String(-debtor.outstandingDebt))}
+                onClick={() => setAmount(String(debtor.outstandingDebt))}
               >
-                Giảm hết nợ (-{formatCurrency(debtor.outstandingDebt)})
+                Giảm hết nợ (+{formatCurrency(debtor.outstandingDebt)})
               </Button>
             )}
           </div>

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createLocaleForwardHeaders } from "@/app/api/_utils/localeHeader";
 import { getBearerAuthorizationHeader } from "@/app/api/_utils/authHeader";
 
 const BACKEND_API_URL = process.env.BACKEND_API_URL || "http://localhost:5139";
@@ -26,6 +27,7 @@ export async function GET(request: NextRequest, context: Context) {
     const response = await fetch(backendUrl.toString(), {
       method: "GET",
       headers: {
+        ...createLocaleForwardHeaders(request),
         "Content-Type": "application/json",
         Authorization: authHeader,
       },
@@ -61,6 +63,7 @@ export async function POST(request: NextRequest, context: Context) {
       {
         method: "POST",
         headers: {
+          ...createLocaleForwardHeaders(request),
           "Content-Type": "application/json",
           Authorization: authHeader,
         },

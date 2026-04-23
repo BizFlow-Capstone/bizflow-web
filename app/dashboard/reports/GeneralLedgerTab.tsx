@@ -32,7 +32,11 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { useGLEntries, useGLReferenceCatalog } from "@/hooks/useAccounting";
+import {
+  useGLEntries,
+  useAllGLEntries,
+  useGLReferenceCatalog,
+} from "@/hooks/useAccounting";
 import type {
   GLEntryFilters,
   GLEntryListItem,
@@ -274,8 +278,20 @@ export default function GeneralLedgerTab({
     error,
   } = useGLEntries(filters);
 
+  const summaryFilters: GLEntryFilters = {
+    locationId,
+    transactionTypes,
+    referenceTypes,
+    moneyChannels,
+    viewMode,
+    fromDate: range.fromDate,
+    toDate: range.toDate,
+  };
+
+  const { data: summaryData } = useAllGLEntries(summaryFilters);
+
   const summary = useMemo(() => {
-    const items = data?.items ?? [];
+    const items = summaryData?.items ?? [];
     let totalIn = 0;
     let totalOut = 0;
     let activeCount = 0;
@@ -299,7 +315,7 @@ export default function GeneralLedgerTab({
       reversedCount,
       reversalCount,
     };
-  }, [data?.items]);
+  }, [summaryData?.items]);
 
   const activeFilterCount =
     transactionTypes.length + referenceTypes.length + moneyChannels.length;
@@ -375,17 +391,13 @@ export default function GeneralLedgerTab({
     <div className="space-y-5">
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         <div className="rounded-2xl border bg-white p-4">
-          <p className="text-sm text-gray-500 mb-1">
-            Tổng thu (trang hiện tại)
-          </p>
+          <p className="text-sm text-gray-500 mb-1">Tổng thu (theo bộ lọc)</p>
           <p className="text-2xl font-bold text-emerald-600">
             {fmt.format(summary.totalIn)}
           </p>
         </div>
         <div className="rounded-2xl border bg-white p-4">
-          <p className="text-sm text-gray-500 mb-1">
-            Tổng chi (trang hiện tại)
-          </p>
+          <p className="text-sm text-gray-500 mb-1">Tổng chi (theo bộ lọc)</p>
           <p className="text-2xl font-bold text-red-600">
             {fmt.format(summary.totalOut)}
           </p>
@@ -799,8 +811,12 @@ export default function GeneralLedgerTab({
                           disabled={!path}
                           onClick={() => {
                             if (path) {
-                              const backUrl = encodeURIComponent("/dashboard/reports?tab=reports&subTab=ledger");
-                              router.push(`${path}${path.includes("?") ? "&" : "?" }backUrl=${backUrl}`);
+                              const backUrl = encodeURIComponent(
+                                "/dashboard/reports?tab=reports&subTab=ledger",
+                              );
+                              router.push(
+                                `${path}${path.includes("?") ? "&" : "?"}backUrl=${backUrl}`,
+                              );
                             }
                           }}
                         >

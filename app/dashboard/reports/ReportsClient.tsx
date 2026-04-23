@@ -54,8 +54,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
-  useRevenues,
-  useCosts,
+  useAllRevenuesByFilters,
+  useAllCosts,
   useCreateManualCost,
   useUpdateManualCost,
   useDeleteManualCost,
@@ -65,6 +65,7 @@ import {
   useCashFlowReport,
   useRevenueForecast,
 } from "@/hooks/useAccounting";
+import { useBusinessTypes } from "@/hooks/useBusinessTypes";
 import {
   useAccountingTemplates,
   useAccountingBooks,
@@ -246,8 +247,11 @@ function ReportsTab({ locationId }: { locationId: number }) {
       scroll: false,
     });
   };
-  const { data: revenues, isLoading: revLoading } = useRevenues(locationId);
-  const { data: costs, isLoading: costLoading } = useCosts({ locationId });
+  const { data: revenues, isLoading: revLoading } = useAllRevenuesByFilters({
+    locationId,
+  });
+  const { data: costs, isLoading: costLoading } = useAllCosts({ locationId });
+  const { data: businessTypes = [] } = useBusinessTypes();
   const createCostMutation = useCreateManualCost();
   const updateCostMutation = useUpdateManualCost(locationId);
   const deleteCostMutation = useDeleteManualCost(locationId);
@@ -258,6 +262,7 @@ function ReportsTab({ locationId }: { locationId: number }) {
   const [manualDate, setManualDate] = useState(
     new Date().toISOString().slice(0, 10),
   );
+  const [manualBusinessTypeId, setManualBusinessTypeId] = useState("");
   const [manualDescription, setManualDescription] = useState("");
   const [manualChannel, setManualChannel] = useState<"cash" | "bank">("cash");
   const [manualError, setManualError] = useState("");
@@ -277,6 +282,12 @@ function ReportsTab({ locationId }: { locationId: number }) {
     useState(false);
   const [manualCostError, setManualCostError] = useState("");
   const [isCostModalOpen, setIsCostModalOpen] = useState(false);
+
+  useEffect(() => {
+    if (!manualBusinessTypeId && businessTypes.length > 0) {
+      setManualBusinessTypeId(businessTypes[0].businessTypeId);
+    }
+  }, [businessTypes, manualBusinessTypeId]);
   const [anomalyFilter, setAnomalyFilter] = useState<
     "unacked" | "acked" | "all"
   >("unacked");
@@ -298,10 +309,38 @@ function ReportsTab({ locationId }: { locationId: number }) {
   const acknowledgeAnomalyMutation = useAcknowledgeAnomalyAlert();
   const backfillVectorStoreMutation = useBackfillVectorStore();
 
-  const totalRevenue = revenues?.items.reduce((s, r) => s + r.amount, 0) ?? 0;
-  const totalCost = costs?.items.reduce((s, c) => s + c.amount, 0) ?? 0;
   const revenueItems = useMemo(() => revenues?.items ?? [], [revenues?.items]);
   const costItems = useMemo(() => costs?.items ?? [], [costs?.items]);
+  const totalRevenue = revenueItems.reduce((s, r) => s + r.amount, 0);
+  const totalCost = costItems.reduce((s, c) => s + c.amount, 0);
+  const currentYear = new Date().getFullYear();
+
+  const totalRevenueYtd = useMemo(
+    () =>
+      revenueItems.reduce((sum, item) => {
+        const parsedDate = new Date(item.revenueDate);
+        if (Number.isNaN(parsedDate.getTime())) return sum;
+        return parsedDate.getFullYear() === currentYear
+          ? sum + item.amount
+          : sum;
+      }, 0),
+    [revenueItems, currentYear],
+  );
+
+  const totalCostYtd = useMemo(
+    () =>
+      costItems.reduce((sum, item) => {
+        const parsedDate = new Date(item.costDate);
+        if (Number.isNaN(parsedDate.getTime())) return sum;
+        return parsedDate.getFullYear() === currentYear
+          ? sum + item.amount
+          : sum;
+      }, 0),
+    [costItems, currentYear],
+  );
+
+  const revenueTransactionCount = revenueItems.length;
+  const costTransactionCount = costItems.length;
 
   const revenueSeries = useMemo(() => {
     const now = new Date();
@@ -669,9 +708,15 @@ function ReportsTab({ locationId }: { locationId: number }) {
       return false;
     }
 
+    if (!manualBusinessTypeId) {
+      setManualError("Vui lòng chọn loại hình kinh doanh.");
+      return false;
+    }
+
     try {
       await createRevenueMutation.mutateAsync({
         businessLocationId: locationId,
+        businessTypeId: manualBusinessTypeId,
         amount,
         revenueDate: manualDate,
         description: manualDescription.trim(),
@@ -771,9 +816,7 @@ function ReportsTab({ locationId }: { locationId: number }) {
       return true;
     } catch (e) {
       setManualCostError(
-        e instanceof Error
-          ? e.message
-          : "Không thể lưu chi phí thủ công.",
+        e instanceof Error ? e.message : "Không thể lưu chi phí thủ công.",
       );
       return false;
     }
@@ -843,9 +886,7 @@ function ReportsTab({ locationId }: { locationId: number }) {
       toast.success("Đã xác nhận cảnh báo");
     } catch (error) {
       toast.error(
-        error instanceof Error
-          ? error.message
-          : "Không thể xác nhận cảnh báo",
+        error instanceof Error ? error.message : "Không thể xác nhận cảnh báo",
       );
     }
   }
@@ -920,7 +961,7 @@ function ReportsTab({ locationId }: { locationId: number }) {
           title="Doanh thu"
           subtitle={
             revenues
-              ? `${revenues.totalCount} giao dịch · Tổng: ${formatVnd(totalRevenue)}`
+              ? `${new Intl.NumberFormat("vi-VN").format(revenueTransactionCount)} giao dịch · Tổng: ${formatVnd(totalRevenue)}`
               : undefined
           }
           loading={revLoading}
@@ -932,8 +973,8 @@ function ReportsTab({ locationId }: { locationId: number }) {
                   Tổng quan doanh thu
                 </h4>
                 <p className="text-sm text-gray-500">
-                  Theo dõi xu hướng doanh thu và thêm ghi nhận thủ
-                  công bằng modal.
+                  Theo dõi xu hướng doanh thu và thêm ghi nhận thủ công bằng
+                  modal.
                 </p>
               </div>
               <Button
@@ -951,7 +992,7 @@ function ReportsTab({ locationId }: { locationId: number }) {
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
               <RevenueStatCard
                 title="Tổng doanh thu (YTD)"
-                value={formatCompactVnd(totalRevenue)}
+                value={formatCompactVnd(totalRevenueYtd)}
                 trend="+15.2% so với kỳ trước"
                 positive
               />
@@ -984,8 +1025,8 @@ function ReportsTab({ locationId }: { locationId: number }) {
                     Dự báo doanh thu 7 ngày tới
                   </h5>
                   <p className="text-sm text-gray-500 mt-2">
-                    Dữ liệu đã được tính sẵn theo lịch nightly
-                    job, không gọi AI realtime.
+                    Dữ liệu đã được tính sẵn theo lịch nightly job, không gọi AI
+                    realtime.
                   </p>
                 </div>
                 <Badge className="w-fit bg-blue-100 text-blue-700 border border-blue-200">
@@ -1047,8 +1088,7 @@ function ReportsTab({ locationId }: { locationId: number }) {
                 </>
               ) : (
                 <div className="rounded-xl border bg-white p-6 text-sm text-gray-500">
-                  Chưa có dữ liệu dự báo doanh thu cho địa điểm
-                  này.
+                  Chưa có dữ liệu dự báo doanh thu cho địa điểm này.
                 </div>
               )}
             </div>
@@ -1078,9 +1118,7 @@ function ReportsTab({ locationId }: { locationId: number }) {
                 <TableHeader>
                   <TableRow className="bg-gray-50 hover:bg-gray-50">
                     <TableHead>Nguồn Doanh Thu</TableHead>
-                    <TableHead className="text-right">
-                      Tổng Doanh Thu
-                    </TableHead>
+                    <TableHead className="text-right">Tổng Doanh Thu</TableHead>
                     <TableHead className="text-right">% Tổng</TableHead>
                     <TableHead className="text-right">
                       Tỷ Lệ Tăng Trưởng
@@ -1165,9 +1203,7 @@ function ReportsTab({ locationId }: { locationId: number }) {
                     <TableHead>Loại</TableHead>
                     <TableHead>Mô tả</TableHead>
                     <TableHead>PTTT</TableHead>
-                    <TableHead className="text-right pr-5">
-                      Số tiền
-                    </TableHead>
+                    <TableHead className="text-right pr-5">Số tiền</TableHead>
                     <TableHead className="text-right pr-5">Thao tác</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -1185,9 +1221,7 @@ function ReportsTab({ locationId }: { locationId: number }) {
                               : "bg-gray-100 text-gray-600"
                           }
                         >
-                          {r.revenueType === "sale"
-                            ? "Bán hàng"
-                            : "Thủ công"}
+                          {r.revenueType === "sale" ? "Bán hàng" : "Thủ công"}
                         </Badge>
                       </TableCell>
                       <TableCell className="text-sm max-w-xs truncate text-gray-700">
@@ -1235,12 +1269,29 @@ function ReportsTab({ locationId }: { locationId: number }) {
               <DialogHeader>
                 <DialogTitle>Tạo doanh thu thủ công</DialogTitle>
                 <DialogDescription>
-                  Nhập thông tin giao dịch để ghi nhận doanh thu
-                  ngoài đơn hàng.
+                  Nhập thông tin giao dịch để ghi nhận doanh thu ngoài đơn hàng.
                 </DialogDescription>
               </DialogHeader>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <Select
+                  value={manualBusinessTypeId}
+                  onValueChange={(value) => setManualBusinessTypeId(value)}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Loại hình kinh doanh" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {businessTypes.map((businessType) => (
+                      <SelectItem
+                        key={businessType.businessTypeId}
+                        value={businessType.businessTypeId}
+                      >
+                        {businessType.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
                 <Input
                   type="number"
                   min="0"
@@ -1318,7 +1369,7 @@ function ReportsTab({ locationId }: { locationId: number }) {
           title="Chi phí"
           subtitle={
             costs
-              ? `${costs.totalCount} giao dịch · Tổng: ${formatVnd(totalCost)}`
+              ? `${new Intl.NumberFormat("vi-VN").format(costTransactionCount)} giao dịch · Tổng: ${formatVnd(totalCost)}`
               : undefined
           }
           loading={costLoading}
@@ -1337,7 +1388,7 @@ function ReportsTab({ locationId }: { locationId: number }) {
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
               <CostStatCard
                 title="Tổng chi phí (YTD)"
-                value={formatCompactVnd(totalCost)}
+                value={formatCompactVnd(totalCostYtd)}
                 trend="-8.5% so với kỳ trước"
                 positive={false}
               />
@@ -1403,9 +1454,7 @@ function ReportsTab({ locationId }: { locationId: number }) {
                     <TableHead>Phân loại</TableHead>
                     <TableHead>Mô tả</TableHead>
                     <TableHead>PTTT</TableHead>
-                    <TableHead className="text-right pr-5">
-                      Số tiền
-                    </TableHead>
+                    <TableHead className="text-right pr-5">Số tiền</TableHead>
                     <TableHead className="text-right pr-5">Thao tác</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -1485,8 +1534,8 @@ function ReportsTab({ locationId }: { locationId: number }) {
                     : "Tạo chi phí thủ công"}
                 </DialogTitle>
                 <DialogDescription>
-                  Điền thông tin để thêm chi phí, hoặc cập nhật
-                  bản ghi thủ công.
+                  Điền thông tin để thêm chi phí, hoặc cập nhật bản ghi thủ
+                  công.
                 </DialogDescription>
               </DialogHeader>
 
@@ -1610,8 +1659,7 @@ function ReportsTab({ locationId }: { locationId: number }) {
                   Cảnh báo theo AI + Rule-based
                 </h4>
                 <p className="text-sm text-gray-500">
-                  Theo dõi bất thường doanh thu, dữ liệu và giao
-                  dịch đáng ngờ.
+                  Theo dõi bất thường doanh thu, dữ liệu và giao dịch đáng ngờ.
                 </p>
               </div>
               <div className="flex items-center gap-2">
@@ -1973,8 +2021,7 @@ function BooksTab({ locationId }: { locationId: number }) {
   };
 
   const handleCreate = async () => {
-    if (!periodId)
-      return alert("Vui lòng chọn hoặc tạo kỳ kế toán trước.");
+    if (!periodId) return alert("Vui lòng chọn hoặc tạo kỳ kế toán trước.");
     if (selectedTemplates.length === 0)
       return alert("Vui lòng chọn ít nhất 1 mẫu sổ.");
     try {
@@ -2064,8 +2111,8 @@ function BooksTab({ locationId }: { locationId: number }) {
       {/* Tạo Sổ Kế Toán Form */}
       <div className="bg-white rounded-2xl border p-5 shadow-sm">
         <h3 className="font-semibold text-gray-800 mb-4 flex items-center gap-2">
-          <Plus className="w-4 h-4 text-[#23C4C1]" /> Tạo Sổ Kế Toán
-          (Gợi ý tự động)
+          <Plus className="w-4 h-4 text-[#23C4C1]" /> Tạo Sổ Kế Toán (Gợi ý tự
+          động)
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-gray-50/50 p-4 rounded-xl border border-gray-100 mb-4">
           <div>
@@ -2083,12 +2130,8 @@ function BooksTab({ locationId }: { locationId: number }) {
                 <SelectItem value="1">
                   Nhóm 1 — Doanh thu {"<"} 500 triệu
                 </SelectItem>
-                <SelectItem value="2">
-                  Nhóm 2 — 500tr đến 3 tỷ
-                </SelectItem>
-                <SelectItem value="3">
-                  Nhóm 3 — 3 tỷ đến 50 tỷ
-                </SelectItem>
+                <SelectItem value="2">Nhóm 2 — 500tr đến 3 tỷ</SelectItem>
+                <SelectItem value="3">Nhóm 3 — 3 tỷ đến 50 tỷ</SelectItem>
                 <SelectItem value="4">Nhóm 4 — {"≥"} 50 tỷ</SelectItem>
               </SelectContent>
             </Select>
@@ -2117,9 +2160,7 @@ function BooksTab({ locationId }: { locationId: number }) {
                   </SelectItem>
                 ) : null}
                 {allowedTaxMethods.includes("method_2") ? (
-                  <SelectItem value="method_2">
-                    Cách 2 — DT trừ CP
-                  </SelectItem>
+                  <SelectItem value="method_2">Cách 2 — DT trừ CP</SelectItem>
                 ) : null}
               </SelectContent>
             </Select>
@@ -2128,8 +2169,7 @@ function BooksTab({ locationId }: { locationId: number }) {
 
         <div>
           <label className="text-xs font-semibold text-gray-600 uppercase mb-3 block">
-            Mẫu sổ (TT152) — Bạn có thể chọn mở rộng thêm nếu
-            cần
+            Mẫu sổ (TT152) — Bạn có thể chọn mở rộng thêm nếu cần
           </label>
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
             {templates?.map((tpl) => {
@@ -2339,8 +2379,7 @@ function BooksTab({ locationId }: { locationId: number }) {
                                 disabled
                                 title="API export đang được hoàn thiện"
                               >
-                                <Download className="w-3 h-3 mr-1" /> Xuất
-                                Excel
+                                <Download className="w-3 h-3 mr-1" /> Xuất Excel
                               </Button>
                               <Button
                                 variant="destructive"
@@ -2361,8 +2400,7 @@ function BooksTab({ locationId }: { locationId: number }) {
                                   </>
                                 ) : (
                                   <>
-                                    <Trash2 className="w-3 h-3 mr-1" /> Xóa
-                                    sổ
+                                    <Trash2 className="w-3 h-3 mr-1" /> Xóa sổ
                                   </>
                                 )}
                               </Button>
@@ -2397,11 +2435,8 @@ function BooksTab({ locationId }: { locationId: number }) {
             </h3>
             <p className="text-sm text-gray-400 max-w-xs mx-auto leading-relaxed">
               Hãy chọn kì kế toán và bấm{" "}
-              <strong className="text-gray-600 font-bold">
-                Gợi ý tạo sổ
-              </strong>{" "}
-              ở phía trên để hệ thống tự động thiết kế sổ
-              sách theo đúng TT152.
+              <strong className="text-gray-600 font-bold">Gợi ý tạo sổ</strong>{" "}
+              ở phía trên để hệ thống tự động thiết kế sổ sách theo đúng TT152.
             </p>
           </div>
         )}
@@ -3106,9 +3141,8 @@ function BookSummaryPanel({
           Không thể phân xuất dữ liệu
         </p>
         <p className="text-sm text-rose-600/80 max-w-md italic">
-          Hệ thống phân tích đang bảo trì hoặc gặp lỗi kết
-          nối. Hãy thử làm mới trang hoặc liên hệ quản trị
-          viên.
+          Hệ thống phân tích đang bảo trì hoặc gặp lỗi kết nối. Hãy thử làm mới
+          trang hoặc liên hệ quản trị viên.
         </p>
       </div>
     );
@@ -3170,8 +3204,7 @@ function BookSummaryPanel({
       {/* Kết quả công thức */}
       <div className="space-y-4">
         <div className="flex items-center gap-2 text-xs font-bold text-slate-500 uppercase tracking-widest pl-2">
-          <Calculator className="w-4 h-4 text-slate-400" /> Kết quả công
-          thức
+          <Calculator className="w-4 h-4 text-slate-400" /> Kết quả công thức
         </div>
         <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
           <table className="w-full text-sm">
@@ -3209,8 +3242,7 @@ function BookSummaryPanel({
       {/* Thông tin metadata */}
       <div className="space-y-4">
         <div className="flex items-center gap-2 text-xs font-bold text-slate-500 uppercase tracking-widest pl-2">
-          <FileText className="w-4 h-4 text-slate-400" /> Chú thích cách
-          tính
+          <FileText className="w-4 h-4 text-slate-400" /> Chú thích cách tính
         </div>
         <div className="bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm relative overflow-hidden">
           <div className="absolute top-0 right-0 p-4 opacity-[0.03] rotate-12">
@@ -3257,8 +3289,8 @@ function BookSummaryPanel({
       {(summary.businessTypeTaxes?.length ?? 0) > 0 && (
         <div className="space-y-4">
           <div className="flex items-center gap-2 text-xs font-bold text-slate-500 uppercase tracking-widest pl-2">
-            <Zap className="w-4 h-4 text-amber-500" /> Ngành nghề và thuế
-            suất áp dụng
+            <Zap className="w-4 h-4 text-amber-500" /> Ngành nghề và thuế suất
+            áp dụng
           </div>
           <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
             <table className="w-full text-sm">
@@ -3299,8 +3331,7 @@ function BookSummaryPanel({
                           {(Number(r.taxRate) * 100).toLocaleString("vi-VN")}%
                         </td>
                         <td className="px-6 py-4 text-slate-400 text-xs italic">
-                          {r.note ||
-                            "Hệ thống tự động đồng bộ TT152"}
+                          {r.note || "Hệ thống tự động đồng bộ TT152"}
                         </td>
                       </tr>
                     ))}
@@ -3316,8 +3347,8 @@ function BookSummaryPanel({
       {(summary.formulaDetails?.length ?? 0) > 0 && (
         <div className="space-y-4">
           <div className="flex items-center gap-2 text-xs font-bold text-slate-500 uppercase tracking-widest pl-2">
-            <Terminal className="w-4 h-4 text-slate-400" /> Chi tiết công
-            thức (engine)
+            <Terminal className="w-4 h-4 text-slate-400" /> Chi tiết công thức
+            (engine)
           </div>
           <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
             <table className="w-full text-sm">
@@ -3363,8 +3394,8 @@ function BookSummaryPanel({
       {(summary.columns?.length ?? 0) > 0 && (
         <div className="space-y-4">
           <div className="flex items-center gap-2 text-xs font-bold text-slate-500 uppercase tracking-widest pl-2">
-            <Layers className="w-4 h-4 text-slate-400" /> Bản đồ dữ
-            liệu & Cấu trúc cột
+            <Layers className="w-4 h-4 text-slate-400" /> Bản đồ dữ liệu & Cấu
+            trúc cột
           </div>
           <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
             <table className="w-full text-sm">

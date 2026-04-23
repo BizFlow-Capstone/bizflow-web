@@ -9,6 +9,7 @@ import {
   removeEmployee,
   searchEmployees,
 } from "@/services/employeeService";
+import { locationKeys } from "@/hooks/useLocations";
 
 /**
  * Query key factory for employees
@@ -81,8 +82,8 @@ export function useInviteEmployee() {
   return useMutation({
     mutationFn: (employeeId: string) => inviteEmployee({ employeeId }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: employeeKeys.lists() });
-      queryClient.invalidateQueries({ queryKey: employeeKeys.invitations() });
+      queryClient.invalidateQueries({ queryKey: employeeKeys.all });
+      queryClient.invalidateQueries({ queryKey: locationKeys.all });
     },
   });
 }
@@ -93,7 +94,8 @@ export function useRemoveEmployee() {
   return useMutation({
     mutationFn: (employeeId: string) => removeEmployee(employeeId),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: employeeKeys.lists() });
+      queryClient.invalidateQueries({ queryKey: employeeKeys.all });
+      queryClient.invalidateQueries({ queryKey: locationKeys.all });
     },
   });
 }
@@ -104,8 +106,8 @@ export function useAcceptInvitation() {
   return useMutation({
     mutationFn: (hireId: number) => acceptInvitation(hireId),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: employeeKeys.invitations() });
-      queryClient.invalidateQueries({ queryKey: employeeKeys.lists() });
+      queryClient.invalidateQueries({ queryKey: employeeKeys.all });
+      queryClient.invalidateQueries({ queryKey: locationKeys.all });
     },
   });
 }
@@ -116,7 +118,8 @@ export function useRejectInvitation() {
   return useMutation({
     mutationFn: (hireId: number) => rejectInvitation(hireId),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: employeeKeys.invitations() });
+      queryClient.invalidateQueries({ queryKey: employeeKeys.all });
+      queryClient.invalidateQueries({ queryKey: locationKeys.all });
     },
   });
 }

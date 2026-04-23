@@ -136,7 +136,10 @@ export interface ProductFilters {
   search?: string;
   name?: string;
   sku?: string;
+  businessTypeId?: string;
   businessTypeIds?: string[];
+  minSellingPrice?: number;
+  maxSellingPrice?: number;
   minCostPrice?: number;
   maxCostPrice?: number;
   minStock?: number;

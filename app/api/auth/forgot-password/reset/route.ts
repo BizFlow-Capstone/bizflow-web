@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getBearerAuthorizationHeader } from "../../../_utils/authHeader";
+import { createLocaleForwardHeaders } from "@/app/api/_utils/localeHeader";
 
 const BACKEND_URL = process.env.BACKEND_API_URL;
 
@@ -42,15 +43,19 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const response = await fetch(`${BACKEND_URL}/api/auth/forgot-password/reset`, {
-      method: "POST",
-      headers: {
-        accept: "*/*",
-        "Content-Type": "application/json",
-        Authorization: authorization,
+    const response = await fetch(
+      `${BACKEND_URL}/api/auth/forgot-password/reset`,
+      {
+        method: "POST",
+        headers: {
+          accept: "*/*",
+          "Content-Type": "application/json",
+          Authorization: authorization,
+          ...createLocaleForwardHeaders(request),
+        },
+        body: JSON.stringify({ password: body?.password ?? "" }),
       },
-      body: JSON.stringify({ password: body?.password ?? "" }),
-    });
+    );
 
     return await toJsonResponse(response);
   } catch (error) {

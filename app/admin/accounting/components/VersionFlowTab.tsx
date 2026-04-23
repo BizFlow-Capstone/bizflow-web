@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ElementType } from "react";
 import {
   Activity,
@@ -227,6 +227,7 @@ const PREVIEW_LOCATION_ID = 6;
 const PREVIEW_PERIOD_ID = 2;
 const PREVIEW_GROUP_NUMBER = 1;
 const PREVIEW_TAX_METHOD = "method_1";
+// Batch size per request (BE cursor pagination), not total rows limit.
 const PREVIEW_BATCH_SIZE = 10;
 
 function parseVisibleFieldCodes(raw: string): string[] {
@@ -256,6 +257,49 @@ function asArray(value: unknown): Array<Record<string, unknown>> {
     (item): item is Record<string, unknown> =>
       !!item && typeof item === "object",
   );
+}
+
+function parsePreviewRowsPage(data: unknown): {
+  rows: PreviewBookRow[];
+  nextCursor?: string;
+  hasMore: boolean;
+} {
+  const responseData = asRecord(data);
+  const rows = asArray(responseData?.rows);
+  const nextCursor = asString(responseData?.nextCursor).trim();
+  const hasMoreRaw = Boolean(responseData?.hasMore);
+  return {
+    rows,
+    nextCursor: nextCursor || undefined,
+    hasMore: hasMoreRaw && !!nextCursor,
+  };
+}
+
+function buildPreviewRowDedupKey(row: PreviewBookRow): string {
+  const idCandidates = [
+    "rowId",
+    "RowId",
+    "lineId",
+    "lineNumber",
+    "revenueId",
+    "costId",
+    "glEntryId",
+    "stockMovementId",
+    "id",
+    "Id",
+  ];
+
+  for (const key of idCandidates) {
+    const value = row[key];
+    if (typeof value === "string" && value.trim()) {
+      return `${key}:${value.trim()}`;
+    }
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return `${key}:${value}`;
+    }
+  }
+
+  return JSON.stringify(row);
 }
 
 function asReferenceHelpList(value: unknown): ReferenceHelpItem[] {
@@ -675,12 +719,21 @@ export default function VersionTab(props: VersionTabProps) {
     unknown
   > | null>(null);
   const [renderPreviewBusy, setRenderPreviewBusy] = useState(false);
+  const [renderPreviewLoadingMore, setRenderPreviewLoadingMore] =
+    useState(false);
+  const [renderPreviewCursor, setRenderPreviewCursor] = useState<string | null>(
+    null,
+  );
+  const [renderPreviewHasMore, setRenderPreviewHasMore] = useState(false);
   const [renderPreviewError, setRenderPreviewError] = useState("");
   const [previewBookId, setPreviewBookId] = useState<number | null>(null);
   const [bookSectionsMeta, setBookSectionsMeta] =
     useState<BookSectionsMeta | null>(null);
   const [bookSectionsBusy, setBookSectionsBusy] = useState(false);
   const [bookSectionsError, setBookSectionsError] = useState("");
+  const renderPreviewLoaderMainRef = useRef<HTMLDivElement | null>(null);
+  const renderPreviewLoaderWizardRef = useRef<HTMLDivElement | null>(null);
+  const renderPreviewCanAutoLoadRef = useRef(true);
 
   const renderPreviewSummaryMeta = useMemo(() => {
     const root = asRecord(renderPreviewResult);
@@ -1295,6 +1348,9 @@ export default function VersionTab(props: VersionTabProps) {
       setRenderPreviewResult(null);
       setRenderPreviewError("");
       setRenderPreviewBusy(false);
+      setRenderPreviewLoadingMore(false);
+      setRenderPreviewCursor(null);
+      setRenderPreviewHasMore(false);
       return;
     }
     const resolvedBookId = previewBookId;
@@ -1304,25 +1360,35 @@ export default function VersionTab(props: VersionTabProps) {
     async function loadRenderPreviewData() {
       setRenderPreviewBusy(true);
       setRenderPreviewError("");
+      setRenderPreviewLoadingMore(false);
+      setRenderPreviewCursor(null);
+      setRenderPreviewHasMore(false);
+      renderPreviewCanAutoLoadRef.current = true;
       try {
         const [summaryResponse, rowsResponse] = await Promise.all([
           getBookSummary(PREVIEW_LOCATION_ID, resolvedBookId),
           getBookRows(PREVIEW_LOCATION_ID, resolvedBookId, PREVIEW_BATCH_SIZE),
         ]);
 
+        const firstPage = parsePreviewRowsPage(rowsResponse.data);
+
         if (!disposed) {
           const preview = {
             summary: summaryResponse.data ?? {},
             rows: {
-              items: asArray(rowsResponse.data?.rows),
+              items: firstPage.rows,
             },
           } as Record<string, unknown>;
 
           setRenderPreviewResult(preview);
+          setRenderPreviewCursor(firstPage.nextCursor ?? null);
+          setRenderPreviewHasMore(firstPage.hasMore);
         }
       } catch (error) {
         if (!disposed) {
           setRenderPreviewResult(null);
+          setRenderPreviewCursor(null);
+          setRenderPreviewHasMore(false);
           setRenderPreviewError(
             error instanceof Error
               ? error.message
@@ -1340,6 +1406,111 @@ export default function VersionTab(props: VersionTabProps) {
       disposed = true;
     };
   }, [previewBookId]);
+
+  const loadMoreRenderPreviewRows = useCallback(async () => {
+    if (!previewBookId || !renderPreviewHasMore || !renderPreviewCursor) return;
+    if (renderPreviewBusy || renderPreviewLoadingMore) return;
+
+    setRenderPreviewLoadingMore(true);
+    try {
+      const rowsResponse = await getBookRows(
+        PREVIEW_LOCATION_ID,
+        previewBookId,
+        PREVIEW_BATCH_SIZE,
+        renderPreviewCursor,
+      );
+
+      const nextPage = parsePreviewRowsPage(rowsResponse.data);
+
+      setRenderPreviewResult((prev) => {
+        const root = asRecord(prev) ?? {};
+        const rowsRecord = asRecord(root.rows) ?? {};
+        const currentItems = asArray(rowsRecord.items);
+        const seen = new Set(
+          currentItems.map((row) => buildPreviewRowDedupKey(row)),
+        );
+        const uniqueIncoming = nextPage.rows.filter((row) => {
+          const key = buildPreviewRowDedupKey(row);
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+
+        return {
+          ...root,
+          rows: {
+            ...rowsRecord,
+            items: [...currentItems, ...uniqueIncoming],
+          },
+        };
+      });
+
+      const cursorLoop =
+        !!nextPage.nextCursor && nextPage.nextCursor === renderPreviewCursor;
+      if (!nextPage.hasMore || cursorLoop || !nextPage.nextCursor) {
+        setRenderPreviewCursor(null);
+        setRenderPreviewHasMore(false);
+      } else {
+        setRenderPreviewCursor(nextPage.nextCursor);
+        setRenderPreviewHasMore(true);
+      }
+    } catch (error) {
+      setRenderPreviewError(
+        error instanceof Error
+          ? error.message
+          : "Không tải thêm được dữ liệu sổ mẫu.",
+      );
+      setRenderPreviewHasMore(false);
+      setRenderPreviewCursor(null);
+    } finally {
+      setRenderPreviewLoadingMore(false);
+    }
+  }, [
+    previewBookId,
+    renderPreviewHasMore,
+    renderPreviewCursor,
+    renderPreviewBusy,
+    renderPreviewLoadingMore,
+  ]);
+
+  useEffect(() => {
+    const refs = [
+      renderPreviewLoaderMainRef.current,
+      renderPreviewLoaderWizardRef.current,
+    ].filter((item): item is HTMLDivElement => Boolean(item));
+
+    if (refs.length === 0 || !renderPreviewHasMore) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const anyVisible = entries.some((entry) => entry.isIntersecting);
+
+        if (!anyVisible) {
+          renderPreviewCanAutoLoadRef.current = true;
+          return;
+        }
+
+        if (
+          renderPreviewCanAutoLoadRef.current &&
+          !renderPreviewBusy &&
+          !renderPreviewLoadingMore &&
+          renderPreviewHasMore
+        ) {
+          renderPreviewCanAutoLoadRef.current = false;
+          void loadMoreRenderPreviewRows();
+        }
+      },
+      { threshold: 0.1 },
+    );
+
+    refs.forEach((refElement) => observer.observe(refElement));
+    return () => observer.disconnect();
+  }, [
+    loadMoreRenderPreviewRows,
+    renderPreviewBusy,
+    renderPreviewHasMore,
+    renderPreviewLoadingMore,
+  ]);
 
   useEffect(() => {
     const versionId = toNullableNumber(selectedVersionId);
@@ -2386,6 +2557,17 @@ export default function VersionTab(props: VersionTabProps) {
                       renderPreviewSummaryMeta ?? asRecord(result?.summary)
                     }
                   />
+
+                  {renderPreviewHasMore ? (
+                    <div
+                      ref={renderPreviewLoaderMainRef}
+                      className="rounded-lg border border-dashed border-gray-300 bg-gray-50 px-4 py-2 text-xs text-gray-500"
+                    >
+                      {renderPreviewLoadingMore
+                        ? "Đang tải thêm rows..."
+                        : "Cuộn xuống để tải thêm rows"}
+                    </div>
+                  ) : null}
                 </div>
               )}
             </CardContent>
@@ -3521,6 +3703,17 @@ export default function VersionTab(props: VersionTabProps) {
                             asRecord(result?.summary)
                           }
                         />
+
+                        {renderPreviewHasMore ? (
+                          <div
+                            ref={renderPreviewLoaderWizardRef}
+                            className="rounded-lg border border-dashed border-gray-300 bg-gray-50 px-4 py-2 text-xs text-gray-500"
+                          >
+                            {renderPreviewLoadingMore
+                              ? "Đang tải thêm rows..."
+                              : "Cuộn xuống để tải thêm rows"}
+                          </div>
+                        ) : null}
 
                         {renderPreviewFormulaValues.length > 0 ? (
                           <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">

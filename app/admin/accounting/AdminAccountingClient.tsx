@@ -279,6 +279,38 @@ const emptyBusinessTypeTaxRateForm: BusinessTypeTaxRateForm = {
   description: "",
 };
 
+const CANONICAL_TAX_TYPES = ["VAT", "PIT_METHOD_1", "PIT_METHOD_2"] as const;
+
+const TAX_TYPE_ALIASES: Record<string, string> = {
+  PIT_M1: "PIT_METHOD_1",
+  PIT_METHOD1: "PIT_METHOD_1",
+  PIT_MEHTHOD_1: "PIT_METHOD_1",
+  PIT_MEHTOD_1: "PIT_METHOD_1",
+  PIT_METHOD_01: "PIT_METHOD_1",
+  PIT_M2: "PIT_METHOD_2",
+  PIT_METHOD2: "PIT_METHOD_2",
+  PIT_MEHTHOD_2: "PIT_METHOD_2",
+  PIT_MEHTOD_2: "PIT_METHOD_2",
+  PIT_METHOD_02: "PIT_METHOD_2",
+};
+
+function normalizeTaxTypeKey(value: string): string {
+  const normalized = value
+    .trim()
+    .toUpperCase()
+    .replace(/[\s-]+/g, "_");
+  if (!normalized) return "";
+  return TAX_TYPE_ALIASES[normalized] ?? normalized;
+}
+
+function toTaxTypeLabel(value: string): string {
+  const normalized = normalizeTaxTypeKey(value);
+  if (normalized === "PIT_METHOD_1") return "PIT_METHOD_1";
+  if (normalized === "PIT_METHOD_2") return "PIT_METHOD_2";
+  if (normalized === "VAT") return "VAT";
+  return normalized;
+}
+
 function toNum(value: string): number | null {
   if (!value.trim()) return null;
   const parsed = Number(value);
@@ -694,8 +726,10 @@ export default function AdminAccountingClient({
   const [rowTaxTypeOptions, setRowTaxTypeOptions] = useState<
     Array<{ value: string; label: string }>
   >([
-    { value: "VAT", label: "VAT" },
-    { value: "PIT_METHOD_1", label: "PIT_METHOD_1" },
+    ...CANONICAL_TAX_TYPES.map((item) => ({
+      value: item,
+      label: toTaxTypeLabel(item),
+    })),
   ]);
   const [rowFormulaOptions, setRowFormulaOptions] = useState<
     Array<{ value: string; label: string }>
@@ -1132,7 +1166,7 @@ export default function AdminAccountingClient({
   }, [schemas]);
 
   const filteredRowTaxRateHints = useMemo(() => {
-    const taxType = rowForm.taxType.trim().toUpperCase();
+    const taxType = normalizeTaxTypeKey(rowForm.taxType);
     if (!taxType) return rowTaxRateHints;
     return rowTaxRateHints.filter((item) => item.taxType === taxType);
   }, [rowForm.taxType, rowTaxRateHints]);
@@ -1361,6 +1395,23 @@ export default function AdminAccountingClient({
     }));
   }, [formulas]);
 
+  const businessTypeTaxTypeOptions = useMemo(() => {
+    const values = new Set<string>(CANONICAL_TAX_TYPES);
+    rowTaxTypeOptions.forEach((option) => {
+      const normalized = normalizeTaxTypeKey(option.value);
+      if (normalized) values.add(normalized);
+    });
+    btRatesForm.forEach((rate) => {
+      const normalized = normalizeTaxTypeKey(rate.taxType);
+      if (normalized) values.add(normalized);
+    });
+
+    return Array.from(values).map((value) => ({
+      value,
+      label: toTaxTypeLabel(value),
+    }));
+  }, [btRatesForm, rowTaxTypeOptions]);
+
   const goVersion = (id: number) => {
     setTvId(String(id));
     setFldVer(String(id));
@@ -1393,7 +1444,7 @@ export default function AdminAccountingClient({
       });
       setBtRatesForm(
         (businessType.taxRates ?? []).map((rate) => ({
-          taxType: String(rate.taxType ?? ""),
+          taxType: normalizeTaxTypeKey(String(rate.taxType ?? "")),
           taxRate: String(rate.taxRate ?? ""),
           description: String(rate.description ?? ""),
         })),
@@ -1460,7 +1511,12 @@ export default function AdminAccountingClient({
   ) => {
     setBtRatesForm((prev) =>
       prev.map((rate, rateIndex) =>
-        rateIndex === index ? { ...rate, [key]: value } : rate,
+        rateIndex === index
+          ? {
+              ...rate,
+              [key]: key === "taxType" ? normalizeTaxTypeKey(value) : value,
+            }
+          : rate,
       ),
     );
   };
@@ -1504,7 +1560,7 @@ export default function AdminAccountingClient({
     await runSafe(async () => {
       const normalizedRows = btRatesForm
         .map((rate) => ({
-          taxType: rate.taxType.trim(),
+          taxType: normalizeTaxTypeKey(rate.taxType),
           taxRate: rate.taxRate.trim(),
           description: rate.description.trim(),
         }))
@@ -2215,24 +2271,21 @@ export default function AdminAccountingClient({
         );
         const taxTypeFromRates = businessTypeRates
           .flatMap((item) => item.taxRates ?? [])
-          .map((rate) =>
-            String(rate.taxType ?? "")
-              .trim()
-              .toUpperCase(),
-          )
+          .map((rate) => normalizeTaxTypeKey(String(rate.taxType ?? "")))
           .filter(Boolean);
         const mergedTaxTypes = Array.from(
           new Set([
-            ...refTaxTypes.map((item) => item.value.toUpperCase()),
+            ...CANONICAL_TAX_TYPES,
+            ...refTaxTypes.map((item) => normalizeTaxTypeKey(item.value)),
             ...taxTypeFromRates,
           ]),
         ).map((value) => {
           const refMatch = refTaxTypes.find(
-            (item) => item.value.toUpperCase() === value,
+            (item) => normalizeTaxTypeKey(item.value) === value,
           );
           return {
             value,
-            label: refMatch?.label || value,
+            label: refMatch?.label || toTaxTypeLabel(value),
           };
         });
         if (mergedTaxTypes.length > 0) setRowTaxTypeOptions(mergedTaxTypes);
@@ -2240,9 +2293,7 @@ export default function AdminAccountingClient({
         const hints: RowTaxRateHint[] = businessTypeRates.flatMap(
           (businessType) =>
             (businessType.taxRates ?? []).map((rate) => ({
-              taxType: String(rate.taxType ?? "")
-                .trim()
-                .toUpperCase(),
+              taxType: normalizeTaxTypeKey(String(rate.taxType ?? "")),
               businessTypeCode: String(businessType.code ?? ""),
               businessTypeName: String(businessType.name ?? ""),
               taxRate: Number(rate.taxRate ?? 0),
@@ -2300,7 +2351,7 @@ export default function AdminAccountingClient({
       sectionFilterValue: String(r.sectionFilterValue ?? ""),
       groupByField: String(r.groupByField ?? ""),
       formulaId: String(r.formulaId ?? ""),
-      taxType: String(r.taxType ?? ""),
+      taxType: normalizeTaxTypeKey(String(r.taxType ?? "")),
       visibleFieldCodes: String(r.visibleFieldCodes ?? ""),
     });
     setRowActionMenuId("");
@@ -2327,7 +2378,9 @@ export default function AdminAccountingClient({
       if (rowForm.groupByField.trim())
         payload.groupByField = rowForm.groupByField;
       if (formulaId) payload.formulaId = formulaId;
-      if (rowForm.taxType.trim()) payload.taxType = rowForm.taxType;
+      if (rowForm.taxType.trim()) {
+        payload.taxType = normalizeTaxTypeKey(rowForm.taxType);
+      }
       if (rowForm.visibleFieldCodes.trim())
         payload.visibleFieldCodes = rowForm.visibleFieldCodes;
       await createRowDefinition(versionId, payload as never);
@@ -2356,7 +2409,7 @@ export default function AdminAccountingClient({
         sectionFilterValue: rowForm.sectionFilterValue || null,
         groupByField: rowForm.groupByField || null,
         formulaId: toNum(rowForm.formulaId),
-        taxType: rowForm.taxType || null,
+        taxType: rowForm.taxType ? normalizeTaxTypeKey(rowForm.taxType) : null,
         visibleFieldCodes: rowForm.visibleFieldCodes || null,
       });
       log(`Updated row definition ${rowId}`, "ok");
@@ -3395,7 +3448,7 @@ export default function AdminAccountingClient({
                                 {(item.taxRates ?? [])
                                   .map(
                                     (rate) =>
-                                      `${rate.taxType}: ${(Number(rate.taxRate || 0) * 100).toFixed(2)}%`,
+                                      `${toTaxTypeLabel(String(rate.taxType ?? ""))}: ${(Number(rate.taxRate || 0) * 100).toFixed(2)}%`,
                                   )
                                   .join(" | ") || "-"}
                               </td>
@@ -3500,7 +3553,7 @@ export default function AdminAccountingClient({
                           key={index}
                           className="space-y-2 rounded-lg border border-gray-200 bg-white p-2"
                         >
-                          <input
+                          <select
                             value={rate.taxType}
                             onChange={(e) =>
                               updateBtRateField(
@@ -3509,10 +3562,16 @@ export default function AdminAccountingClient({
                                 e.target.value,
                               )
                             }
-                            placeholder="Tax Type (VAT, PIT_METHOD_1...)"
                             className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
                             disabled={!selectedBusinessTypeWithRates}
-                          />
+                          >
+                            <option value="">Chọn tax type</option>
+                            {businessTypeTaxTypeOptions.map((option) => (
+                              <option key={option.value} value={option.value}>
+                                {option.label}
+                              </option>
+                            ))}
+                          </select>
                           <input
                             value={rate.taxRate}
                             onChange={(e) =>
@@ -3736,7 +3795,7 @@ export default function AdminAccountingClient({
                             : "-"}
                         </td>
                         <td className="px-3 py-2">
-                          {String(r.taxType ?? "-")}
+                          {toTaxTypeLabel(String(r.taxType ?? "")) || "-"}
                         </td>
                         <td className="px-3 py-2 text-right">
                           <div className="relative inline-block text-left">
@@ -3960,7 +4019,10 @@ export default function AdminAccountingClient({
                 <select
                   value={rowForm.taxType}
                   onChange={(e) =>
-                    setRowForm((p) => ({ ...p, taxType: e.target.value }))
+                    setRowForm((p) => ({
+                      ...p,
+                      taxType: normalizeTaxTypeKey(e.target.value),
+                    }))
                   }
                   className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
                 >

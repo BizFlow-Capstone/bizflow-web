@@ -167,6 +167,34 @@ export async function getCosts(
   };
 }
 
+export async function getAllCosts(
+  filters: CostFilters,
+): Promise<ApiResponse<CostPagination>> {
+  const pageSize = 100;
+  const first = await getCosts({ ...filters, pageNumber: 1, pageSize });
+
+  const firstData = first.data;
+  const totalPages = Math.max(firstData.totalPages ?? 1, 1);
+  const allItems: CostRecord[] = [...(firstData.items ?? [])];
+
+  for (let page = 2; page <= totalPages; page += 1) {
+    const next = await getCosts({ ...filters, pageNumber: page, pageSize });
+    allItems.push(...(next.data.items ?? []));
+  }
+
+  return {
+    ...first,
+    data: {
+      ...firstData,
+      items: allItems,
+      totalCount: firstData.totalCount ?? allItems.length,
+      pageNumber: 1,
+      pageSize: allItems.length || pageSize,
+      totalPages: 1,
+    },
+  };
+}
+
 function toCostFormData(
   data: CreateManualCostRequest | UpdateManualCostRequest,
 ): FormData {
@@ -357,13 +385,56 @@ export async function getRevenuesWithFilters(
   };
 }
 
+export async function getAllRevenuesWithFilters(
+  filters: RevenueFilters,
+): Promise<ApiResponse<RevenuePagination>> {
+  const pageSize = 100;
+  const first = await getRevenuesWithFilters({
+    ...filters,
+    pageNumber: 1,
+    pageSize,
+  });
+
+  const firstData = first.data;
+  const totalPages = Math.max(firstData.totalPages ?? 1, 1);
+  const allItems: RevenueRecord[] = [...(firstData.items ?? [])];
+
+  for (let page = 2; page <= totalPages; page += 1) {
+    const next = await getRevenuesWithFilters({
+      ...filters,
+      pageNumber: page,
+      pageSize,
+    });
+    allItems.push(...(next.data.items ?? []));
+  }
+
+  return {
+    ...first,
+    data: {
+      ...firstData,
+      items: allItems,
+      totalCount: firstData.totalCount ?? allItems.length,
+      pageNumber: 1,
+      pageSize: allItems.length || pageSize,
+      totalPages: 1,
+    },
+  };
+}
+
 export async function createManualRevenue(
   data: CreateManualRevenueRequest,
 ): Promise<ApiResponse<RevenueRecord>> {
+  const formData = new FormData();
+  formData.append("BusinessLocationId", String(data.businessLocationId));
+  formData.append("BusinessTypeId", data.businessTypeId);
+  formData.append("Amount", String(data.amount));
+  formData.append("RevenueDate", data.revenueDate);
+  formData.append("Description", data.description);
+  formData.append("MoneyChannel", data.moneyChannel);
+
   const response = await authFetch(`/api/revenues/manual`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(data),
+    body: formData,
   });
 
   if (!response.ok) {
@@ -404,8 +475,12 @@ export async function getCashFlowReport(
   endDate: string,
 ): Promise<ApiResponse<CashFlowReport>> {
   const [costResult, revenueResult] = await Promise.all([
-    getCosts({ locationId, fromDate: startDate, toDate: endDate }),
-    getRevenues(locationId),
+    getAllCosts({ locationId, fromDate: startDate, toDate: endDate }),
+    getAllRevenuesWithFilters({
+      locationId,
+      fromDate: startDate,
+      toDate: endDate,
+    }),
   ]);
 
   const channels: Record<
@@ -418,7 +493,7 @@ export async function getCashFlowReport(
   };
 
   for (const revenue of revenueResult.data.items) {
-    const channel = revenue.paymentMethod;
+    const channel = revenue.moneyChannel ?? revenue.paymentMethod;
     if (channel && channel !== "mixed") {
       channels[channel].totalIn += revenue.amount;
     }
@@ -806,6 +881,44 @@ export async function getGLEntries(
           })),
         }
       : result.data,
+  };
+}
+
+export async function getAllGLEntries(
+  filters: GLEntryFilters,
+): Promise<ApiResponse<GLEntryPagination>> {
+  const pageSize = 200;
+  const first = await getGLEntries({
+    ...filters,
+    pageNumber: 1,
+    pageSize,
+  });
+
+  const firstData = first.data;
+  const totalPages = Math.max(firstData.totalPages ?? 1, 1);
+  const allItems: GLEntryListItem[] = [...(firstData.items ?? [])];
+
+  for (let page = 2; page <= totalPages; page += 1) {
+    const next = await getGLEntries({
+      ...filters,
+      pageNumber: page,
+      pageSize,
+    });
+    allItems.push(...(next.data.items ?? []));
+  }
+
+  return {
+    ...first,
+    data: {
+      ...firstData,
+      items: allItems,
+      totalCount: firstData.totalCount ?? allItems.length,
+      pageNumber: 1,
+      pageSize: allItems.length || pageSize,
+      totalPages: 1,
+      hasPreviousPage: false,
+      hasNextPage: false,
+    },
   };
 }
 

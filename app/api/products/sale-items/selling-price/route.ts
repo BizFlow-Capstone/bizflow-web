@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createLocaleForwardHeaders } from "@/app/api/_utils/localeHeader";
 import { getBearerAuthorizationHeader } from "../../../_utils/authHeader";
 
 const BACKEND_API_URL = process.env.BACKEND_API_URL || "http://localhost:5139";
@@ -30,6 +31,7 @@ export async function PATCH(request: NextRequest) {
       {
         method: "PATCH",
         headers: {
+          ...createLocaleForwardHeaders(request),
           "Content-Type": "application/json",
           Authorization: authHeader,
         },

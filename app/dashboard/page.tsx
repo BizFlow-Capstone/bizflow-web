@@ -49,10 +49,9 @@ import {
   useProductInsights,
   useAnomalyAlerts,
 } from "@/hooks/useProducts";
-import { useDashboardSummary } from "@/hooks/useDashboard";
 import {
-  useRevenues,
-  useCosts,
+  useAllRevenuesByFilters,
+  useAllCosts,
   useRevenueForecast,
 } from "@/hooks/useAccounting";
 import { useDashboardLocation } from "@/lib/providers/DashboardLocationProvider";
@@ -64,6 +63,7 @@ import {
   formatTooltipCurrency,
   formatDateTimeVi,
 } from "@/lib/format";
+import type { CostFilters, RevenueFilters } from "@/lib/types/accounting";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -180,13 +180,19 @@ export default function DashboardPage() {
     : 0;
 
   // Data hooks
-  const { data: summary, isLoading: sumLoading } =
-    useDashboardSummary(activeLocationId);
-  const { data: revenueData, isLoading: revLoading } =
-    useRevenues(activeLocationId);
-  const { data: costsData, isLoading: costLoading } = useCosts({
-    locationId: activeLocationId,
-  });
+  const overviewRevenueFilters = useMemo<RevenueFilters>(
+    () => ({ locationId: activeLocationId }),
+    [activeLocationId],
+  );
+  const overviewCostFilters = useMemo<CostFilters>(
+    () => ({ locationId: activeLocationId }),
+    [activeLocationId],
+  );
+  const { data: revenueData, isLoading: revLoading } = useAllRevenuesByFilters(
+    overviewRevenueFilters,
+  );
+  const { data: costsData, isLoading: costLoading } =
+    useAllCosts(overviewCostFilters);
   const { data: revenueForecast, isLoading: forecastLoading } =
     useRevenueForecast(activeLocationId);
   const { data: reorderSuggestions = [], isLoading: reorderLoading } =

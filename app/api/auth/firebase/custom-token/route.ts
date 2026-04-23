@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getBearerAuthorizationHeader } from "../../../_utils/authHeader";
+import { createLocaleForwardHeaders } from "@/app/api/_utils/localeHeader";
 
 const BACKEND_URL = process.env.BACKEND_API_URL;
 
@@ -41,13 +42,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const response = await fetch(`${BACKEND_URL}/api/auth/firebase/custom-token`, {
-      method: "POST",
-      headers: {
-        accept: "*/*",
-        Authorization: authorization,
+    const response = await fetch(
+      `${BACKEND_URL}/api/auth/firebase/custom-token`,
+      {
+        method: "POST",
+        headers: {
+          accept: "*/*",
+          Authorization: authorization,
+          ...createLocaleForwardHeaders(request),
+        },
       },
-    });
+    );
 
     return await toJsonResponse(response);
   } catch (error) {

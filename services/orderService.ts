@@ -228,6 +228,44 @@ export async function getOrders(
   };
 }
 
+export async function getAllOrders(
+  filters: OrderFilters,
+): Promise<ApiResponse<OrderPagination>> {
+  const pageSize = 100;
+  const first = await getOrders({
+    ...filters,
+    PageNumber: 1,
+    PageSize: pageSize,
+  });
+
+  const firstData = first.data;
+  const totalPages = Math.max(firstData.totalPages ?? 1, 1);
+  const allItems: OrderRecord[] = [...(firstData.items ?? [])];
+
+  for (let page = 2; page <= totalPages; page += 1) {
+    const next = await getOrders({
+      ...filters,
+      PageNumber: page,
+      PageSize: pageSize,
+    });
+    allItems.push(...(next.data.items ?? []));
+  }
+
+  return {
+    ...first,
+    data: {
+      ...firstData,
+      items: allItems,
+      totalCount: firstData.totalCount ?? allItems.length,
+      pageNumber: 1,
+      pageSize: allItems.length || pageSize,
+      totalPages: 1,
+      hasPreviousPage: false,
+      hasNextPage: false,
+    },
+  };
+}
+
 export async function getOrderDetail(
   orderId: number,
 ): Promise<ApiResponse<OrderFull>> {

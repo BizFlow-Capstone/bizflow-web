@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getBearerAuthorizationHeader } from "../../_utils/authHeader";
+import { createLocaleForwardHeaders } from "../../_utils/localeHeader";
 
 const BACKEND_API_URL = process.env.BACKEND_API_URL || "http://localhost:5139";
 
@@ -26,6 +27,7 @@ export async function GET(request: NextRequest) {
         headers: {
           accept: "*/*",
           Authorization: authHeader,
+          ...createLocaleForwardHeaders(request),
         },
         cache: "no-store",
       },

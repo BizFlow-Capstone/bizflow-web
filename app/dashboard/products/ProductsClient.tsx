@@ -138,6 +138,13 @@ export default function ProductsClient() {
   const totalPages = productData?.totalPages ?? 0;
   const hasPreviousPage = productData?.hasPreviousPage ?? false;
   const hasNextPage = productData?.hasNextPage ?? false;
+  const hasAppliedFilters =
+    statusFilter !== "all" || debouncedSearchQuery.length > 0;
+
+  useEffect(() => {
+    const maxPage = Math.max(totalPages, 1);
+    setPageNumber((prev) => (prev > maxPage ? maxPage : prev));
+  }, [totalPages]);
 
   if (isLoadingLocations) {
     return (
@@ -276,14 +283,14 @@ export default function ProductsClient() {
               deleteUpdating={deleteProductMutation.isPending}
               reorderSuggestions={reorderSuggestionsByProductId}
               emptyTitle={
-                products.length === 0
-                  ? "Chưa có sản phẩm nào"
-                  : "Không tìm thấy kết quả"
+                hasAppliedFilters
+                  ? "Không tìm thấy kết quả"
+                  : "Chưa có sản phẩm nào"
               }
               emptyDescription={
-                products.length === 0
-                  ? "Thêm sản phẩm từ trang chi tiết địa điểm kinh doanh."
-                  : "Thử tìm kiếm với từ khóa khác."
+                hasAppliedFilters
+                  ? "Thử tìm kiếm với từ khóa khác hoặc điều chỉnh bộ lọc."
+                  : "Thêm sản phẩm từ trang chi tiết địa điểm kinh doanh."
               }
               onToggleStatus={(product) => {
                 updateStatusMutation.mutate({

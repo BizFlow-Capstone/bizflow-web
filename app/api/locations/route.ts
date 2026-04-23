@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createLocaleForwardHeaders } from "@/app/api/_utils/localeHeader";
 import { getBearerAuthorizationHeader } from "../_utils/authHeader";
 
 const BACKEND_URL = process.env.BACKEND_API_URL;
@@ -42,6 +43,7 @@ export async function GET(request: NextRequest) {
     }
 
     const headers = {
+      ...createLocaleForwardHeaders(request),
       accept: "*/*",
       Authorization: authHeader,
     };
@@ -130,6 +132,7 @@ export async function POST(request: NextRequest) {
     const response = await fetch(`${BACKEND_URL}/api/location/create`, {
       method: "POST",
       headers: {
+        ...createLocaleForwardHeaders(request),
         accept: "*/*",
         "Content-Type": "application/json",
         Authorization: authHeader,

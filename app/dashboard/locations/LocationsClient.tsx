@@ -1181,7 +1181,7 @@ export default function LocationsClient() {
                     htmlFor="edit-taxCode"
                     className="text-sm font-medium text-gray-700"
                   >
-                    Mã số thuế <span className="text-red-500">*</span>
+                    Mã số thuế
                   </Label>
                   <Input
                     id="edit-taxCode"
@@ -1337,8 +1337,7 @@ export default function LocationsClient() {
                     !editingLocation.address ||
                     !editingLocation.district ||
                     !editingLocation.city ||
-                    !editingLocation.phone ||
-                    !editingLocation.taxCode
+                    !editingLocation.phone
                   }
                   className="bg-[#23C4C1] hover:bg-[#1da8a5] text-white"
                 >

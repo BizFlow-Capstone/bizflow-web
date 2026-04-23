@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createLocaleForwardHeaders } from "@/app/api/_utils/localeHeader";
 import { getBearerAuthorizationHeader } from "../../_utils/authHeader";
 
 const BACKEND_API_URL = process.env.BACKEND_API_URL || "http://localhost:5139";
@@ -20,6 +21,7 @@ export async function GET(request: NextRequest) {
     const response = await fetch(`${BACKEND_API_URL}/api/notifications/unread-count`, {
       method: "GET",
       headers: {
+        ...createLocaleForwardHeaders(request),
         Authorization: authHeader,
         "Accept": "application/json",
       },

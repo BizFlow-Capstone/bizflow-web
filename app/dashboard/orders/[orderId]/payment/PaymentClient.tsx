@@ -6,7 +6,6 @@ import {
   ArrowLeft,
   QrCode,
   Banknote,
-  Copy,
   CheckCircle2,
   Loader2,
   ShoppingCart,
@@ -40,15 +39,6 @@ import {
 import { Plus } from "lucide-react";
 import { formatVnd as formatCurrency } from "@/lib/format";
 
-// --- Mock bank info ---
-
-const BANK_INFO = {
-  bankName: "Vietcombank",
-  accountNumber: "1017 2345 6789",
-  accountHolder: "CONG TY TNHH MINH PHAT",
-  branch: "Chi nhánh Gò Vấp, TP.HCM",
-};
-
 // --- Main Component ---
 
 export default function PaymentClient() {
@@ -61,9 +51,6 @@ export default function PaymentClient() {
 
   // Cash payment
   const [cashReceived, setCashReceived] = useState("");
-
-  // Copied state
-  const [copiedField, setCopiedField] = useState<string | null>(null);
 
   // Confirming payment
   const [isConfirming, setIsConfirming] = useState(false);
@@ -88,36 +75,22 @@ export default function PaymentClient() {
   const debtors = debtorsPage?.items ?? [];
   const createDebtorMutation = useCreateDebtor();
 
-  // Cash change calculation
-  const cashChange = useMemo(() => {
+  const amountDue = useMemo(() => {
     if (!order) return 0;
+    return Math.max(order.totalAmount - order.paidAmount, 0);
+  }, [order]);
+
+  // Cash change calculation based on remaining payable amount.
+  const cashChange = useMemo(() => {
     const received = Number(cashReceived) || 0;
-    return Math.max(0, received - order.totalAmount);
-  }, [cashReceived, order]);
-
-  // Copy to clipboard
-  const handleCopy = async (text: string, field: string) => {
-    await navigator.clipboard.writeText(text);
-    setCopiedField(field);
-    setTimeout(() => setCopiedField(null), 2000);
-  };
-
-  // Copy all bank info
-  const handleCopyAll = async () => {
-    if (!order) return;
-    const text = [
-      `Ngân hàng: ${BANK_INFO.bankName}`,
-      `Số TK: ${BANK_INFO.accountNumber}`,
-      `Chủ TK: ${BANK_INFO.accountHolder}`,
-      `Nội dung: ${order.orderCode}`,
-      `Số tiền: ${formatCurrency(order.totalAmount)}`,
-    ].join("\n");
-    await handleCopy(text, "all");
-  };
+    return received - amountDue;
+  }, [cashReceived, amountDue]);
 
   // Confirm payment
   const handleConfirmPayment = async () => {
     if (!order) return;
+    if (amountDue <= 0) return;
+
     setIsConfirming(true);
     try {
       // 1. Complete the order
@@ -141,11 +114,13 @@ export default function PaymentClient() {
 
   const handleCreateDebtor = async () => {
     if (!newDebtorName) return;
+    if (!order) return;
+
     try {
       const result = await createDebtorMutation.mutateAsync({
         name: newDebtorName,
         phone: newDebtorPhone,
-        businessLocationId: selectedLocationId || 1,
+        businessLocationId: selectedLocationId || order.businessLocationId,
       });
       setExcessDebtorId(String(result.data.debtorId));
       setIsCreatingDebtor(false);
@@ -186,7 +161,9 @@ export default function PaymentClient() {
     );
   }
 
-  const remainingAmount = order.totalAmount - order.paidAmount;
+  const isExcessDebtorMissing =
+    isSavingExcess && cashChange > 0 && !excessDebtorId;
+  const isInsufficientPayment = Number(cashReceived) < amountDue;
 
   return (
     <div className="flex-1 flex flex-col">
@@ -219,20 +196,18 @@ export default function PaymentClient() {
                 Số tiền cần thanh toán
               </p>
               <p className="text-4xl font-bold text-[#23C4C1]">
-                {formatCurrency(
-                  remainingAmount > 0 ? remainingAmount : order.totalAmount,
-                )}
+                {formatCurrency(amountDue)}
               </p>
-              {order.paidAmount > 0 && remainingAmount > 0 && (
+              {order.paidAmount > 0 && amountDue > 0 && (
                 <p className="text-sm text-gray-500 mt-2">
                   Đã trả: {formatCurrency(order.paidAmount)} — Còn lại:{" "}
-                  {formatCurrency(remainingAmount)}
+                  {formatCurrency(amountDue)}
                 </p>
               )}
             </div>
 
             {/* Payment Tab Toggle */}
-            {/* <div className="bg-white rounded-xl border border-gray-200 p-1.5 flex gap-1">
+            <div className="bg-white rounded-xl border border-gray-200 p-1.5 flex gap-1">
               <button
                 type="button"
                 onClick={() => setPaymentTab("qr")}
@@ -257,7 +232,7 @@ export default function PaymentClient() {
                 <Banknote className="w-5 h-5" />
                 Tiền mặt
               </button>
-            </div> */}
+            </div>
 
             {/* Shared Payment UI for both tabs */}
 
@@ -281,11 +256,12 @@ export default function PaymentClient() {
                   {/* Quick amount buttons */}
                   <div className="grid grid-cols-3 gap-2">
                     {[
-                      order.totalAmount,
-                      Math.ceil(order.totalAmount / 100000) * 100000,
-                      Math.ceil(order.totalAmount / 500000) * 500000,
+                      amountDue,
+                      Math.ceil(amountDue / 100000) * 100000,
+                      Math.ceil(amountDue / 500000) * 500000,
                     ]
                       .filter((v, i, a) => a.indexOf(v) === i)
+                      .filter((v) => v > 0)
                       .map((amount) => (
                         <Button
                           key={amount}
@@ -304,7 +280,7 @@ export default function PaymentClient() {
                       <div className="flex justify-between text-sm">
                         <span className="text-gray-600">Tổng tiền:</span>
                         <span className="font-medium">
-                          {formatCurrency(order.totalAmount)}
+                          {formatCurrency(amountDue)}
                         </span>
                       </div>
                       <div className="flex justify-between text-sm">
@@ -386,9 +362,14 @@ export default function PaymentClient() {
                         </div>
                       )}
 
-                      {Number(cashReceived) < order.totalAmount && (
+                      {isInsufficientPayment && (
                         <p className="text-xs text-red-500 text-center mt-1">
                           Số tiền chưa đủ
+                        </p>
+                      )}
+                      {isExcessDebtorMissing && (
+                        <p className="text-xs text-amber-600 text-center mt-1">
+                          Chọn khách hàng để lưu tiền dư.
                         </p>
                       )}
                     </div>
@@ -398,7 +379,10 @@ export default function PaymentClient() {
                   <Button
                     onClick={handleConfirmPayment}
                     disabled={
-                      isConfirming || Number(cashReceived) < order.totalAmount
+                      isConfirming ||
+                      amountDue <= 0 ||
+                      isInsufficientPayment ||
+                      isExcessDebtorMissing
                     }
                     className="w-full bg-[#23C4C1] hover:bg-[#1da8a5] text-white h-12 text-base shadow-lg shadow-[#23C4C1]/20"
                   >
@@ -410,7 +394,9 @@ export default function PaymentClient() {
                     ) : (
                       <>
                         <CheckCircle2 className="w-5 h-5 mr-2" />
-                        Xác nhận thanh toán tiền mặt
+                        {paymentTab === "qr"
+                          ? "Xác nhận thanh toán chuyển khoản"
+                          : "Xác nhận thanh toán tiền mặt"}
                       </>
                     )}
                   </Button>

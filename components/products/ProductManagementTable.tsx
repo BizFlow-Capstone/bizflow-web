@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, Fragment } from "react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
@@ -62,6 +63,9 @@ export default function ProductManagementTable({
   const [expandedProductId, setExpandedProductId] = useState<number | null>(
     null,
   );
+  const [failedImageIds, setFailedImageIds] = useState<Set<number>>(
+    () => new Set(),
+  );
 
   function toggleExpand(productId: number) {
     setExpandedProductId((prev) => (prev === productId ? null : productId));
@@ -114,6 +118,9 @@ export default function ProductManagementTable({
             products.map((product) => {
               const reorderInfo = reorderSuggestions?.get(product.productId);
               const urgency = getUrgencyMeta(reorderInfo?.urgency);
+              const imageUrl = product.imageUrl?.trim() ?? "";
+              const hasImage =
+                imageUrl.length > 0 && !failedImageIds.has(product.productId);
 
               return (
                 <Fragment key={product.productId}>
@@ -136,7 +143,25 @@ export default function ProductManagementTable({
                           />
                         </button>
                         <div className="w-12 h-12 bg-gray-100 rounded overflow-hidden flex items-center justify-center">
-                          <Package className="w-6 h-6 text-gray-400" />
+                          {hasImage ? (
+                            <Image
+                              src={imageUrl}
+                              alt={product.productName || product.name}
+                              width={48}
+                              height={48}
+                              className="w-full h-full object-cover"
+                              unoptimized
+                              onError={() => {
+                                setFailedImageIds((prev) => {
+                                  const next = new Set(prev);
+                                  next.add(product.productId);
+                                  return next;
+                                });
+                              }}
+                            />
+                          ) : (
+                            <Package className="w-6 h-6 text-gray-400" />
+                          )}
                         </div>
                         <div className="flex flex-col">
                           <span

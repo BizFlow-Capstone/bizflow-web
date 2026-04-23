@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createLocaleForwardHeaders } from "@/app/api/_utils/localeHeader";
 import { getBearerAuthorizationHeader } from "@/app/api/_utils/authHeader";
 
 const AI_BACKEND_API_URL =
@@ -42,6 +43,7 @@ export async function GET(request: NextRequest) {
     const response = await fetch(backendUrl.toString(), {
       method: "GET",
       headers: {
+        ...createLocaleForwardHeaders(request),
         accept: "*/*",
         Authorization: authHeader,
       },
