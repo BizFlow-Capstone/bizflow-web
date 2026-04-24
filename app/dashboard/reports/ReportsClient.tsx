@@ -119,6 +119,118 @@ import {
 
 type Tab = "reports" | "periods" | "books";
 
+type CardPeriod = "day" | "week" | "month" | "year";
+
+type DateWindow = {
+  start: Date;
+  end: Date;
+  label: string;
+  dayCount: number;
+};
+
+const CARD_PERIOD_OPTIONS: Array<{ key: CardPeriod; label: string }> = [
+  { key: "day", label: "Ngày" },
+  { key: "week", label: "Tuần" },
+  { key: "month", label: "Tháng" },
+  { key: "year", label: "Năm" },
+];
+
+const TRANSACTION_PAGE_SIZE = 10;
+
+function startOfDay(date: Date): Date {
+  const result = new Date(date);
+  result.setHours(0, 0, 0, 0);
+  return result;
+}
+
+function endOfDay(date: Date): Date {
+  const result = new Date(date);
+  result.setHours(23, 59, 59, 999);
+  return result;
+}
+
+function addDays(date: Date, days: number): Date {
+  const result = new Date(date);
+  result.setDate(result.getDate() + days);
+  return result;
+}
+
+function buildPeriodWindows(period: CardPeriod): {
+  current: DateWindow;
+  previous: DateWindow;
+} {
+  const now = new Date();
+  const currentEnd = endOfDay(now);
+
+  let currentStart: Date;
+  let label: string;
+
+  switch (period) {
+    case "day":
+      currentStart = startOfDay(now);
+      label = "Ngày";
+      break;
+    case "week":
+      currentStart = startOfDay(addDays(now, -6));
+      label = "7 ngày";
+      break;
+    case "month":
+      currentStart = startOfDay(new Date(now.getFullYear(), now.getMonth(), 1));
+      label = "Tháng";
+      break;
+    default:
+      currentStart = startOfDay(new Date(now.getFullYear(), 0, 1));
+      label = "Năm";
+      break;
+  }
+
+  const dayCount = Math.max(
+    1,
+    Math.floor((currentEnd.getTime() - currentStart.getTime()) / 86400000) + 1,
+  );
+
+  const previousEnd = endOfDay(addDays(currentStart, -1));
+  const previousStart = startOfDay(addDays(previousEnd, -(dayCount - 1)));
+
+  return {
+    current: {
+      start: currentStart,
+      end: currentEnd,
+      label,
+      dayCount,
+    },
+    previous: {
+      start: previousStart,
+      end: previousEnd,
+      label: "Kỳ trước",
+      dayCount,
+    },
+  };
+}
+
+function parseDateSafe(value: string): Date | null {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed;
+}
+
+function isInWindow(value: string, window: DateWindow): boolean {
+  const date = parseDateSafe(value);
+  if (!date) return false;
+  return date >= window.start && date <= window.end;
+}
+
+function computePercentDelta(current: number, previous: number): number {
+  if (previous > 0) return ((current - previous) / previous) * 100;
+  if (current > 0) return 100;
+  return 0;
+}
+
+function formatPeriodTrend(current: number, previous: number): string {
+  const delta = computePercentDelta(current, previous);
+  return `${delta >= 0 ? "+" : ""}${delta.toFixed(1)}% so với kỳ trước`;
+}
+
 export default function ReportsClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -282,6 +394,11 @@ function ReportsTab({ locationId }: { locationId: number }) {
     useState(false);
   const [manualCostError, setManualCostError] = useState("");
   const [isCostModalOpen, setIsCostModalOpen] = useState(false);
+  const [revenueCardPeriod, setRevenueCardPeriod] =
+    useState<CardPeriod>("month");
+  const [costCardPeriod, setCostCardPeriod] = useState<CardPeriod>("month");
+  const [revenueTxnPage, setRevenueTxnPage] = useState(1);
+  const [costTxnPage, setCostTxnPage] = useState(1);
 
   useEffect(() => {
     if (!manualBusinessTypeId && businessTypes.length > 0) {
@@ -313,34 +430,136 @@ function ReportsTab({ locationId }: { locationId: number }) {
   const costItems = useMemo(() => costs?.items ?? [], [costs?.items]);
   const totalRevenue = revenueItems.reduce((s, r) => s + r.amount, 0);
   const totalCost = costItems.reduce((s, c) => s + c.amount, 0);
-  const currentYear = new Date().getFullYear();
 
-  const totalRevenueYtd = useMemo(
-    () =>
-      revenueItems.reduce((sum, item) => {
-        const parsedDate = new Date(item.revenueDate);
-        if (Number.isNaN(parsedDate.getTime())) return sum;
-        return parsedDate.getFullYear() === currentYear
-          ? sum + item.amount
-          : sum;
-      }, 0),
-    [revenueItems, currentYear],
+  const revenueTxnTotalPages = Math.max(
+    1,
+    Math.ceil(revenueItems.length / TRANSACTION_PAGE_SIZE),
+  );
+  const costTxnTotalPages = Math.max(
+    1,
+    Math.ceil(costItems.length / TRANSACTION_PAGE_SIZE),
   );
 
-  const totalCostYtd = useMemo(
-    () =>
-      costItems.reduce((sum, item) => {
-        const parsedDate = new Date(item.costDate);
-        if (Number.isNaN(parsedDate.getTime())) return sum;
-        return parsedDate.getFullYear() === currentYear
-          ? sum + item.amount
-          : sum;
-      }, 0),
-    [costItems, currentYear],
+  const revenueCurrentPage = Math.min(revenueTxnPage, revenueTxnTotalPages);
+  const costCurrentPage = Math.min(costTxnPage, costTxnTotalPages);
+
+  const revenuePageItems = useMemo(() => {
+    const start = (revenueCurrentPage - 1) * TRANSACTION_PAGE_SIZE;
+    return revenueItems.slice(start, start + TRANSACTION_PAGE_SIZE);
+  }, [revenueItems, revenueCurrentPage]);
+
+  const costPageItems = useMemo(() => {
+    const start = (costCurrentPage - 1) * TRANSACTION_PAGE_SIZE;
+    return costItems.slice(start, start + TRANSACTION_PAGE_SIZE);
+  }, [costItems, costCurrentPage]);
+
+  const revenueCardWindows = useMemo(
+    () => buildPeriodWindows(revenueCardPeriod),
+    [revenueCardPeriod],
+  );
+  const costCardWindows = useMemo(
+    () => buildPeriodWindows(costCardPeriod),
+    [costCardPeriod],
   );
 
-  const revenueTransactionCount = revenueItems.length;
-  const costTransactionCount = costItems.length;
+  const revenueCurrentItems = useMemo(
+    () =>
+      revenueItems.filter((item) =>
+        isInWindow(item.revenueDate, revenueCardWindows.current),
+      ),
+    [revenueItems, revenueCardWindows],
+  );
+  const revenuePreviousItems = useMemo(
+    () =>
+      revenueItems.filter((item) =>
+        isInWindow(item.revenueDate, revenueCardWindows.previous),
+      ),
+    [revenueItems, revenueCardWindows],
+  );
+
+  const revenueCardTotal = revenueCurrentItems.reduce(
+    (sum, item) => sum + item.amount,
+    0,
+  );
+  const revenueCardTotalPrev = revenuePreviousItems.reduce(
+    (sum, item) => sum + item.amount,
+    0,
+  );
+  const revenueCardTxnCount = revenueCurrentItems.length;
+  const revenueCardTxnCountPrev = revenuePreviousItems.length;
+  const revenueCardAvgDaily =
+    revenueCardWindows.current.dayCount > 0
+      ? revenueCardTotal / revenueCardWindows.current.dayCount
+      : 0;
+  const revenueCardAvgDailyPrev =
+    revenueCardWindows.previous.dayCount > 0
+      ? revenueCardTotalPrev / revenueCardWindows.previous.dayCount
+      : 0;
+  const revenueCardAvgOrder =
+    revenueCardTxnCount > 0 ? revenueCardTotal / revenueCardTxnCount : 0;
+  const revenueCardAvgOrderPrev =
+    revenueCardTxnCountPrev > 0
+      ? revenueCardTotalPrev / revenueCardTxnCountPrev
+      : 0;
+
+  const costCurrentItems = useMemo(
+    () =>
+      costItems.filter((item) =>
+        isInWindow(item.costDate, costCardWindows.current),
+      ),
+    [costItems, costCardWindows],
+  );
+  const costPreviousItems = useMemo(
+    () =>
+      costItems.filter((item) =>
+        isInWindow(item.costDate, costCardWindows.previous),
+      ),
+    [costItems, costCardWindows],
+  );
+
+  const revenueInCostCurrentWindow = useMemo(
+    () =>
+      revenueItems
+        .filter((item) => isInWindow(item.revenueDate, costCardWindows.current))
+        .reduce((sum, item) => sum + item.amount, 0),
+    [revenueItems, costCardWindows],
+  );
+  const revenueInCostPreviousWindow = useMemo(
+    () =>
+      revenueItems
+        .filter((item) =>
+          isInWindow(item.revenueDate, costCardWindows.previous),
+        )
+        .reduce((sum, item) => sum + item.amount, 0),
+    [revenueItems, costCardWindows],
+  );
+
+  const costCardTotal = costCurrentItems.reduce(
+    (sum, item) => sum + item.amount,
+    0,
+  );
+  const costCardTotalPrev = costPreviousItems.reduce(
+    (sum, item) => sum + item.amount,
+    0,
+  );
+  const costCardTxnCount = costCurrentItems.length;
+  const costCardTxnCountPrev = costPreviousItems.length;
+  const costCardAvgDaily =
+    costCardWindows.current.dayCount > 0
+      ? costCardTotal / costCardWindows.current.dayCount
+      : 0;
+  const costCardAvgDailyPrev =
+    costCardWindows.previous.dayCount > 0
+      ? costCardTotalPrev / costCardWindows.previous.dayCount
+      : 0;
+  const costToRevenueRatio =
+    revenueInCostCurrentWindow > 0
+      ? (costCardTotal / revenueInCostCurrentWindow) * 100
+      : 0;
+  const costToRevenueRatioPrev =
+    revenueInCostPreviousWindow > 0
+      ? (costCardTotalPrev / revenueInCostPreviousWindow) * 100
+      : 0;
 
   const revenueSeries = useMemo(() => {
     const now = new Date();
@@ -454,13 +673,6 @@ function ReportsTab({ locationId }: { locationId: number }) {
     return rows.sort((a, b) => b.total - a.total);
   }, [revenueItems, revenueSeries, totalRevenue]);
 
-  const averageMonthlyRevenue =
-    revenueSeries.length > 0
-      ? revenueSeries.reduce((sum, month) => sum + month.revenue, 0) /
-        revenueSeries.length
-      : 0;
-  const averageOrderValue =
-    revenueItems.length > 0 ? totalRevenue / revenueItems.length : 0;
   const revenueTrendAverage =
     revenueSeries.length > 0
       ? revenueSeries.reduce((sum, month) => sum + month.growth, 0) /
@@ -621,21 +833,6 @@ function ReportsTab({ locationId }: { locationId: number }) {
       .sort((a, b) => b.total - a.total);
   }, [costItems, costSeries, totalCost]);
 
-  const averageMonthlyCost =
-    costSeries.length > 0
-      ? costSeries.reduce((sum, month) => sum + month.cost, 0) /
-        costSeries.length
-      : 0;
-  const totalCostBudget = costSeries.reduce(
-    (sum, month) => sum + month.budget,
-    0,
-  );
-  const budgetUsage =
-    totalCostBudget > 0
-      ? Math.min((totalCost / totalCostBudget) * 100, 999)
-      : 0;
-  const costEfficiency =
-    totalRevenue > 0 ? ((totalRevenue - totalCost) / totalRevenue) * 100 : 0;
   const averageCostGrowth =
     costSeries.length > 1
       ? costSeries.slice(1).reduce((sum, month, index) => {
@@ -961,7 +1158,7 @@ function ReportsTab({ locationId }: { locationId: number }) {
           title="Doanh thu"
           subtitle={
             revenues
-              ? `${new Intl.NumberFormat("vi-VN").format(revenueTransactionCount)} giao dịch · Tổng: ${formatVnd(totalRevenue)}`
+              ? `${revenueCardWindows.current.label}: ${new Intl.NumberFormat("vi-VN").format(revenueCardTxnCount)} giao dịch · Tổng: ${formatVnd(revenueCardTotal)}`
               : undefined
           }
           loading={revLoading}
@@ -977,44 +1174,74 @@ function ReportsTab({ locationId }: { locationId: number }) {
                   modal.
                 </p>
               </div>
-              <Button
-                onClick={() => {
-                  setManualError("");
-                  setIsRevenueModalOpen(true);
-                }}
-                className="bg-[#23C4C1] hover:bg-[#1aa8a5] text-white"
-              >
-                <Plus className="w-4 h-4 mr-1" />
-                Thêm doanh thu
-              </Button>
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-lg">
+                  {CARD_PERIOD_OPTIONS.map((option) => (
+                    <button
+                      key={`rev-period-${option.key}`}
+                      onClick={() => setRevenueCardPeriod(option.key)}
+                      className={`px-2.5 py-1.5 rounded-md text-xs font-medium transition-all ${
+                        revenueCardPeriod === option.key
+                          ? "bg-white text-gray-800 shadow-sm"
+                          : "text-gray-500 hover:text-gray-700"
+                      }`}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+
+                <Button
+                  onClick={() => {
+                    setManualError("");
+                    setIsRevenueModalOpen(true);
+                  }}
+                  className="bg-[#23C4C1] hover:bg-[#1aa8a5] text-white"
+                >
+                  <Plus className="w-4 h-4 mr-1" />
+                  Thêm doanh thu
+                </Button>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
               <RevenueStatCard
-                title="Tổng doanh thu (YTD)"
-                value={formatCompactVnd(totalRevenueYtd)}
-                trend="+15.2% so với kỳ trước"
-                positive
+                title={`Tổng doanh thu (${revenueCardWindows.current.label})`}
+                value={formatCompactVnd(revenueCardTotal)}
+                trend={formatPeriodTrend(
+                  revenueCardTotal,
+                  revenueCardTotalPrev,
+                )}
+                positive={revenueCardTotal >= revenueCardTotalPrev}
               />
               <RevenueStatCard
-                title="Trung bình hàng tháng"
-                value={formatCompactVnd(averageMonthlyRevenue)}
-                trend="+12.8% so với kỳ trước"
-                positive
+                title="Trung bình mỗi ngày"
+                value={formatCompactVnd(revenueCardAvgDaily)}
+                trend={formatPeriodTrend(
+                  revenueCardAvgDaily,
+                  revenueCardAvgDailyPrev,
+                )}
+                positive={revenueCardAvgDaily >= revenueCardAvgDailyPrev}
               />
               <RevenueStatCard
-                title="Giá trị đơn trung bình"
-                value={formatCompactVnd(averageOrderValue)}
-                trend="+3.5% so với kỳ trước"
-                positive
+                title="Giá trị giao dịch TB"
+                value={formatCompactVnd(revenueCardAvgOrder)}
+                trend={formatPeriodTrend(
+                  revenueCardAvgOrder,
+                  revenueCardAvgOrderPrev,
+                )}
+                positive={revenueCardAvgOrder >= revenueCardAvgOrderPrev}
               />
               <RevenueStatCard
                 title="Số lượng giao dịch"
                 value={new Intl.NumberFormat("vi-VN").format(
-                  revenueItems.length,
+                  revenueCardTxnCount,
                 )}
-                trend={`${revenueTrendAverage >= 0 ? "+" : ""}${revenueTrendAverage.toFixed(1)}% tăng trưởng TB`}
-                positive={revenueTrendAverage >= 0}
+                trend={formatPeriodTrend(
+                  revenueCardTxnCount,
+                  revenueCardTxnCountPrev,
+                )}
+                positive={revenueCardTxnCount >= revenueCardTxnCountPrev}
               />
             </div>
 
@@ -1208,7 +1435,7 @@ function ReportsTab({ locationId }: { locationId: number }) {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {revenues?.items.map((r) => (
+                  {revenuePageItems.map((r) => (
                     <TableRow key={r.revenueId} className="hover:bg-gray-50/50">
                       <TableCell className="pl-5 text-sm text-gray-500">
                         {new Date(r.revenueDate).toLocaleDateString("vi-VN")}
@@ -1253,8 +1480,43 @@ function ReportsTab({ locationId }: { locationId: number }) {
                       </TableCell>
                     </TableRow>
                   ))}
+                  {revenuePageItems.length === 0 && (
+                    <TableRow>
+                      <TableCell
+                        colSpan={6}
+                        className="py-8 text-center text-gray-500"
+                      >
+                        Chưa có dữ liệu doanh thu.
+                      </TableCell>
+                    </TableRow>
+                  )}
                 </TableBody>
               </Table>
+
+              <div className="px-4 py-3 border-t bg-gray-50 flex items-center justify-between gap-2">
+                <p className="text-sm text-gray-600">
+                  Tổng {revenueItems.length} giao dịch · Trang{" "}
+                  {revenueCurrentPage}/{revenueTxnTotalPages}
+                </p>
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={revenueCurrentPage <= 1}
+                    onClick={() => setRevenueTxnPage(revenueCurrentPage - 1)}
+                  >
+                    Trang trước
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={revenueCurrentPage >= revenueTxnTotalPages}
+                    onClick={() => setRevenueTxnPage(revenueCurrentPage + 1)}
+                  >
+                    Trang sau
+                  </Button>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -1369,13 +1631,29 @@ function ReportsTab({ locationId }: { locationId: number }) {
           title="Chi phí"
           subtitle={
             costs
-              ? `${new Intl.NumberFormat("vi-VN").format(costTransactionCount)} giao dịch · Tổng: ${formatVnd(totalCost)}`
+              ? `${costCardWindows.current.label}: ${new Intl.NumberFormat("vi-VN").format(costCardTxnCount)} giao dịch · Tổng: ${formatVnd(costCardTotal)}`
               : undefined
           }
           loading={costLoading}
         >
           <div className="p-5 space-y-5">
-            <div className="flex items-center justify-end">
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-lg w-fit">
+                {CARD_PERIOD_OPTIONS.map((option) => (
+                  <button
+                    key={`cost-period-${option.key}`}
+                    onClick={() => setCostCardPeriod(option.key)}
+                    className={`px-2.5 py-1.5 rounded-md text-xs font-medium transition-all ${
+                      costCardPeriod === option.key
+                        ? "bg-white text-gray-800 shadow-sm"
+                        : "text-gray-500 hover:text-gray-700"
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+
               <Button
                 onClick={handleOpenCreateCostModal}
                 className="bg-[#23C4C1] hover:bg-[#1aa8a5] text-white"
@@ -1387,28 +1665,37 @@ function ReportsTab({ locationId }: { locationId: number }) {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
               <CostStatCard
-                title="Tổng chi phí (YTD)"
-                value={formatCompactVnd(totalCostYtd)}
-                trend="-8.5% so với kỳ trước"
-                positive={false}
+                title={`Tổng chi phí (${costCardWindows.current.label})`}
+                value={formatCompactVnd(costCardTotal)}
+                trend={formatPeriodTrend(costCardTotal, costCardTotalPrev)}
+                positive={costCardTotal <= costCardTotalPrev}
               />
               <CostStatCard
-                title="Trung bình hàng tháng"
-                value={formatCompactVnd(averageMonthlyCost)}
-                trend="-5.2% so với kỳ trước"
-                positive={false}
+                title="Trung bình mỗi ngày"
+                value={formatCompactVnd(costCardAvgDaily)}
+                trend={formatPeriodTrend(
+                  costCardAvgDaily,
+                  costCardAvgDailyPrev,
+                )}
+                positive={costCardAvgDaily <= costCardAvgDailyPrev}
               />
               <CostStatCard
-                title="Sử dụng ngân sách"
-                value={`${budgetUsage.toFixed(1)}%`}
-                trend="-2.1% so với kỳ trước"
-                positive={false}
+                title="Tỷ trọng chi phí / doanh thu"
+                value={`${costToRevenueRatio.toFixed(1)}%`}
+                trend={formatPeriodTrend(
+                  costToRevenueRatio,
+                  costToRevenueRatioPrev,
+                )}
+                positive={costToRevenueRatio <= costToRevenueRatioPrev}
               />
               <CostStatCard
-                title="Hiệu quả chi phí"
-                value={`${costEfficiency.toFixed(1)}%`}
-                trend={`${averageCostGrowth >= 0 ? "+" : ""}${averageCostGrowth.toFixed(1)}% so với kỳ trước`}
-                positive={averageCostGrowth < 0}
+                title="Số lượng giao dịch"
+                value={new Intl.NumberFormat("vi-VN").format(costCardTxnCount)}
+                trend={formatPeriodTrend(
+                  costCardTxnCount,
+                  costCardTxnCountPrev,
+                )}
+                positive={costCardTxnCount <= costCardTxnCountPrev}
               />
             </div>
 
@@ -1459,7 +1746,7 @@ function ReportsTab({ locationId }: { locationId: number }) {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {costs?.items.map((c) => (
+                  {costPageItems.map((c) => (
                     <TableRow key={c.costId} className="hover:bg-gray-50/50">
                       <TableCell className="pl-5 text-sm text-gray-500">
                         {new Date(c.costDate).toLocaleDateString("vi-VN")}
@@ -1512,8 +1799,43 @@ function ReportsTab({ locationId }: { locationId: number }) {
                       </TableCell>
                     </TableRow>
                   ))}
+                  {costPageItems.length === 0 && (
+                    <TableRow>
+                      <TableCell
+                        colSpan={6}
+                        className="py-8 text-center text-gray-500"
+                      >
+                        Chưa có dữ liệu chi phí.
+                      </TableCell>
+                    </TableRow>
+                  )}
                 </TableBody>
               </Table>
+
+              <div className="px-4 py-3 border-t bg-gray-50 flex items-center justify-between gap-2">
+                <p className="text-sm text-gray-600">
+                  Tổng {costItems.length} giao dịch · Trang {costCurrentPage}/
+                  {costTxnTotalPages}
+                </p>
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={costCurrentPage <= 1}
+                    onClick={() => setCostTxnPage(costCurrentPage - 1)}
+                  >
+                    Trang trước
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={costCurrentPage >= costTxnTotalPages}
+                    onClick={() => setCostTxnPage(costCurrentPage + 1)}
+                  >
+                    Trang sau
+                  </Button>
+                </div>
+              </div>
             </div>
           </div>
 

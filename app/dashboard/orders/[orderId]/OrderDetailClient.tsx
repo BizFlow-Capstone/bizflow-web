@@ -156,6 +156,34 @@ function getPaymentStatusLabel(status: PaymentStatus) {
   }
 }
 
+function getEffectivePaidAmount(order: {
+  totalAmount: number;
+  paidAmount: number;
+  cashAmount: number;
+  bankAmount: number;
+  paymentStatus: PaymentStatus;
+}) {
+  if (order.paymentStatus === "UNPAID") return 0;
+
+  const settledFromChannels = Math.max(
+    0,
+    (order.cashAmount ?? 0) + (order.bankAmount ?? 0),
+  );
+
+  if (order.paymentStatus === "PARTIAL") {
+    const fallbackPaid = Math.max(0, order.paidAmount ?? 0);
+    return Math.min(
+      order.totalAmount,
+      settledFromChannels > 0 ? settledFromChannels : fallbackPaid,
+    );
+  }
+
+  return Math.min(
+    order.totalAmount,
+    Math.max(settledFromChannels, Math.max(0, order.paidAmount ?? 0)),
+  );
+}
+
 // --- Main Component ---
 
 export default function OrderDetailClient() {
@@ -249,7 +277,8 @@ export default function OrderDetailClient() {
   const paymentConfig = getPaymentTypeConfig(order.paymentType);
   const PaymentIcon = paymentConfig.icon;
   const paymentStatusConfig = getPaymentStatusLabel(order.paymentStatus);
-  const remainingAmount = order.totalAmount - order.paidAmount;
+  const effectivePaidAmount = getEffectivePaidAmount(order);
+  const remainingAmount = order.totalAmount - effectivePaidAmount;
 
   return (
     <div className="flex-1 flex flex-col">
@@ -281,6 +310,15 @@ export default function OrderDetailClient() {
                 >
                   <Trash2 className="w-4 h-4 mr-2" />
                   Hủy đơn
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() =>
+                    router.push(`/dashboard/orders/${orderId}/edit`)
+                  }
+                >
+                  <FileText className="w-4 h-4 mr-2" />
+                  Cập nhật đơn hàng
                 </Button>
                 <Button
                   variant="outline"
@@ -404,7 +442,7 @@ export default function OrderDetailClient() {
                       <div className="flex justify-between text-sm text-gray-600">
                         <span>Đã thanh toán:</span>
                         <span className="font-medium text-green-600">
-                          {formatCurrency(order.paidAmount)}
+                          {formatCurrency(effectivePaidAmount)}
                         </span>
                       </div>
                       {remainingAmount > 0 && (

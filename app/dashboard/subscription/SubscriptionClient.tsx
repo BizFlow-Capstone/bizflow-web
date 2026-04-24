@@ -41,12 +41,17 @@ import type {
 // ---------------------------------------------------------------------------
 
 function formatVND(value: number) {
-  if (value === 0) return "Miễn phí";
-  return value.toLocaleString("vi-VN") + "đ";
+  const amount = Number(value);
+  if (!Number.isFinite(amount)) return "0đ";
+  if (amount === 0) return "Miễn phí";
+  return amount.toLocaleString("vi-VN") + "đ";
 }
 
 function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString("vi-VN", {
+  if (!iso) return "—";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "—";
+  return date.toLocaleDateString("vi-VN", {
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
@@ -54,13 +59,65 @@ function formatDate(iso: string) {
 }
 
 function featureValue(feat: PublicPlanFeature): string {
-  if (feat.usageLimit === -1) return "Không giới hạn";
-  if (feat.usageLimit === 0) return "—";
-  return feat.usageLimit.toLocaleString("vi-VN");
+  const usageLimit = Number(feat?.usageLimit ?? 0);
+  if (usageLimit === -1) return "Không giới hạn";
+  if (usageLimit === 0) return "—";
+  return usageLimit.toLocaleString("vi-VN");
 }
 
 function featureIncluded(feat: PublicPlanFeature): boolean {
-  return feat.usageLimit !== 0;
+  return Number(feat?.usageLimit ?? 0) !== 0;
+}
+
+function statusText(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  if (value && typeof value === "object") {
+    const candidate =
+      (
+        value as {
+          code?: unknown;
+          label?: unknown;
+          value?: unknown;
+          name?: unknown;
+        }
+      ).code ??
+      (
+        value as {
+          code?: unknown;
+          label?: unknown;
+          value?: unknown;
+          name?: unknown;
+        }
+      ).label ??
+      (
+        value as {
+          code?: unknown;
+          label?: unknown;
+          value?: unknown;
+          name?: unknown;
+        }
+      ).value ??
+      (
+        value as {
+          code?: unknown;
+          label?: unknown;
+          value?: unknown;
+          name?: unknown;
+        }
+      ).name;
+    if (typeof candidate === "string") return candidate;
+    if (typeof candidate === "number" || typeof candidate === "boolean") {
+      return String(candidate);
+    }
+  }
+  return "";
+}
+
+function normalizeStatus(value: unknown): string {
+  return statusText(value).toLowerCase();
 }
 
 function getHighlightedIndex(plans: PublicSubscriptionPlan[]): number {
@@ -69,26 +126,27 @@ function getHighlightedIndex(plans: PublicSubscriptionPlan[]): number {
 }
 
 function getTransactionStatusConfig(status: string) {
-  switch (status) {
-    case "Success":
+  switch (normalizeStatus(status)) {
+    case "success":
       return {
         label: "Thành công",
         icon: CheckCircle2,
         className: "bg-emerald-50 text-emerald-700 border-emerald-200",
       };
-    case "Failed":
+    case "failed":
       return {
         label: "Thất bại",
         icon: XCircle,
         className: "bg-red-50 text-red-700 border-red-200",
       };
-    case "Active":
+    case "active":
+    case "processing":
       return {
         label: "Đang xử lý",
         icon: Clock,
         className: "bg-amber-50 text-amber-700 border-amber-200",
       };
-    case "Pending":
+    case "pending":
       return {
         label: "Chờ thanh toán",
         icon: Clock,
@@ -96,7 +154,7 @@ function getTransactionStatusConfig(status: string) {
       };
     default:
       return {
-        label: status,
+        label: statusText(status) || "Không xác định",
         icon: Clock,
         className: "bg-slate-100 text-slate-600 border-slate-200",
       };
@@ -104,25 +162,26 @@ function getTransactionStatusConfig(status: string) {
 }
 
 function getSubscriptionStatusConfig(status: string) {
-  switch (status) {
-    case "Active":
+  switch (normalizeStatus(status)) {
+    case "active":
       return {
         label: "Đang hoạt động",
         className: "bg-emerald-50 text-emerald-700 border-emerald-200",
       };
-    case "Expired":
+    case "expired":
       return {
         label: "Đã hết hạn",
         className: "bg-red-50 text-red-700 border-red-200",
       };
-    case "Cancelled":
+    case "cancelled":
+    case "canceled":
       return {
         label: "Đã huỷ",
         className: "bg-slate-100 text-slate-500 border-slate-200",
       };
     default:
       return {
-        label: status,
+        label: statusText(status) || "Không xác định",
         className: "bg-slate-100 text-slate-500 border-slate-200",
       };
   }
@@ -139,7 +198,13 @@ function CurrentPlanCard({
 }) {
   const statusCfg = getSubscriptionStatusConfig(subscription.status);
   const plan = subscription.plan;
-  const price = plan.currentPrice;
+  const price = plan.currentPrice ?? {
+    effectivePrice: 0,
+    isDiscountActive: false,
+    discountedPrice: null,
+    basePrice: 0,
+  };
+  const features = Array.isArray(plan.features) ? plan.features : [];
 
   return (
     <motion.div
@@ -156,8 +221,10 @@ function CurrentPlanCard({
               Gói hiện tại
             </span>
           </div>
-          <h2 className="text-2xl font-bold">{plan.name}</h2>
-          <p className="mt-1 text-sm text-white/60">{plan.description}</p>
+          <h2 className="text-2xl font-bold">{plan.name || "Gói hiện tại"}</h2>
+          <p className="mt-1 text-sm text-white/60">
+            {plan.description || "—"}
+          </p>
         </div>
 
         <div className="flex flex-col items-start sm:items-end gap-2 shrink-0">
@@ -170,7 +237,7 @@ function CurrentPlanCard({
             {statusCfg.label}
           </span>
           <p className="text-2xl font-bold">
-            {formatVND(price.effectivePrice)}
+            {formatVND(price.effectivePrice ?? 0)}
             {plan.durationDays > 0 && (
               <span className="text-sm font-normal text-white/50">
                 {" "}
@@ -180,7 +247,7 @@ function CurrentPlanCard({
           </p>
           {price.isDiscountActive && price.discountedPrice != null && (
             <p className="text-xs text-white/40 line-through">
-              {formatVND(price.basePrice)}
+              {formatVND(price.basePrice ?? 0)}
             </p>
           )}
         </div>
@@ -204,7 +271,7 @@ function CurrentPlanCard({
       </div>
 
       <div className="mt-4 flex flex-wrap gap-2">
-        {plan.features.slice(0, 6).map((f, i) => (
+        {features.slice(0, 6).map((f, i) => (
           <span
             key={f.featureId || i}
             className={
@@ -265,9 +332,15 @@ function PricingCard({
   onCheckout: (planId: number) => void;
   isCheckingOut: boolean;
 }) {
-  const price = plan.currentPrice;
+  const price = plan.currentPrice ?? {
+    effectivePrice: 0,
+    isDiscountActive: false,
+    discountedPrice: null,
+    basePrice: 0,
+  };
+  const features = Array.isArray(plan.features) ? plan.features : [];
   const hasDiscount = price.isDiscountActive && price.discountedPrice != null;
-  const isFree = price.effectivePrice === 0;
+  const isFree = (price.effectivePrice ?? 0) === 0;
 
   if (isHighlighted) {
     return (
@@ -289,7 +362,7 @@ function PricingCard({
                 showBorder={false}
                 className="text-base font-semibold"
               >
-                {plan.name}
+                {plan.name || "Gói"}
               </GradientText>
             </h3>
             <span className="rounded-full bg-[#23C4C1]/20 px-3 py-1 text-xs font-medium text-[#23C4C1]">
@@ -297,7 +370,9 @@ function PricingCard({
             </span>
           </div>
 
-          <p className="mt-2 text-sm text-white/70">{plan.description}</p>
+          <p className="mt-2 text-sm text-white/70">
+            {plan.description || "—"}
+          </p>
 
           <div className="mt-6">
             {hasDiscount ? (
@@ -306,12 +381,12 @@ function PricingCard({
                   {formatVND(price.discountedPrice!)}
                 </p>
                 <p className="mt-0.5 text-sm text-white/50 line-through">
-                  {formatVND(price.basePrice)}
+                  {formatVND(price.basePrice ?? 0)}
                 </p>
               </>
             ) : (
               <p className="text-4xl font-bold">
-                {formatVND(price.effectivePrice)}
+                {formatVND(price.effectivePrice ?? 0)}
               </p>
             )}
             {plan.durationDays > 0 && (
@@ -322,7 +397,7 @@ function PricingCard({
           </div>
 
           <ul className="mt-6 space-y-2.5 text-sm text-white/90">
-            {plan.features.map((f, i) => (
+            {features.map((f, i) => (
               <li
                 key={f.featureId || i}
                 className="flex items-center justify-between gap-2"
@@ -353,7 +428,8 @@ function PricingCard({
                 className="inline-flex w-full items-center justify-center rounded-lg bg-white/10 px-4 py-2.5 text-sm font-medium text-white/50 cursor-not-allowed"
               >
                 {isCurrentPlan
-                  ? plan.features.every((f) => f.usageLimit === -1)
+                  ? features.length > 0 &&
+                    features.every((f) => Number(f.usageLimit ?? 0) === -1)
                     ? "Đã có"
                     : "Gia Hạn Thêm"
                   : "Gói miễn phí"}
@@ -399,7 +475,7 @@ function PricingCard({
       >
         <div className="flex items-center justify-between">
           <h3 className="text-base font-semibold text-slate-900">
-            {plan.name}
+            {plan.name || "Gói"}
           </h3>
           {isFree && (
             <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-500">
@@ -413,7 +489,7 @@ function PricingCard({
           )}
         </div>
 
-        <p className="mt-2 text-sm text-slate-500">{plan.description}</p>
+        <p className="mt-2 text-sm text-slate-500">{plan.description || "—"}</p>
 
         <div className="mt-6">
           {hasDiscount ? (
@@ -422,12 +498,12 @@ function PricingCard({
                 {formatVND(price.discountedPrice!)}
               </p>
               <p className="mt-0.5 text-sm text-slate-400 line-through">
-                {formatVND(price.basePrice)}
+                {formatVND(price.basePrice ?? 0)}
               </p>
             </>
           ) : (
             <p className="text-3xl font-semibold text-slate-900">
-              {formatVND(price.effectivePrice)}
+              {formatVND(price.effectivePrice ?? 0)}
             </p>
           )}
           {plan.durationDays > 0 && (
@@ -438,7 +514,7 @@ function PricingCard({
         </div>
 
         <ul className="mt-6 space-y-2.5 text-sm text-slate-600">
-          {plan.features.map((f, i) => (
+          {features.map((f, i) => (
             <li
               key={f.featureId || i}
               className="flex items-center justify-between gap-2"
@@ -469,7 +545,8 @@ function PricingCard({
               className="inline-flex w-full items-center justify-center rounded-lg bg-slate-100 px-4 py-2.5 text-sm font-medium text-slate-400 cursor-not-allowed"
             >
               {isCurrentPlan
-                ? plan.features.every((f) => f.usageLimit === -1)
+                ? features.length > 0 &&
+                  features.every((f) => Number(f.usageLimit ?? 0) === -1)
                   ? "Hiện Đã Sở Hữu"
                   : "Gia Hạn Thêm"
                 : "Gói miễn phí"}
@@ -499,19 +576,23 @@ function PricingCard({
 // ---------------------------------------------------------------------------
 
 function TransactionRow({ tx }: { tx: SubscriptionTransaction }) {
-  const cfg = getTransactionStatusConfig(tx.status);
+  const cfg = getTransactionStatusConfig(tx.status ?? "");
   const Icon = cfg.icon;
   return (
     <tr className="border-b border-slate-100 last:border-0 hover:bg-slate-50/50 transition-colors">
       <td className="px-4 py-3.5">
-        <p className="text-sm font-medium text-slate-900">{tx.planName}</p>
+        <p className="text-sm font-medium text-slate-900">
+          {tx.planName || "—"}
+        </p>
         <p className="text-xs text-slate-400 mt-0.5">
-          {tx.transactionType === "PURCHASE" ? "Mua mới" : tx.transactionType}
+          {normalizeStatus(tx.transactionType) === "purchase"
+            ? "Mua mới"
+            : statusText(tx.transactionType) || "—"}
         </p>
       </td>
       <td className="px-4 py-3.5 text-sm font-semibold text-slate-900">
         {formatVND(tx.finalAmount)}
-        {tx.prorationCredit > 0 && (
+        {Number(tx.prorationCredit ?? 0) > 0 && (
           <p className="text-xs text-emerald-600 font-normal">
             -{formatVND(tx.prorationCredit)} hoàn tiền
           </p>
@@ -541,6 +622,7 @@ function TransactionHistorySection() {
     isLoading,
     error,
   } = useSubscriptionTransactions();
+  const txList = Array.isArray(transactions) ? transactions : [];
 
   if (isLoading) {
     return (
@@ -559,7 +641,7 @@ function TransactionHistorySection() {
     );
   }
 
-  if (transactions.length === 0) {
+  if (txList.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-40 gap-2 text-slate-400">
         <Receipt className="w-8 h-8" />
@@ -588,7 +670,7 @@ function TransactionHistorySection() {
           </tr>
         </thead>
         <tbody>
-          {transactions.map((tx) => (
+          {txList.map((tx) => (
             <TransactionRow key={tx.transactionId} tx={tx} />
           ))}
         </tbody>
@@ -689,7 +771,9 @@ export default function SubscriptionClient() {
   if (isPureEmployee) return <EmployeeBlockedView />;
 
   const activePlanId =
-    currentSub?.status === "Active" ? currentSub.plan.subscriptionPlanId : null;
+    currentSub?.plan && normalizeStatus(currentSub.status) === "active"
+      ? currentSub.plan.subscriptionPlanId
+      : null;
   const highlightedIndex = plans ? getHighlightedIndex(plans) : 0;
 
   return (
@@ -730,7 +814,7 @@ export default function SubscriptionClient() {
             <div className="flex items-center justify-center h-48">
               <Loader2 className="w-7 h-7 animate-spin text-[#23C4C1]" />
             </div>
-          ) : currentSub && currentSub.status === "Active" ? (
+          ) : currentSub?.plan ? (
             <CurrentPlanCard subscription={currentSub} />
           ) : (
             <NoPlanCard />
