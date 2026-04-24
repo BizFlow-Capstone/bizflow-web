@@ -22,6 +22,15 @@ const API_BASE_URL = (
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:5139"
 ).replace(/\/$/, "");
 
+function extractItems<T>(data: unknown): T[] {
+  if (Array.isArray(data)) return data as T[];
+  if (data && typeof data === "object") {
+    const maybeItems = (data as { items?: unknown }).items;
+    if (Array.isArray(maybeItems)) return maybeItems as T[];
+  }
+  return [];
+}
+
 export async function getPublicSubscriptionPlans(): Promise<
   PublicSubscriptionPlan[]
 > {
@@ -32,7 +41,7 @@ export async function getPublicSubscriptionPlans(): Promise<
   if (!res.ok || !body.success) {
     throw new Error(body.message || `Request failed (${res.status})`);
   }
-  return body.data;
+  return extractItems<PublicSubscriptionPlan>(body.data);
 }
 
 export async function createCheckoutSession(
@@ -64,9 +73,23 @@ export async function getOwnedLocations(): Promise<OwnedLocation[]> {
 export async function getCurrentSubscription(): Promise<CurrentSubscription | null> {
   const res = await authFetch(`${API_BASE_URL}/api/subscriptions/current`);
   if (res.status === 404) return null;
-  const body = (await res.json()) as ApiEnvelope<CurrentSubscription | null>;
-  if (!res.ok || !body.success) return null;
-  return body.data;
+
+  const body = (await res
+    .json()
+    .catch(() => null)) as ApiEnvelope<CurrentSubscription | null> | null;
+
+  if (!res.ok || !body?.success) return null;
+
+  const data = body.data as unknown;
+  if (!data || typeof data !== "object") return null;
+
+  // BE may wrap current subscription under nested keys.
+  const nested =
+    (data as { subscription?: CurrentSubscription | null }).subscription ??
+    (data as { currentSubscription?: CurrentSubscription | null })
+      .currentSubscription;
+
+  return (nested ?? data) as CurrentSubscription;
 }
 
 export async function getSubscriptionTransactions(
@@ -76,9 +99,10 @@ export async function getSubscriptionTransactions(
   const res = await authFetch(
     `${API_BASE_URL}/api/subscriptions/transactions?page=${page}&pageSize=${pageSize}`,
   );
-  const body = (await res.json()) as ApiEnvelope<SubscriptionTransaction[]>;
+  const body = (await res.json()) as ApiEnvelope<unknown>;
   if (!res.ok || !body.success) {
     throw new Error(body.message || `Request failed (${res.status})`);
   }
-  return body.data ?? [];
+
+  return extractItems<SubscriptionTransaction>(body.data);
 }

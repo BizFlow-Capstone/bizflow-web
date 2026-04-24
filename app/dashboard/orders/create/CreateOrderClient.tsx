@@ -332,6 +332,9 @@ export default function CreateOrderClient() {
   // Payment
   const [paymentType, setPaymentType] = useState<PaymentType>("cash");
   const [selectedDebtorId, setSelectedDebtorId] = useState<string>("");
+  const [isCreatingDebtorInline, setIsCreatingDebtorInline] = useState(false);
+  const [newDebtorName, setNewDebtorName] = useState("");
+  const [newDebtorPhone, setNewDebtorPhone] = useState("");
   const [note, setNote] = useState("");
 
   // Mixed payment amounts
@@ -471,6 +474,45 @@ export default function CreateOrderClient() {
   }, [
     aiDetectedCustomerName,
     createDebtorMutation,
+    selectedLocationId,
+    setSelectedDebtorId,
+  ]);
+
+  const handleCreateDebtorInline = useCallback(async () => {
+    const debtorName = newDebtorName.trim();
+    if (!debtorName) {
+      setSubmitError("Vui lòng nhập tên khách hàng.");
+      return;
+    }
+
+    if (!selectedLocationId || selectedLocationId <= 0) {
+      setSubmitError("Vui lòng chọn địa điểm trước khi tạo khách nợ.");
+      return;
+    }
+
+    setSubmitError("");
+
+    try {
+      const result = await createDebtorMutation.mutateAsync({
+        businessLocationId: selectedLocationId,
+        name: debtorName,
+        phone: newDebtorPhone.trim() || undefined,
+      });
+
+      setCreatedDebtorOverride(result.data);
+      setSelectedDebtorId(String(result.data.debtorId));
+      setIsCreatingDebtorInline(false);
+      setNewDebtorName("");
+      setNewDebtorPhone("");
+    } catch (error) {
+      setSubmitError(
+        error instanceof Error ? error.message : "Không thể tạo khách hàng.",
+      );
+    }
+  }, [
+    createDebtorMutation,
+    newDebtorName,
+    newDebtorPhone,
     selectedLocationId,
     setSelectedDebtorId,
   ]);
@@ -981,7 +1023,10 @@ export default function CreateOrderClient() {
       cashAmount: cash,
       bankAmount: bank,
       debtAmount: debtValue,
-      debtorId: selectedDebtorId ? Number(selectedDebtorId) : undefined,
+      debtorId:
+        debtValue > 0 && selectedDebtorId
+          ? Number(selectedDebtorId)
+          : undefined,
       note,
       items: cart.map((item) => ({
         saleItemId: item.saleItemId,
@@ -1039,7 +1084,8 @@ export default function CreateOrderClient() {
     (item) => item.trackInventory && item.quantity > item.stock,
   );
 
-  const isDebtPayment = paymentType === "debt" || paymentType === "mixed";
+  const showDebtorSection =
+    paymentType === "debt" || (paymentType === "mixed" && debtAmount > 0);
   const requiresDebtor =
     paymentType === "debt" || (paymentType === "mixed" && debtAmount > 0);
 
@@ -1714,53 +1760,134 @@ export default function CreateOrderClient() {
                   })}
                 </div>
 
-                {isDebtPayment && (
+                {showDebtorSection && (
                   <div>
                     <Label className="text-sm font-medium text-gray-700 mb-1.5 block">
-                      Khách ghi nợ
+                      {requiresDebtor
+                        ? "Khách ghi nợ"
+                        : "Khách hàng (tùy chọn)"}
                     </Label>
-                    <Select
-                      value={selectedDebtorId}
-                      onValueChange={setSelectedDebtorId}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Chọn khách hàng nợ..." />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {isLoadingDebtors && (
-                          <SelectItem value="__loading__" disabled>
-                            Đang tải khách hàng...
-                          </SelectItem>
-                        )}
-                        {!isLoadingDebtors &&
-                          availableDebtorOptions.length === 0 && (
-                            <SelectItem value="__empty__" disabled>
-                              Không có khách hàng đang hoạt động
-                            </SelectItem>
-                          )}
-                        {availableDebtorOptions.map((debtor) => (
-                          <SelectItem
-                            key={debtor.debtorId}
-                            value={String(debtor.debtorId)}
+                    <div className="flex gap-2">
+                      <div className="flex-1">
+                        <Select
+                          value={selectedDebtorId}
+                          onValueChange={setSelectedDebtorId}
+                        >
+                          <SelectTrigger>
+                            <SelectValue
+                              placeholder={
+                                requiresDebtor
+                                  ? "Chọn khách hàng nợ..."
+                                  : "Chọn khách hàng..."
+                              }
+                            />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {isLoadingDebtors && (
+                              <SelectItem value="__loading__" disabled>
+                                Đang tải khách hàng...
+                              </SelectItem>
+                            )}
+                            {!isLoadingDebtors &&
+                              availableDebtorOptions.length === 0 && (
+                                <SelectItem value="__empty__" disabled>
+                                  Không có khách hàng đang hoạt động
+                                </SelectItem>
+                              )}
+                            {availableDebtorOptions.map((debtor) => (
+                              <SelectItem
+                                key={debtor.debtorId}
+                                value={String(debtor.debtorId)}
+                              >
+                                <div className="flex items-center justify-between w-full gap-2">
+                                  <span>{debtor.name}</span>
+                                  <span className="text-xs text-gray-500">
+                                    Nợ:{" "}
+                                    {formatCurrency(
+                                      Math.abs(debtor.currentBalance),
+                                    )}
+                                  </span>
+                                </div>
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        onClick={() =>
+                          setIsCreatingDebtorInline((prev) => !prev)
+                        }
+                        title="Thêm khách hàng mới"
+                      >
+                        <Plus className="w-4 h-4" />
+                      </Button>
+                    </div>
+
+                    {isCreatingDebtorInline && (
+                      <div className="mt-2 space-y-2 rounded-lg border border-gray-200 bg-gray-50 p-3">
+                        <div>
+                          <Label className="text-xs text-gray-600 mb-1 block">
+                            Tên khách hàng
+                          </Label>
+                          <Input
+                            placeholder="Nhập tên khách hàng..."
+                            value={newDebtorName}
+                            onChange={(e) => setNewDebtorName(e.target.value)}
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-xs text-gray-600 mb-1 block">
+                            Số điện thoại (tùy chọn)
+                          </Label>
+                          <Input
+                            placeholder="Nhập số điện thoại..."
+                            value={newDebtorPhone}
+                            onChange={(e) => setNewDebtorPhone(e.target.value)}
+                          />
+                        </div>
+                        <div className="flex justify-end gap-2">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setIsCreatingDebtorInline(false);
+                              setNewDebtorName("");
+                              setNewDebtorPhone("");
+                            }}
                           >
-                            <div className="flex items-center justify-between w-full gap-2">
-                              <span>{debtor.name}</span>
-                              <span className="text-xs text-gray-500">
-                                Nợ:{" "}
-                                {formatCurrency(
-                                  Math.abs(debtor.currentBalance),
-                                )}
-                              </span>
-                            </div>
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                            Hủy
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            className="bg-[#23C4C1] hover:bg-[#1da8a5] text-white"
+                            onClick={() => void handleCreateDebtorInline()}
+                            disabled={
+                              createDebtorMutation.isPending ||
+                              !newDebtorName.trim()
+                            }
+                          >
+                            {createDebtorMutation.isPending ? (
+                              <>
+                                <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                                Đang tạo...
+                              </>
+                            ) : (
+                              "Tạo khách"
+                            )}
+                          </Button>
+                        </div>
+                      </div>
+                    )}
 
                     <p className="mt-2 text-xs text-gray-500">
                       Chỉ hiển thị khách hàng ở trạng thái hoạt động. Nếu không
-                      thấy tên khách, vào tab Khách Hàng Thân Thiết để kích hoạt
-                      lại.
+                      thấy tên khách, bạn có thể bấm dấu + để tạo nhanh ngay tại
+                      đây.
                     </p>
 
                     {aiDetectedCustomerName ? (

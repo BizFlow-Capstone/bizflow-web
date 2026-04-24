@@ -97,9 +97,23 @@ function resolvePaymentStatus(
   return "PAID";
 }
 
+function resolvePaidAmount(
+  order: BackendOrderDto,
+  paymentStatus: "PAID" | "PARTIAL" | "UNPAID",
+): number {
+  // For pending/cancelled orders, split fields represent intended method,
+  // not settled money yet.
+  if (order.status.code !== "completed") return 0;
+  if (paymentStatus === "UNPAID") return 0;
+
+  const settled = Math.max(0, order.cashAmount + order.bankAmount);
+  return Math.min(order.totalAmount, settled);
+}
+
 function mapOrderDtoToRecord(order: BackendOrderDto): OrderRecord {
   const paymentType = resolvePaymentType(order);
   const paymentStatus = resolvePaymentStatus(order);
+  const paidAmount = resolvePaidAmount(order, paymentStatus);
 
   return {
     orderId: order.orderId,
@@ -119,7 +133,7 @@ function mapOrderDtoToRecord(order: BackendOrderDto): OrderRecord {
     debtAmount: order.debtAmount,
     paymentType,
     paymentStatus,
-    paidAmount: order.cashAmount + order.bankAmount,
+    paidAmount,
     note: order.note ?? undefined,
     isFromAI: false,
     createdByUserId: order.createdByProfileId ?? "",

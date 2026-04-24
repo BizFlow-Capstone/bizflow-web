@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
   ArrowLeft,
@@ -48,6 +48,7 @@ export default function PaymentClient() {
 
   // Payment tab
   const [paymentTab, setPaymentTab] = useState<"qr" | "cash">("qr");
+  const [isTransferConfirmed, setIsTransferConfirmed] = useState(false);
 
   // Cash payment
   const [cashReceived, setCashReceived] = useState("");
@@ -75,16 +76,50 @@ export default function PaymentClient() {
   const debtors = debtorsPage?.items ?? [];
   const createDebtorMutation = useCreateDebtor();
 
+  const effectivePaidAmount = useMemo(() => {
+    if (!order) return 0;
+
+    if (order.paymentStatus === "UNPAID") return 0;
+
+    const settledFromChannels = Math.max(
+      0,
+      (order.cashAmount ?? 0) + (order.bankAmount ?? 0),
+    );
+
+    if (order.paymentStatus === "PARTIAL") {
+      const fallbackPaid = Math.max(0, order.paidAmount ?? 0);
+      return Math.min(
+        order.totalAmount,
+        settledFromChannels > 0 ? settledFromChannels : fallbackPaid,
+      );
+    }
+
+    return Math.min(
+      order.totalAmount,
+      Math.max(settledFromChannels, Math.max(0, order.paidAmount ?? 0)),
+    );
+  }, [order]);
+
   const amountDue = useMemo(() => {
     if (!order) return 0;
-    return Math.max(order.totalAmount - order.paidAmount, 0);
-  }, [order]);
+    return Math.max(order.totalAmount - effectivePaidAmount, 0);
+  }, [order, effectivePaidAmount]);
 
   // Cash change calculation based on remaining payable amount.
   const cashChange = useMemo(() => {
     const received = Number(cashReceived) || 0;
     return received - amountDue;
   }, [cashReceived, amountDue]);
+
+  const isCashTab = paymentTab === "cash";
+
+  useEffect(() => {
+    if (!isCashTab) {
+      setIsSavingExcess(false);
+      setExcessDebtorId("");
+      setIsCreatingDebtor(false);
+    }
+  }, [isCashTab]);
 
   // Confirm payment
   const handleConfirmPayment = async () => {
@@ -94,7 +129,10 @@ export default function PaymentClient() {
     setIsConfirming(true);
     try {
       // 1. Complete the order
-      await completeMutation.mutateAsync(orderId);
+      await completeMutation.mutateAsync({
+        orderId,
+        data: { confirmLowStock: true },
+      });
 
       // 2. Handle excess payment if requested
       if (isSavingExcess && excessDebtorId && cashChange > 0) {
@@ -162,8 +200,8 @@ export default function PaymentClient() {
   }
 
   const isExcessDebtorMissing =
-    isSavingExcess && cashChange > 0 && !excessDebtorId;
-  const isInsufficientPayment = Number(cashReceived) < amountDue;
+    isCashTab && isSavingExcess && cashChange > 0 && !excessDebtorId;
+  const isInsufficientPayment = isCashTab && Number(cashReceived) < amountDue;
 
   return (
     <div className="flex-1 flex flex-col">
@@ -198,9 +236,9 @@ export default function PaymentClient() {
               <p className="text-4xl font-bold text-[#23C4C1]">
                 {formatCurrency(amountDue)}
               </p>
-              {order.paidAmount > 0 && amountDue > 0 && (
+              {effectivePaidAmount > 0 && amountDue > 0 && (
                 <p className="text-sm text-gray-500 mt-2">
-                  Đã trả: {formatCurrency(order.paidAmount)} — Còn lại:{" "}
+                  Đã trả: {formatCurrency(effectivePaidAmount)} — Còn lại:{" "}
                   {formatCurrency(amountDue)}
                 </p>
               )}
@@ -210,7 +248,10 @@ export default function PaymentClient() {
             <div className="bg-white rounded-xl border border-gray-200 p-1.5 flex gap-1">
               <button
                 type="button"
-                onClick={() => setPaymentTab("qr")}
+                onClick={() => {
+                  setPaymentTab("qr");
+                  setIsTransferConfirmed(false);
+                }}
                 className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-lg font-medium transition-all ${
                   paymentTab === "qr"
                     ? "bg-[#23C4C1] text-white shadow-md"
@@ -234,145 +275,186 @@ export default function PaymentClient() {
               </button>
             </div>
 
-            {/* Shared Payment UI for both tabs */}
-
-            {/* Cash Tab (disabled: both tabs share one UI) */}
+            {/* Payment Content */}
             {(paymentTab === "qr" || paymentTab === "cash") && (
               <Card>
                 <CardContent className="p-6 space-y-6">
-                  <div>
-                    <Label className="text-sm font-medium text-gray-700 mb-2 block">
-                      Khách đưa
-                    </Label>
-                    <Input
-                      type="number"
-                      placeholder="Nhập số tiền khách đưa..."
-                      value={cashReceived}
-                      onChange={(e) => setCashReceived(e.target.value)}
-                      className="h-14 text-xl font-semibold text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                    />
-                  </div>
+                  {paymentTab === "qr" && (
+                    <div className="space-y-4">
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm">
+                        <p className="font-medium text-slate-800">
+                          Xác nhận chuyển khoản
+                        </p>
+                        <p className="mt-1 text-slate-600">
+                          Yêu cầu khách chuyển đúng số tiền cần thanh toán và
+                          kiểm tra giao dịch đã vào tài khoản trước khi xác
+                          nhận.
+                        </p>
+                        <p className="mt-2 text-slate-700">
+                          Số tiền: <strong>{formatCurrency(amountDue)}</strong>
+                        </p>
+                        <p className="text-slate-700">
+                          Nội dung chuyển khoản:{" "}
+                          <strong>{order.orderCode}</strong>
+                        </p>
+                      </div>
 
-                  {/* Quick amount buttons */}
-                  <div className="grid grid-cols-3 gap-2">
-                    {[
-                      amountDue,
-                      Math.ceil(amountDue / 100000) * 100000,
-                      Math.ceil(amountDue / 500000) * 500000,
-                    ]
-                      .filter((v, i, a) => a.indexOf(v) === i)
-                      .filter((v) => v > 0)
-                      .map((amount) => (
-                        <Button
-                          key={amount}
-                          variant="outline"
-                          className="h-10 text-sm"
-                          onClick={() => setCashReceived(String(amount))}
+                      <div className="flex items-center space-x-2">
+                        <Checkbox
+                          id="confirmTransfer"
+                          checked={isTransferConfirmed}
+                          onCheckedChange={(checked) =>
+                            setIsTransferConfirmed(!!checked)
+                          }
+                        />
+                        <label
+                          htmlFor="confirmTransfer"
+                          className="text-sm text-gray-700 cursor-pointer"
                         >
-                          {formatCurrency(amount)}
-                        </Button>
-                      ))}
-                  </div>
+                          Tôi đã xác nhận nhận được tiền chuyển khoản.
+                        </label>
+                      </div>
+                    </div>
+                  )}
 
-                  {/* Change */}
-                  {Number(cashReceived) > 0 && (
-                    <div className="bg-gray-50 rounded-xl p-4 space-y-2">
-                      <div className="flex justify-between text-sm">
-                        <span className="text-gray-600">Tổng tiền:</span>
-                        <span className="font-medium">
-                          {formatCurrency(amountDue)}
-                        </span>
-                      </div>
-                      <div className="flex justify-between text-sm">
-                        <span className="text-gray-600">Khách đưa:</span>
-                        <span className="font-medium">
-                          {formatCurrency(Number(cashReceived))}
-                        </span>
-                      </div>
-                      <div className="border-t border-gray-200 pt-2 flex justify-between">
-                        <span className="font-semibold text-gray-800">
-                          {cashChange >= 0 ? "Tiền thối:" : "Còn thiếu:"}
-                        </span>
-                        <span
-                          className={`text-xl font-bold ${
-                            cashChange > 0
-                              ? "text-green-600"
-                              : cashChange < 0
-                                ? "text-red-600"
-                                : "text-gray-800"
-                          }`}
-                        >
-                          {formatCurrency(Math.abs(cashChange))}
-                        </span>
+                  {paymentTab === "cash" && (
+                    <>
+                      <div>
+                        <Label className="text-sm font-medium text-gray-700 mb-2 block">
+                          Khách đưa
+                        </Label>
+                        <Input
+                          type="number"
+                          placeholder="Nhập số tiền khách đưa..."
+                          value={cashReceived}
+                          onChange={(e) => setCashReceived(e.target.value)}
+                          className="h-14 text-xl font-semibold text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                        />
                       </div>
 
-                      {cashChange > 0 && (
-                        <div className="mt-4 pt-4 border-t border-gray-200 space-y-4">
-                          <div className="flex items-center space-x-2">
-                            <Checkbox
-                              id="saveExcess"
-                              checked={isSavingExcess}
-                              onCheckedChange={(checked) =>
-                                setIsSavingExcess(!!checked)
-                              }
-                            />
-                            <label
-                              htmlFor="saveExcess"
-                              className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 text-gray-700 cursor-pointer"
+                      {/* Quick amount buttons */}
+                      <div className="grid grid-cols-3 gap-2">
+                        {[
+                          amountDue,
+                          Math.ceil(amountDue / 100000) * 100000,
+                          Math.ceil(amountDue / 500000) * 500000,
+                        ]
+                          .filter((v, i, a) => a.indexOf(v) === i)
+                          .filter((v) => v > 0)
+                          .map((amount) => (
+                            <Button
+                              key={amount}
+                              variant="outline"
+                              className="h-10 text-sm"
+                              onClick={() => setCashReceived(String(amount))}
                             >
-                              Khách không lấy tiền dư (Lưu vào sổ khách quen)
-                            </label>
+                              {formatCurrency(amount)}
+                            </Button>
+                          ))}
+                      </div>
+
+                      {/* Change */}
+                      {Number(cashReceived) > 0 && (
+                        <div className="bg-gray-50 rounded-xl p-4 space-y-2">
+                          <div className="flex justify-between text-sm">
+                            <span className="text-gray-600">Tổng tiền:</span>
+                            <span className="font-medium">
+                              {formatCurrency(amountDue)}
+                            </span>
+                          </div>
+                          <div className="flex justify-between text-sm">
+                            <span className="text-gray-600">Khách đưa:</span>
+                            <span className="font-medium">
+                              {formatCurrency(Number(cashReceived))}
+                            </span>
+                          </div>
+                          <div className="border-t border-gray-200 pt-2 flex justify-between">
+                            <span className="font-semibold text-gray-800">
+                              {cashChange >= 0 ? "Tiền thối:" : "Còn thiếu:"}
+                            </span>
+                            <span
+                              className={`text-xl font-bold ${
+                                cashChange > 0
+                                  ? "text-green-600"
+                                  : cashChange < 0
+                                    ? "text-red-600"
+                                    : "text-gray-800"
+                              }`}
+                            >
+                              {formatCurrency(Math.abs(cashChange))}
+                            </span>
                           </div>
 
-                          {isSavingExcess && (
-                            <div className="space-y-3 animate-in fade-in slide-in-from-top-2 duration-200">
-                              <div className="flex gap-2">
-                                <div className="flex-1">
-                                  <Select
-                                    value={excessDebtorId}
-                                    onValueChange={setExcessDebtorId}
-                                  >
-                                    <SelectTrigger className="w-full">
-                                      <SelectValue placeholder="Chọn khách hàng..." />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      {debtors.map((d) => (
-                                        <SelectItem
-                                          key={d.debtorId}
-                                          value={String(d.debtorId)}
-                                        >
-                                          {d.name}{" "}
-                                          {d.phone ? `(${d.phone})` : ""}
-                                        </SelectItem>
-                                      ))}
-                                    </SelectContent>
-                                  </Select>
-                                </div>
-                                <Button
-                                  variant="outline"
-                                  size="icon"
-                                  onClick={() => setIsCreatingDebtor(true)}
-                                  title="Thêm khách hàng mới"
+                          {cashChange > 0 && (
+                            <div className="mt-4 pt-4 border-t border-gray-200 space-y-4">
+                              <div className="flex items-center space-x-2">
+                                <Checkbox
+                                  id="saveExcess"
+                                  checked={isSavingExcess}
+                                  onCheckedChange={(checked) =>
+                                    setIsSavingExcess(!!checked)
+                                  }
+                                />
+                                <label
+                                  htmlFor="saveExcess"
+                                  className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 text-gray-700 cursor-pointer"
                                 >
-                                  <Plus className="w-4 h-4" />
-                                </Button>
+                                  Khách không lấy tiền dư (Lưu vào sổ khách
+                                  quen)
+                                </label>
                               </div>
+
+                              {isSavingExcess && (
+                                <div className="space-y-3 animate-in fade-in slide-in-from-top-2 duration-200">
+                                  <div className="flex gap-2">
+                                    <div className="flex-1">
+                                      <Select
+                                        value={excessDebtorId}
+                                        onValueChange={setExcessDebtorId}
+                                      >
+                                        <SelectTrigger className="w-full">
+                                          <SelectValue placeholder="Chọn khách hàng..." />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          {debtors.map((d) => (
+                                            <SelectItem
+                                              key={d.debtorId}
+                                              value={String(d.debtorId)}
+                                            >
+                                              {d.name}{" "}
+                                              {d.phone ? `(${d.phone})` : ""}
+                                            </SelectItem>
+                                          ))}
+                                        </SelectContent>
+                                      </Select>
+                                    </div>
+                                    <Button
+                                      variant="outline"
+                                      size="icon"
+                                      onClick={() => setIsCreatingDebtor(true)}
+                                      title="Thêm khách hàng mới"
+                                    >
+                                      <Plus className="w-4 h-4" />
+                                    </Button>
+                                  </div>
+                                </div>
+                              )}
                             </div>
+                          )}
+
+                          {isInsufficientPayment && (
+                            <p className="text-xs text-red-500 text-center mt-1">
+                              Số tiền chưa đủ
+                            </p>
+                          )}
+                          {isExcessDebtorMissing && (
+                            <p className="text-xs text-amber-600 text-center mt-1">
+                              Chọn khách hàng để lưu tiền dư.
+                            </p>
                           )}
                         </div>
                       )}
-
-                      {isInsufficientPayment && (
-                        <p className="text-xs text-red-500 text-center mt-1">
-                          Số tiền chưa đủ
-                        </p>
-                      )}
-                      {isExcessDebtorMissing && (
-                        <p className="text-xs text-amber-600 text-center mt-1">
-                          Chọn khách hàng để lưu tiền dư.
-                        </p>
-                      )}
-                    </div>
+                    </>
                   )}
 
                   {/* Confirm */}
@@ -381,6 +463,7 @@ export default function PaymentClient() {
                     disabled={
                       isConfirming ||
                       amountDue <= 0 ||
+                      (paymentTab === "qr" && !isTransferConfirmed) ||
                       isInsufficientPayment ||
                       isExcessDebtorMissing
                     }
@@ -515,8 +598,8 @@ export default function PaymentClient() {
                           : "Chưa thanh toán"}
                     </p>
                     <p className="text-xs text-gray-500">
-                      {order.paidAmount > 0
-                        ? `Đã trả ${formatCurrency(order.paidAmount)}`
+                      {effectivePaidAmount > 0
+                        ? `Đã trả ${formatCurrency(effectivePaidAmount)}`
                         : "Chưa nhận thanh toán"}
                     </p>
                   </div>
