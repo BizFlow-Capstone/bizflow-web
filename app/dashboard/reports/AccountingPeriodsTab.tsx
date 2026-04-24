@@ -302,8 +302,16 @@ function CreatePeriodDialog({
   }
 
   async function handleSubmit(tab: string) {
-    const cashVal = parseFloat(cash) || undefined;
-    const bankVal = parseFloat(bank) || undefined;
+    const parseOpeningBalance = (value: string): number => {
+      const trimmed = value.trim();
+      if (!trimmed) return 0;
+      const parsed = Number(trimmed);
+      return Number.isFinite(parsed) ? parsed : 0;
+    };
+
+    const cashVal = parseOpeningBalance(cash);
+    const bankVal = parseOpeningBalance(bank);
+
     try {
       if (tab === "custom") {
         await createCustom.mutateAsync({
@@ -311,6 +319,7 @@ function CreatePeriodDialog({
           endDate,
           openingCashBalance: cashVal,
           openingBankBalance: bankVal,
+          useSuggestedOpeningBalances: false,
         });
       } else {
         await createStandard.mutateAsync({
@@ -319,6 +328,7 @@ function CreatePeriodDialog({
           quarter: tab === "quarter" ? Number(quarter) : undefined,
           openingCashBalance: cashVal,
           openingBankBalance: bankVal,
+          useSuggestedOpeningBalances: false,
         });
       }
       reset();

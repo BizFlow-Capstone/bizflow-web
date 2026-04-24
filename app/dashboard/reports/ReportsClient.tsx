@@ -1,6 +1,7 @@
 ﻿"use client";
 
 import React, { useState, useMemo, useEffect } from "react";
+import * as XLSX from "xlsx-js-style";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   Loader2,
@@ -114,6 +115,10 @@ import {
   formatTooltipCurrency,
   formatDateTimeVi,
 } from "@/lib/format";
+import {
+  getBookRows as fetchBookRowsForExport,
+  getBookSummary as fetchBookSummaryForExport,
+} from "@/services/accountingService";
 
 // --- Main component ---
 
@@ -136,6 +141,22 @@ const CARD_PERIOD_OPTIONS: Array<{ key: CardPeriod; label: string }> = [
 ];
 
 const TRANSACTION_PAGE_SIZE = 10;
+
+const DEFAULT_COST_TYPE_OPTIONS = [
+  "salary",
+  "rent",
+  "utilities",
+  "transport",
+  "marketing",
+  "maintenance",
+  "other",
+  "manual",
+] as const;
+
+const DEFAULT_PAYMENT_METHOD_OPTIONS = ["cash", "bank"] as const;
+
+type ManualCostType = (typeof DEFAULT_COST_TYPE_OPTIONS)[number] | "import";
+type ManualCostPaymentMethod = (typeof DEFAULT_PAYMENT_METHOD_OPTIONS)[number];
 
 function startOfDay(date: Date): Date {
   const result = new Date(date);
@@ -386,9 +407,8 @@ function ReportsTab({ locationId }: { locationId: number }) {
   );
   const [manualCostDescription, setManualCostDescription] = useState("");
   const [manualCostImage, setManualCostImage] = useState<File | null>(null);
-  const [manualCostPaymentMethod, setManualCostPaymentMethod] = useState<
-    "cash" | "bank"
-  >("cash");
+  const [manualCostPaymentMethod, setManualCostPaymentMethod] =
+    useState<ManualCostPaymentMethod>("cash");
   const [editingCostId, setEditingCostId] = useState<number | null>(null);
   const [manualCostRemoveDocument, setManualCostRemoveDocument] =
     useState(false);
@@ -870,22 +890,52 @@ function ReportsTab({ locationId }: { locationId: number }) {
       icon: <AlertCircle className="w-3.5 h-3.5" />,
     },
   ];
-  const costTypeOptions = costReferences?.costTypes?.filter(
-    (type) => type !== "import",
-  ) ?? [
-    "salary",
-    "rent",
-    "utilities",
-    "transport",
-    "marketing",
-    "maintenance",
-    "other",
-    "manual",
-  ];
-  const paymentMethodOptions = costReferences?.paymentMethods ?? [
-    "cash",
-    "bank",
-  ];
+  const costTypeOptions = useMemo<ManualCostType[]>(() => {
+    const raw = costReferences?.costTypes ?? DEFAULT_COST_TYPE_OPTIONS;
+    const valid = raw
+      .map((type) =>
+        String(type || "")
+          .trim()
+          .toLowerCase(),
+      )
+      .filter((type): type is ManualCostType =>
+        ["import", ...DEFAULT_COST_TYPE_OPTIONS].includes(
+          type as ManualCostType,
+        ),
+      )
+      .filter((type) => type !== "import");
+
+    return valid.length > 0
+      ? valid
+      : (Array.from(DEFAULT_COST_TYPE_OPTIONS) as ManualCostType[]);
+  }, [costReferences?.costTypes]);
+
+  const paymentMethodOptions = useMemo<ManualCostPaymentMethod[]>(() => {
+    const raw =
+      costReferences?.paymentMethods ?? DEFAULT_PAYMENT_METHOD_OPTIONS;
+    const valid = raw.filter(
+      (method): method is ManualCostPaymentMethod =>
+        method === "cash" || method === "bank",
+    );
+
+    return valid.length > 0
+      ? valid
+      : (Array.from(
+          DEFAULT_PAYMENT_METHOD_OPTIONS,
+        ) as ManualCostPaymentMethod[]);
+  }, [costReferences?.paymentMethods]);
+
+  useEffect(() => {
+    if (!costTypeOptions.includes(manualCostType as ManualCostType)) {
+      setManualCostType(costTypeOptions[0] ?? "other");
+    }
+  }, [costTypeOptions, manualCostType]);
+
+  useEffect(() => {
+    if (!paymentMethodOptions.includes(manualCostPaymentMethod)) {
+      setManualCostPaymentMethod(paymentMethodOptions[0] ?? "cash");
+    }
+  }, [paymentMethodOptions, manualCostPaymentMethod]);
 
   async function handleCreateManualRevenue() {
     setManualError("");
@@ -969,12 +1019,11 @@ function ReportsTab({ locationId }: { locationId: number }) {
       return false;
     }
 
-    const payload = {
+    const basePayload = {
       description: manualCostDescription.trim(),
       amount: Number(manualCostAmount),
       costDate: manualCostDate,
       paymentMethod: manualCostPaymentMethod,
-      removeDocument: manualCostRemoveDocument,
       image: manualCostImage ?? undefined,
     };
 
@@ -982,22 +1031,22 @@ function ReportsTab({ locationId }: { locationId: number }) {
       if (editingCostId) {
         await updateCostMutation.mutateAsync({
           costId: editingCostId,
-          data: payload,
+          data: {
+            ...basePayload,
+            removeDocument: manualCostRemoveDocument,
+          },
         });
       } else {
+        const selectedCostType = costTypeOptions.includes(
+          manualCostType as ManualCostType,
+        )
+          ? (manualCostType as ManualCostType)
+          : "other";
+
         await createCostMutation.mutateAsync({
           businessLocationId: locationId,
-          costType: manualCostType as
-            | "import"
-            | "salary"
-            | "rent"
-            | "utilities"
-            | "transport"
-            | "marketing"
-            | "maintenance"
-            | "other"
-            | "manual",
-          ...payload,
+          costType: selectedCostType,
+          ...basePayload,
         });
       }
 
@@ -1892,7 +1941,7 @@ function ReportsTab({ locationId }: { locationId: number }) {
                 <Select
                   value={manualCostPaymentMethod}
                   onValueChange={(value) =>
-                    setManualCostPaymentMethod(value as "cash" | "bank")
+                    setManualCostPaymentMethod(value as ManualCostPaymentMethod)
                   }
                 >
                   <SelectTrigger>
@@ -2288,6 +2337,424 @@ function BooksTab({ locationId }: { locationId: number }) {
   const { mutateAsync: deleteBook, isPending: deletingBook } =
     useDeleteAccountingBook(locationId);
   const [deletingBookId, setDeletingBookId] = useState<number | null>(null);
+  const [exportingBookId, setExportingBookId] = useState<number | null>(null);
+
+  function toSheetCell(value: unknown): string | number | boolean {
+    if (typeof value === "number" || typeof value === "boolean") {
+      return value;
+    }
+    if (typeof value === "string") {
+      return value;
+    }
+    if (value == null) {
+      return "";
+    }
+
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return String(value);
+    }
+  }
+
+  function formatExcelDate(value: unknown): string {
+    if (typeof value !== "string") return "";
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return value;
+    return parsed.toLocaleDateString("vi-VN");
+  }
+
+  function sanitizeSheetName(name: string): string {
+    const sanitized = name.replace(/[\\/?*\[\]:]/g, " ").trim();
+    return (sanitized || "Sheet").slice(0, 31);
+  }
+
+  async function handleExportBook(book: {
+    bookId: number;
+    templateCode: string;
+    templateName: string;
+  }) {
+    try {
+      setExportingBookId(book.bookId);
+
+      const summaryResult = await fetchBookSummaryForExport(
+        locationId,
+        book.bookId,
+      );
+
+      const summaryData =
+        (summaryResult.data as Record<string, unknown> | undefined) ?? {};
+
+      const rawColumns = Array.isArray(summaryData.columns)
+        ? (summaryData.columns as Array<Record<string, unknown>>)
+        : [];
+
+      const columns = rawColumns
+        .map((column) => {
+          const fieldCode = String(column.fieldCode ?? "").trim();
+          const label = String(
+            column.label ?? column.exportColumn ?? fieldCode,
+          ).trim();
+          const exportColumn = String(column.exportColumn ?? "").trim();
+
+          if (!fieldCode) return null;
+
+          return {
+            fieldCode,
+            label: label || fieldCode,
+            exportColumn,
+          };
+        })
+        .filter(
+          (
+            column,
+          ): column is {
+            fieldCode: string;
+            label: string;
+            exportColumn: string;
+          } => column !== null,
+        );
+
+      const allRows: Array<Record<string, unknown>> = [];
+      const seenCursors = new Set<string>();
+      let cursor: string | undefined;
+      let hasMore = true;
+      let guard = 0;
+
+      while (hasMore && guard < 500) {
+        guard += 1;
+        const rowsResult = await fetchBookRowsForExport(
+          locationId,
+          book.bookId,
+          500,
+          cursor,
+        );
+
+        const payload =
+          (rowsResult.data as Record<string, unknown> | undefined) ?? {};
+
+        const batchRows = Array.isArray(payload.rows)
+          ? (payload.rows as Array<Record<string, unknown>>)
+          : [];
+        allRows.push(...batchRows);
+
+        const nextCursor =
+          typeof payload.nextCursor === "string"
+            ? payload.nextCursor.trim()
+            : "";
+
+        const backendHasMore = Boolean(payload.hasMore);
+
+        if (backendHasMore && nextCursor && !seenCursors.has(nextCursor)) {
+          seenCursors.add(nextCursor);
+          cursor = nextCursor;
+        } else {
+          hasMore = false;
+        }
+      }
+
+      const keys =
+        columns.length > 0
+          ? columns.map((column) => column.fieldCode)
+          : Array.from(
+              new Set(
+                allRows.flatMap((row) =>
+                  Object.keys(row as Record<string, unknown>),
+                ),
+              ),
+            );
+
+      const headers =
+        columns.length > 0
+          ? columns.map((column) => column.label)
+          : keys.map((key) => key);
+
+      const headerCodes =
+        columns.length > 0
+          ? columns.map(
+              (column, index) =>
+                column.exportColumn || XLSX.utils.encode_col(index),
+            )
+          : keys.map((_, index) => XLSX.utils.encode_col(index));
+
+      const sheetDataColumnCount = Math.max(3, headers.length);
+      const visualColumnCount = Math.max(6, sheetDataColumnCount);
+      const tableEndColumn = sheetDataColumnCount - 1;
+      const rightMetaStartColumn = Math.max(3, tableEndColumn + 1);
+      const rightMetaEndColumn = Math.max(
+        rightMetaStartColumn,
+        visualColumnCount - 1,
+      );
+
+      const minimumBodyRows = Math.max(allRows.length, 14);
+      const tableHeaderRow = 8;
+      const tableCodeRow = 9;
+      const tableDataStartRow = 10;
+      const tableDataEndRow = tableDataStartRow + minimumBodyRows - 1;
+      const totalRows = tableDataEndRow + 2;
+
+      const matrix = Array.from({ length: totalRows }, () =>
+        Array(visualColumnCount).fill(""),
+      );
+
+      const ws = XLSX.utils.aoa_to_sheet(matrix);
+
+      const borderThin = {
+        top: { style: "thin", color: { rgb: "000000" } },
+        bottom: { style: "thin", color: { rgb: "000000" } },
+        left: { style: "thin", color: { rgb: "000000" } },
+        right: { style: "thin", color: { rgb: "000000" } },
+      };
+
+      const styleNormal = {
+        font: { name: "Times New Roman", sz: 11 },
+        alignment: { vertical: "center", horizontal: "left", wrapText: true },
+      };
+      const styleCenter = {
+        ...styleNormal,
+        alignment: { vertical: "center", horizontal: "center", wrapText: true },
+      };
+      const styleBold = {
+        ...styleNormal,
+        font: { name: "Times New Roman", sz: 11, bold: true },
+      };
+      const styleTitle = {
+        font: { name: "Times New Roman", sz: 18, bold: true },
+        alignment: { vertical: "center", horizontal: "center", wrapText: true },
+      };
+      const styleHeader = {
+        ...styleCenter,
+        font: { name: "Times New Roman", sz: 12, bold: true },
+        border: borderThin,
+      };
+      const styleCode = {
+        ...styleCenter,
+        font: { name: "Times New Roman", sz: 12, bold: true },
+        border: borderThin,
+      };
+      const styleCell = {
+        ...styleNormal,
+        border: borderThin,
+      };
+      const styleCellCenter = {
+        ...styleCenter,
+        border: borderThin,
+      };
+
+      const setCell = (
+        row: number,
+        col: number,
+        value: string | number | boolean,
+        style: Record<string, unknown>,
+      ) => {
+        const addr = XLSX.utils.encode_cell({ r: row, c: col });
+        const cellType = typeof value === "number" ? "n" : "s";
+        ws[addr] = {
+          v: value,
+          t: cellType,
+          s: style,
+        } as unknown as XLSX.CellObject;
+      };
+
+      const setMerge = (
+        startRow: number,
+        startCol: number,
+        endRow: number,
+        endCol: number,
+      ) => {
+        const merges = (ws["!merges"] ?? []) as XLSX.Range[];
+        merges.push({
+          s: { r: startRow, c: startCol },
+          e: { r: endRow, c: endCol },
+        });
+        ws["!merges"] = merges;
+      };
+
+      const summaryBusinessName = String(
+        summaryData.ownerName ??
+          summaryData.businessName ??
+          summaryData.householdName ??
+          "",
+      ).trim();
+      const summaryAddress = String(
+        summaryData.locationName ?? summaryData.address ?? "",
+      ).trim();
+      const summaryTaxCode = String(summaryData.taxCode ?? "").trim();
+      const summaryStartDate = formatExcelDate(summaryData.startDate);
+      const summaryEndDate = formatExcelDate(summaryData.endDate);
+
+      const formTitleRaw = String(book.templateName || "Sổ kế toán").trim();
+      const formTitle = formTitleRaw.toUpperCase().startsWith("SỔ")
+        ? formTitleRaw.toUpperCase()
+        : `SỔ ${formTitleRaw.toUpperCase()}`;
+
+      const periodText =
+        summaryStartDate && summaryEndDate
+          ? `${summaryStartDate} - ${summaryEndDate}`
+          : "";
+
+      setCell(
+        0,
+        0,
+        `HỘ, CÁ NHÂN KINH DOANH: ${summaryBusinessName}`,
+        styleBold,
+      );
+      setCell(1, 0, `Địa chỉ: ${summaryAddress}`, styleBold);
+      setCell(2, 0, `Mã số thuế: ${summaryTaxCode}`, styleBold);
+      setMerge(0, 0, 0, tableEndColumn);
+      setMerge(1, 0, 1, tableEndColumn);
+      setMerge(2, 0, 2, tableEndColumn);
+
+      setCell(0, rightMetaStartColumn, `Mẫu số ${book.templateCode}-HKD`, {
+        ...styleCenter,
+        font: { name: "Times New Roman", sz: 12, bold: true },
+      });
+      setCell(
+        1,
+        rightMetaStartColumn,
+        "(Kèm theo Thông tư số 152/2025/TT-BTC)",
+        {
+          ...styleCenter,
+          font: { name: "Times New Roman", sz: 11, italic: true },
+        },
+      );
+      setCell(
+        2,
+        rightMetaStartColumn,
+        "ngày 31 tháng 12 năm 2025 của Bộ trưởng",
+        {
+          ...styleCenter,
+          font: { name: "Times New Roman", sz: 11, italic: true },
+        },
+      );
+      setCell(3, rightMetaStartColumn, "Bộ Tài chính", {
+        ...styleCenter,
+        font: { name: "Times New Roman", sz: 12, italic: true },
+      });
+      setMerge(0, rightMetaStartColumn, 0, rightMetaEndColumn);
+      setMerge(1, rightMetaStartColumn, 1, rightMetaEndColumn);
+      setMerge(2, rightMetaStartColumn, 2, rightMetaEndColumn);
+      setMerge(3, rightMetaStartColumn, 3, rightMetaEndColumn);
+
+      setCell(4, 0, formTitle, styleTitle);
+      setMerge(4, 0, 4, tableEndColumn);
+
+      setCell(5, 0, `Địa điểm kinh doanh: ${summaryAddress}`, styleCenter);
+      setCell(6, 0, `Kỳ kê khai: ${periodText}`, styleCenter);
+      setMerge(5, 0, 5, tableEndColumn);
+      setMerge(6, 0, 6, tableEndColumn);
+
+      setCell(7, tableEndColumn, "Đơn vị tính: Đồng", {
+        ...styleCenter,
+        font: { name: "Times New Roman", sz: 11, italic: true },
+      });
+
+      headers.forEach((header, colIndex) => {
+        setCell(tableHeaderRow, colIndex, header, styleHeader);
+      });
+      headerCodes.forEach((code, colIndex) => {
+        setCell(tableCodeRow, colIndex, code, styleCode);
+      });
+
+      for (let rowIndex = 0; rowIndex < minimumBodyRows; rowIndex += 1) {
+        const row = allRows[rowIndex] ?? {};
+        for (let colIndex = 0; colIndex < sheetDataColumnCount; colIndex += 1) {
+          const key = keys[colIndex];
+          const rawValue = toSheetCell((row as Record<string, unknown>)[key]);
+          const isNumber = typeof rawValue === "number";
+          const cellStyle =
+            colIndex === 0
+              ? styleCellCenter
+              : isNumber
+                ? {
+                    ...styleCell,
+                    alignment: {
+                      vertical: "center",
+                      horizontal: "right",
+                      wrapText: true,
+                    },
+                    numFmt: "#,##0",
+                  }
+                : styleCell;
+
+          setCell(tableDataStartRow + rowIndex, colIndex, rawValue, cellStyle);
+        }
+      }
+
+      const columnWidths = Array.from({ length: visualColumnCount }).map(
+        (_, colIndex) => {
+          if (colIndex >= sheetDataColumnCount) return { wch: 12 };
+          const header = headers[colIndex] ?? "";
+          const maxDataLen = allRows.slice(0, 250).reduce((maxLen, row) => {
+            const key = keys[colIndex];
+            const value = toSheetCell((row as Record<string, unknown>)[key]);
+            return Math.max(maxLen, String(value).length);
+          }, 0);
+
+          return {
+            wch: Math.min(
+              60,
+              Math.max(
+                colIndex === 1 ? 28 : 16,
+                Math.max(header.length, maxDataLen) + 2,
+              ),
+            ),
+          };
+        },
+      );
+
+      ws["!cols"] = columnWidths;
+
+      const rowsConfig = Array.from({ length: totalRows }, (_, rowIndex) => {
+        if (rowIndex === 4) return { hpt: 30 };
+        if (rowIndex === tableHeaderRow) return { hpt: 24 };
+        return { hpt: 20 };
+      });
+      ws["!rows"] = rowsConfig;
+
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(
+        workbook,
+        ws,
+        sanitizeSheetName(book.templateCode || "Form"),
+      );
+
+      const summaryRows: Array<[string, string]> = Object.entries(summaryData)
+        .filter(([key]) => key !== "columns")
+        .map(([key, value]) => [
+          key,
+          typeof value === "string" || typeof value === "number"
+            ? String(value)
+            : value == null
+              ? ""
+              : JSON.stringify(value),
+        ]);
+
+      summaryRows.unshift(["bookId", String(book.bookId)]);
+      summaryRows.unshift(["templateName", book.templateName]);
+      summaryRows.unshift(["templateCode", book.templateCode]);
+      summaryRows.push(["exportedAt", new Date().toISOString()]);
+      summaryRows.push(["rowCount", String(allRows.length)]);
+
+      const summarySheet = XLSX.utils.aoa_to_sheet([
+        ["Field", "Value"],
+        ...summaryRows,
+      ]);
+      summarySheet["!cols"] = [{ wch: 28 }, { wch: 80 }];
+      XLSX.utils.book_append_sheet(workbook, summarySheet, "Summary");
+
+      const datePart = new Date().toISOString().slice(0, 10);
+      const fileName = `SoKeToan_${book.templateCode}_${book.bookId}_${datePart}.xlsx`;
+      XLSX.writeFile(workbook, fileName);
+
+      toast.success("Xuất Excel thành công.");
+    } catch (error) {
+      console.error("Export Excel failed:", error);
+      toast.error("Không thể xuất Excel. Vui lòng thử lại.");
+    } finally {
+      setExportingBookId(null);
+    }
+  }
 
   const handlePeriodChange = (value: string) => {
     const nextPeriodId = Number(value);
@@ -2698,10 +3165,29 @@ function BooksTab({ locationId }: { locationId: number }) {
                                 variant="outline"
                                 size="sm"
                                 className="h-8 text-[10px] uppercase font-bold tracking-wider"
-                                disabled
-                                title="API export đang được hoàn thiện"
+                                disabled={
+                                  exportingBookId === book.bookId ||
+                                  deletingBook
+                                }
+                                onClick={() =>
+                                  void handleExportBook({
+                                    bookId: book.bookId,
+                                    templateCode: book.templateCode,
+                                    templateName: book.templateName,
+                                  })
+                                }
                               >
-                                <Download className="w-3 h-3 mr-1" /> Xuất Excel
+                                {exportingBookId === book.bookId ? (
+                                  <>
+                                    <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                                    Đang xuất
+                                  </>
+                                ) : (
+                                  <>
+                                    <Download className="w-3 h-3 mr-1" /> Xuất
+                                    Excel
+                                  </>
+                                )}
                               </Button>
                               <Button
                                 variant="destructive"
@@ -3524,7 +4010,7 @@ function BookSummaryPanel({
       </div>
 
       {/* Kết quả công thức */}
-      <div className="space-y-4">
+      {/* <div className="space-y-4">
         <div className="flex items-center gap-2 text-xs font-bold text-slate-500 uppercase tracking-widest pl-2">
           <Calculator className="w-4 h-4 text-slate-400" /> Kết quả công thức
         </div>
@@ -3559,10 +4045,10 @@ function BookSummaryPanel({
             </tbody>
           </table>
         </div>
-      </div>
+      </div> */}
 
       {/* Thông tin metadata */}
-      <div className="space-y-4">
+      {/* <div className="space-y-4">
         <div className="flex items-center gap-2 text-xs font-bold text-slate-500 uppercase tracking-widest pl-2">
           <FileText className="w-4 h-4 text-slate-400" /> Chú thích cách tính
         </div>
@@ -3605,7 +4091,7 @@ function BookSummaryPanel({
             </li>
           </ul>
         </div>
-      </div>
+      </div> */}
 
       {/* Ngành nghề & Thuế suất */}
       {(summary.businessTypeTaxes?.length ?? 0) > 0 && (
@@ -3666,7 +4152,7 @@ function BookSummaryPanel({
       )}
 
       {/* Công thức ENGINE */}
-      {(summary.formulaDetails?.length ?? 0) > 0 && (
+      {/* {(summary.formulaDetails?.length ?? 0) > 0 && (
         <div className="space-y-4">
           <div className="flex items-center gap-2 text-xs font-bold text-slate-500 uppercase tracking-widest pl-2">
             <Terminal className="w-4 h-4 text-slate-400" /> Chi tiết công thức
@@ -3710,10 +4196,10 @@ function BookSummaryPanel({
             </table>
           </div>
         </div>
-      )}
+      )} */}
 
       {/* Cấu trúc cột */}
-      {(summary.columns?.length ?? 0) > 0 && (
+      {/* {(summary.columns?.length ?? 0) > 0 && (
         <div className="space-y-4">
           <div className="flex items-center gap-2 text-xs font-bold text-slate-500 uppercase tracking-widest pl-2">
             <Layers className="w-4 h-4 text-slate-400" /> Bản đồ dữ liệu & Cấu
@@ -3761,7 +4247,7 @@ function BookSummaryPanel({
             </table>
           </div>
         </div>
-      )}
+      )} */}
     </div>
   );
 }
