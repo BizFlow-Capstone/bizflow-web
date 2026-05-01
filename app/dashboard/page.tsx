@@ -67,13 +67,18 @@ import type { CostFilters, RevenueFilters } from "@/lib/types/accounting";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
+const CHART_PRIMARY = "#23c4c1";
+const CHART_PRIMARY_DARK = "#1aa9a7";
+const CHART_PRIMARY_LIGHT = "#7ee4e2";
+const CHART_PRIMARY_SOFT = "#bdf2f1";
+
 const PIE_COLORS = [
-  "#14B8A6",
-  "#60A5FA",
-  "#F59E0B",
-  "#A78BFA",
-  "#F97316",
-  "#22C55E",
+  CHART_PRIMARY,
+  CHART_PRIMARY_LIGHT,
+  CHART_PRIMARY_SOFT,
+  "#d9f7f6",
+  CHART_PRIMARY_DARK,
+  "#0f8d8b",
 ];
 
 const COST_LABELS: Record<string, string> = {
@@ -517,7 +522,7 @@ export default function DashboardPage() {
               : productName,
           value: Number.isFinite(normalizedValue) ? normalizedValue : 0,
           periodLabel: `${row.periodDays} ngày`,
-          fill: normalizedValue >= 0 ? "#14B8A6" : "#FB7185",
+          fill: normalizedValue >= 0 ? CHART_PRIMARY : "#FB7185",
         };
       }),
     [insightsByType, productNameMap, reorderProductLookup],
@@ -746,7 +751,7 @@ export default function DashboardPage() {
               iconBg="bg-emerald-100 text-emerald-600"
               label="Tổng doanh thu"
               value={formatCompactVnd(totalRevenue)}
-              sub={`${revenueItems.length} giao dịch · TB ${formatCompactVnd(averageMonthlyRevenue)}/tháng`}
+              sub={`${revenueItems.length} giao dịch phát sinh`}
               trend={revenueTrendAverage}
               trendColor="emerald"
             />
@@ -755,7 +760,7 @@ export default function DashboardPage() {
               iconBg="bg-rose-100 text-rose-600"
               label="Tổng chi phí"
               value={formatCompactVnd(totalCost)}
-              sub={`${costItems.length} giao dịch chi phí`}
+              sub={`${costItems.length} giao dịch phát sinh`}
               trendColor="rose"
             />
             <FinancialKpiCard
@@ -779,7 +784,7 @@ export default function DashboardPage() {
             <FinancialKpiCard
               icon={<Sparkles className="w-5 h-5" />}
               iconBg="bg-blue-100 text-blue-600"
-              label="Hiệu quả chi phí"
+              label="Tỉ suất lợi nhuận"
               value={`${costEfficiency.toFixed(1)}%`}
               sub="(DT − CP) / DT"
               trendColor={costEfficiency >= 50 ? "emerald" : "rose"}
@@ -889,9 +894,6 @@ export default function DashboardPage() {
                         }}
                       />
                     </div>
-                    <p className="text-xs text-gray-400 text-right">
-                      {row.share.toFixed(1)}% tổng doanh thu
-                    </p>
                   </div>
                 ))}
                 <Separator className="my-2" />
@@ -1405,12 +1407,6 @@ function FinancialKpiCard({
       </div>
       <p className="text-2xl font-bold text-gray-900">{value}</p>
       {sub && <p className="text-xs text-gray-400 mt-1">{sub}</p>}
-      {trend !== null && trend !== undefined && (
-        <p className={`text-xs font-semibold mt-2 ${trendCls}`}>
-          {trend >= 0 ? "+" : ""}
-          {trend.toFixed(1)}% tăng trưởng TB
-        </p>
-      )}
     </div>
   );
 }
@@ -1461,13 +1457,13 @@ function RevenueCostBarChart({
           <Bar
             dataKey="revenue"
             name="Doanh thu"
-            fill="#14B8A6"
+            fill={CHART_PRIMARY}
             radius={[6, 6, 0, 0]}
           />
           <Bar
             dataKey="cost"
             name="Chi phí"
-            fill="#F97316"
+            fill={CHART_PRIMARY_LIGHT}
             radius={[6, 6, 0, 0]}
           />
         </ComposedChart>
@@ -1514,9 +1510,9 @@ function RevenueGrowthLineChart({
             type="monotone"
             dataKey="growth"
             name="Tăng trưởng (%)"
-            stroke="#0EA5E9"
+            stroke={CHART_PRIMARY}
             strokeWidth={2}
-            dot={{ r: 4, fill: "#0EA5E9" }}
+            dot={{ r: 4, fill: CHART_PRIMARY }}
             activeDot={{ r: 6 }}
           />
         </LineChart>
@@ -1602,16 +1598,16 @@ function RevenueForecastLineChart({
             type="monotone"
             dataKey="predictedRevenue"
             name="Dự báo"
-            stroke="#22d3ee"
+            stroke={CHART_PRIMARY}
             strokeWidth={3}
-            dot={{ r: 3, fill: "#22d3ee" }}
+            dot={{ r: 3, fill: CHART_PRIMARY }}
             activeDot={{ r: 5 }}
           />
           <Line
             type="monotone"
             dataKey="lowerBound"
             name="Cận dưới"
-            stroke="#2dd4bf"
+            stroke={CHART_PRIMARY_LIGHT}
             strokeWidth={2}
             strokeDasharray="5 5"
             dot={false}
@@ -1620,7 +1616,7 @@ function RevenueForecastLineChart({
             type="monotone"
             dataKey="upperBound"
             name="Cận trên"
-            stroke="#818cf8"
+            stroke={CHART_PRIMARY_DARK}
             strokeWidth={2}
             strokeDasharray="5 5"
             dot={false}

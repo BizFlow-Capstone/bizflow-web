@@ -47,3 +47,53 @@ export async function DELETE(
     );
   }
 }
+
+export async function PUT(
+  request: NextRequest,
+  { params }: { params: Promise<{ revenueId: string }> },
+) {
+  try {
+    const authHeader = getBearerAuthorizationHeader(request);
+    if (!authHeader) {
+      return NextResponse.json(
+        {
+          success: false,
+          messageCode: "AUTH_UNAUTHORIZED",
+          message: "Missing Authorization Bearer token",
+        },
+        { status: 401 },
+      );
+    }
+
+    const { revenueId } = await params;
+    const formData = await request.formData();
+    const response = await fetch(
+      `${BACKEND_API_URL}/api/my-business/accounting/revenues/${revenueId}`,
+      {
+        method: "PUT",
+        headers: {
+          ...createLocaleForwardHeaders(request),
+          accept: "*/*",
+          Authorization: authHeader,
+        },
+        body: formData,
+      },
+    );
+
+    const data = await response.json().catch(async () => {
+      const text = await response.text();
+      return { success: false, message: text };
+    });
+
+    return NextResponse.json(data, { status: response.status });
+  } catch (error) {
+    console.error("Error updating manual revenue:", error);
+    return NextResponse.json(
+      {
+        success: false,
+        message: "Failed to update manual revenue",
+      },
+      { status: 500 },
+    );
+  }
+}

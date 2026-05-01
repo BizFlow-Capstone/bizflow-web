@@ -57,6 +57,7 @@ import {
   useAssignLocationEmployees,
   useLocationEmployees,
   useLocationDetail,
+  useRemoveLocationEmployee,
 } from "@/hooks/useLocations";
 import { toast } from "sonner";
 
@@ -146,6 +147,7 @@ export default function LocationsClient() {
   const updateMutation = useUpdateLocation();
   const deleteMutation = useDeleteLocation();
   const assignEmployeesMutation = useAssignLocationEmployees();
+  const removeEmployeeMutation = useRemoveLocationEmployee();
 
   // Fetch employees for dropdown
   const { data: employees = [], isLoading: isLoadingEmployees } =
@@ -503,10 +505,19 @@ export default function LocationsClient() {
         return;
       }
 
-      const assignResult = await assignEmployeesMutation.mutateAsync({
-        locationId: editingLocation.id,
-        employeeIds: editingEmployeeIds,
-      });
+      // Only send POST if there are new employee IDs compared to original
+      const originalIds = (editEmployeesData ?? []).map((e) => e.userId);
+      const toAdd = editingEmployeeIds.filter(
+        (id) => !originalIds.includes(id),
+      );
+
+      let assignResult: any = { success: true };
+      if (toAdd.length > 0) {
+        assignResult = await assignEmployeesMutation.mutateAsync({
+          locationId: editingLocation.id,
+          employeeIds: toAdd,
+        });
+      }
 
       if (assignResult.success) {
         setIsEditDialogOpen(false);
@@ -515,9 +526,30 @@ export default function LocationsClient() {
         setEditingEmployeeIds([]);
         toast.success("Đã cập nhật địa điểm kinh doanh");
       } else {
-        toast.error(
-          assignResult.message || "Không thể cập nhật nhân viên phụ trách",
-        );
+        // If backend indicates employees are already assigned, show details
+        const alreadyAssignedIds =
+          assignResult.errors?.alreadyAssignedEmployeeIds ?? [];
+
+        if (
+          assignResult.messageCode === "LOCATION_EMPLOYEES_ALREADY_ASSIGNED" ||
+          (Array.isArray(alreadyAssignedIds) && alreadyAssignedIds.length > 0)
+        ) {
+          const names = (alreadyAssignedIds ?? [])
+            .map(
+              (id: number | string) =>
+                employees.find((e) => e.userId === id)?.userName ?? id,
+            )
+            .join(", ");
+          toast.error(
+            `${assignResult.message || "Nhân viên đã được gán"}${
+              names ? ": " + names : ""
+            }`,
+          );
+        } else {
+          toast.error(
+            assignResult.message || "Không thể cập nhật nhân viên phụ trách",
+          );
+        }
       }
     } catch (err) {
       console.error("Error updating location:", err);
@@ -1218,13 +1250,43 @@ export default function LocationsClient() {
                             {emp?.userName || empId}
                             <button
                               type="button"
-                              onClick={() =>
-                                setEditingEmployeeIds(
-                                  editingEmployeeIds.filter(
-                                    (id) => id !== empId,
-                                  ),
-                                )
-                              }
+                              onClick={async () => {
+                                // If this empId exists in original assigned list, call DELETE
+                                const originallyAssigned = (
+                                  editEmployeesData ?? []
+                                ).some((e) => e.userId === empId);
+
+                                if (originallyAssigned) {
+                                  try {
+                                    await removeEmployeeMutation.mutateAsync({
+                                      locationId: editingLocation.id,
+                                      employeeId: empId,
+                                    });
+                                    setEditingEmployeeIds(
+                                      editingEmployeeIds.filter(
+                                        (id) => id !== empId,
+                                      ),
+                                    );
+                                    toast.success(
+                                      "Đã gỡ nhân viên khỏi địa điểm",
+                                    );
+                                  } catch (err) {
+                                    console.error(
+                                      "Error removing employee:",
+                                      err,
+                                    );
+                                    toast.error(
+                                      "Không thể gỡ nhân viên khỏi địa điểm",
+                                    );
+                                  }
+                                } else {
+                                  setEditingEmployeeIds(
+                                    editingEmployeeIds.filter(
+                                      (id) => id !== empId,
+                                    ),
+                                  );
+                                }
+                              }}
                               className="hover:bg-[#23C4C1]/20 rounded p-0.5"
                             >
                               <X className="w-3 h-3" />
@@ -1333,6 +1395,8 @@ export default function LocationsClient() {
                   disabled={
                     updateMutation.isPending ||
                     assignEmployeesMutation.isPending ||
+                    isLoadingEditEmployees ||
+                    isLoadingEmployees ||
                     !editingLocation.name ||
                     !editingLocation.address ||
                     !editingLocation.district ||

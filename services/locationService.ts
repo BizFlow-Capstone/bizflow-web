@@ -228,7 +228,34 @@ export async function getLocationEmployees(
     throw new Error(`Failed to fetch location employees: ${response.status}`);
   }
 
-  return response.json();
+  const result = (await response.json()) as ApiResponse<{
+    employees: Array<{
+      profileId?: string;
+      userId?: string;
+      userName?: string;
+      phone?: string | null;
+      email?: string | null;
+      avatarUrl?: string | null;
+      status?: any;
+      isActive?: boolean;
+    }>;
+  }>;
+
+  // Normalize backend shape: use profileId if present, otherwise userId
+  const normalized = (result.data?.employees ?? []).map((emp) => ({
+    userId: emp.profileId ?? emp.userId ?? "",
+    userName: emp.userName ?? "",
+    phone: emp.phone,
+    email: emp.email,
+    avatarUrl: emp.avatarUrl,
+    status: emp.status,
+    isActive: emp.isActive,
+  }));
+
+  return {
+    ...result,
+    data: { employees: normalized },
+  } as ApiResponse<LocationEmployeesResponse>;
 }
 
 /**
@@ -244,9 +271,36 @@ export async function assignLocationEmployees(
     body: JSON.stringify(employeeIds),
   });
 
-  if (!response.ok) {
-    throw new Error(`Failed to assign location employees: ${response.status}`);
-  }
+  // Parse response JSON (backend uses structured error responses)
+  const data = await response.json().catch(async () => {
+    // If body is not JSON, fallback to text
+    const text = await response.text();
+    return { success: false, message: text };
+  });
 
-  return response.json();
+  // Return the parsed data so the UI can inspect messageCode / errors
+  return data as ApiResponse<null>;
+}
+
+/**
+ * Remove a single employee from a location
+ */
+export async function removeLocationEmployee(
+  locationId: number,
+  employeeId: string,
+): Promise<ApiResponse<null>> {
+  const response = await authFetch(
+    `/api/locations/${locationId}/employees/${employeeId}`,
+    {
+      method: "DELETE",
+    },
+  );
+
+  // Parse JSON or fallback to text
+  const data = await response.json().catch(async () => {
+    const text = await response.text();
+    return { success: false, message: text };
+  });
+
+  return data as ApiResponse<null>;
 }

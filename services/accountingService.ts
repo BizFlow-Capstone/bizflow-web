@@ -25,6 +25,7 @@ import type {
   GLViewMode,
   RevenueFilters,
   CreateManualRevenueRequest,
+  UpdateManualRevenueRequest,
   RevenueRecord,
   RevenueForecastResponse,
 } from "@/lib/types/accounting";
@@ -113,6 +114,70 @@ async function getStringReferenceValues(
   }
 
   return parseApiResponse<string[]>(response);
+}
+
+async function getRawReferenceValues(
+  endpoint: string,
+): Promise<ApiResponse<unknown[]>> {
+  const response = await authFetch(endpoint, {
+    method: "GET",
+    headers: { "Content-Type": "application/json" },
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch reference values: ${response.status}`);
+  }
+
+  return parseApiResponse<unknown[]>(response);
+}
+
+function toManualRevenueFormData(
+  data: CreateManualRevenueRequest | UpdateManualRevenueRequest,
+): FormData {
+  const formData = new FormData();
+
+  if ("businessLocationId" in data) {
+    formData.append("BusinessLocationId", String(data.businessLocationId));
+  }
+
+  formData.append("BusinessTypeId", data.businessTypeId);
+
+  if (typeof data.amount === "number") {
+    formData.append("Amount", String(data.amount));
+  }
+
+  if (data.revenueDate) {
+    formData.append("RevenueDate", data.revenueDate);
+  }
+
+  formData.append("Description", data.description);
+
+  if (data.moneyChannel) {
+    formData.append("MoneyChannel", data.moneyChannel);
+  }
+
+  if ("documentNumber" in data && data.documentNumber) {
+    formData.append("DocumentNumber", data.documentNumber);
+  }
+
+  if ("documentDate" in data && data.documentDate) {
+    formData.append("DocumentDate", data.documentDate);
+  }
+
+  if ("removeDocument" in data && typeof data.removeDocument === "boolean") {
+    formData.append("RemoveDocument", String(data.removeDocument));
+  }
+
+  if ("idempotencyKey" in data && data.idempotencyKey) {
+    formData.append("IdempotencyKey", data.idempotencyKey);
+  }
+
+  if ("image" in data && data.image) {
+    formData.append("image", data.image);
+  }
+
+  return formData;
 }
 
 async function parseApiResponse<T>(
@@ -424,13 +489,7 @@ export async function getAllRevenuesWithFilters(
 export async function createManualRevenue(
   data: CreateManualRevenueRequest,
 ): Promise<ApiResponse<RevenueRecord>> {
-  const formData = new FormData();
-  formData.append("BusinessLocationId", String(data.businessLocationId));
-  formData.append("BusinessTypeId", data.businessTypeId);
-  formData.append("Amount", String(data.amount));
-  formData.append("RevenueDate", data.revenueDate);
-  formData.append("Description", data.description);
-  formData.append("MoneyChannel", data.moneyChannel);
+  const formData = toManualRevenueFormData(data);
 
   const response = await authFetch(`/api/revenues/manual`, {
     method: "POST",
@@ -439,6 +498,32 @@ export async function createManualRevenue(
 
   if (!response.ok) {
     throw new Error(`Failed to create manual revenue: ${response.status}`);
+  }
+
+  const result = await parseApiResponse<RevenueRecord>(response);
+
+  return {
+    ...result,
+    data: {
+      ...result.data,
+      paymentMethod: result.data.moneyChannel,
+      createdByUserName:
+        result.data.createdBy || result.data.createdByUserName || "System",
+    },
+  };
+}
+
+export async function updateManualRevenue(
+  revenueId: number,
+  data: UpdateManualRevenueRequest,
+): Promise<ApiResponse<RevenueRecord>> {
+  const response = await authFetch(`/api/revenues/${revenueId}`, {
+    method: "PUT",
+    body: toManualRevenueFormData(data),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to update manual revenue: ${response.status}`);
   }
 
   const result = await parseApiResponse<RevenueRecord>(response);
@@ -863,19 +948,15 @@ export async function getGLEntries(
           ...result.data,
           items: (result.data.items ?? []).map((entry) => ({
             ...entry,
-            transactionType: (extractRefCode(entry.transactionType) ??
-              entry.transactionType) as string,
-            moneyChannel: extractRefCode(
-              entry.moneyChannel,
-            ) as GLEntryListItem["moneyChannel"],
-            effectiveStatus: extractRefCode(
-              entry.effectiveStatus,
-            ) as GLEntryListItem["effectiveStatus"],
+            transactionType:
+              entry.transactionType as GLEntryListItem["transactionType"],
+            moneyChannel: entry.moneyChannel as GLEntryListItem["moneyChannel"],
+            effectiveStatus:
+              entry.effectiveStatus as GLEntryListItem["effectiveStatus"],
             source: entry.source
               ? {
-                  ...entry.source,
-                  referenceType: (extractRefCode(entry.source.referenceType) ??
-                    entry.source.referenceType) as string,
+                  ...(entry.source as any),
+                  referenceType: (entry.source as any).referenceType,
                 }
               : entry.source,
           })),
@@ -931,10 +1012,10 @@ export async function getGLReferenceCatalog(): Promise<
     viewModesRes,
     moneyChannelsRes,
   ] = await Promise.all([
-    getStringReferenceValues("/api/reference/general-ledger-reference-types"),
-    getStringReferenceValues("/api/reference/general-ledger-transaction-types"),
-    getStringReferenceValues("/api/reference/general-ledger-view-modes"),
-    getStringReferenceValues("/api/reference/money-channel-types"),
+    getRawReferenceValues("/api/reference/general-ledger-reference-types"),
+    getRawReferenceValues("/api/reference/general-ledger-transaction-types"),
+    getRawReferenceValues("/api/reference/general-ledger-view-modes"),
+    getRawReferenceValues("/api/reference/money-channel-types"),
   ]);
 
   return {
@@ -943,12 +1024,15 @@ export async function getGLReferenceCatalog(): Promise<
     message: "Data retrieved successfully",
     timestamp: new Date().toISOString(),
     data: {
-      referenceTypes: referenceTypesRes.data ?? [],
-      transactionTypes: transactionTypesRes.data ?? [],
-      viewModes: (viewModesRes.data ?? [DEFAULT_GL_VIEW_MODE]) as GLViewMode[],
-      moneyChannels: (moneyChannelsRes.data ?? []) as Array<
-        "cash" | "bank" | "debt"
-      >,
+      referenceTypes: (referenceTypesRes.data ??
+        []) as GLReferenceCatalog["referenceTypes"],
+      transactionTypes: (transactionTypesRes.data ??
+        []) as GLReferenceCatalog["transactionTypes"],
+      viewModes: (viewModesRes.data ?? [
+        DEFAULT_GL_VIEW_MODE,
+      ]) as GLReferenceCatalog["viewModes"],
+      moneyChannels: (moneyChannelsRes.data ??
+        []) as GLReferenceCatalog["moneyChannels"],
     },
   };
 }

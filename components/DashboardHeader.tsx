@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   AlertCircle,
   Bell,
@@ -362,6 +363,8 @@ function getHeaderContent(pathname: string): HeaderContent {
 
 export default function DashboardHeader() {
   const pathname = usePathname();
+  const router = useRouter();
+  const queryClient = useQueryClient();
   const shouldHideHeader = useMemo(
     () =>
       /^\/dashboard\/locations\/[^/]+\/products\/(?!new(?:\/|$))[^/]+(?:\/|$)/.test(
@@ -519,16 +522,20 @@ export default function DashboardHeader() {
     const next: AppLocale = locale === "vi" ? "en" : "vi";
     setStoredLocale(next);
     setLocale(next);
+    void queryClient.invalidateQueries();
+    router.refresh();
   };
 
   useEffect(() => {
     const onLocaleChanged = (e: Event) => {
       setLocale((e as CustomEvent<AppLocale>).detail);
+      void queryClient.invalidateQueries();
+      router.refresh();
     };
     window.addEventListener(LOCALE_CHANGED_EVENT, onLocaleChanged);
     return () =>
       window.removeEventListener(LOCALE_CHANGED_EVENT, onLocaleChanged);
-  }, []);
+  }, [queryClient, router]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
