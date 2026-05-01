@@ -62,6 +62,7 @@ import {
   useDeleteManualCost,
   useCostReferenceCatalog,
   useCreateManualRevenue,
+  useUpdateManualRevenue,
   useDeleteManualRevenue,
   useCashFlowReport,
   useRevenueForecast,
@@ -115,6 +116,7 @@ import {
   formatTooltipCurrency,
   formatDateTimeVi,
 } from "@/lib/format";
+import type { RevenueRecord } from "@/lib/types/accounting";
 import {
   getBookRows as fetchBookRowsForExport,
   getBookSummary as fetchBookSummaryForExport,
@@ -390,11 +392,13 @@ function ReportsTab({ locationId }: { locationId: number }) {
   const deleteCostMutation = useDeleteManualCost(locationId);
   const { data: costReferences } = useCostReferenceCatalog();
   const createRevenueMutation = useCreateManualRevenue();
+  const updateRevenueMutation = useUpdateManualRevenue(locationId);
   const deleteRevenueMutation = useDeleteManualRevenue(locationId);
   const [manualAmount, setManualAmount] = useState("");
   const [manualDate, setManualDate] = useState(
     new Date().toISOString().slice(0, 10),
   );
+  const [editingRevenueId, setEditingRevenueId] = useState<number | null>(null);
   const [manualBusinessTypeId, setManualBusinessTypeId] = useState("");
   const [manualDescription, setManualDescription] = useState("");
   const [manualChannel, setManualChannel] = useState<"cash" | "bank">("cash");
@@ -937,7 +941,54 @@ function ReportsTab({ locationId }: { locationId: number }) {
     }
   }, [paymentMethodOptions, manualCostPaymentMethod]);
 
-  async function handleCreateManualRevenue() {
+  function resetRevenueForm() {
+    setEditingRevenueId(null);
+    setManualAmount("");
+    setManualDate(new Date().toISOString().slice(0, 10));
+    setManualBusinessTypeId(businessTypes[0]?.businessTypeId ?? "");
+    setManualDescription("");
+    setManualChannel("cash");
+    setManualError("");
+  }
+
+  function generateIdempotencyKey() {
+    try {
+      // Prefer crypto API when available
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const cryptoObj = (globalThis as any).crypto || (window as any).crypto;
+      if (cryptoObj && typeof cryptoObj.randomUUID === "function") {
+        return cryptoObj.randomUUID();
+      }
+    } catch {
+      // fallthrough
+    }
+    // Fallback: simple UUID v4-ish generator
+    return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+      // eslint-disable-next-line no-bitwise
+      const r = (Math.random() * 16) | 0;
+      // eslint-disable-next-line no-bitwise
+      const v = c === "x" ? r : (r & 0x3) | 0x8;
+      return v.toString(16);
+    });
+  }
+
+  function handleStartEditManualRevenue(revenue: RevenueRecord) {
+    setEditingRevenueId(revenue.revenueId);
+    setManualAmount(String(revenue.amount));
+    setManualDate(
+      revenue.revenueDate?.slice(0, 10) ||
+        new Date().toISOString().slice(0, 10),
+    );
+    setManualBusinessTypeId(
+      revenue.businessTypeId || businessTypes[0]?.businessTypeId || "",
+    );
+    setManualDescription(revenue.description || "");
+    setManualChannel((revenue.moneyChannel || "cash") as "cash" | "bank");
+    setManualError("");
+    setIsRevenueModalOpen(true);
+  }
+
+  async function handleSubmitManualRevenue() {
     setManualError("");
     const amount = Number(manualAmount);
     if (!amount || amount <= 0) {
@@ -961,22 +1012,37 @@ function ReportsTab({ locationId }: { locationId: number }) {
     }
 
     try {
-      await createRevenueMutation.mutateAsync({
-        businessLocationId: locationId,
-        businessTypeId: manualBusinessTypeId,
-        amount,
-        revenueDate: manualDate,
-        description: manualDescription.trim(),
-        moneyChannel: manualChannel,
-      });
-      setManualAmount("");
-      setManualDescription("");
+      if (editingRevenueId) {
+        await updateRevenueMutation.mutateAsync({
+          revenueId: editingRevenueId,
+          data: {
+            businessTypeId: manualBusinessTypeId,
+            amount,
+            revenueDate: manualDate,
+            description: manualDescription.trim(),
+            moneyChannel: manualChannel,
+            idempotencyKey: generateIdempotencyKey(),
+          },
+        });
+      } else {
+        await createRevenueMutation.mutateAsync({
+          businessLocationId: locationId,
+          businessTypeId: manualBusinessTypeId,
+          amount,
+          revenueDate: manualDate,
+          description: manualDescription.trim(),
+          moneyChannel: manualChannel,
+        });
+      }
+      resetRevenueForm();
       return true;
     } catch (error) {
       setManualError(
         error instanceof Error
           ? error.message
-          : "Không thể tạo doanh thu thủ công.",
+          : editingRevenueId
+            ? "Không thể cập nhật doanh thu thủ công."
+            : "Không thể tạo doanh thu thủ công.",
       );
       return false;
     }
@@ -1156,31 +1222,6 @@ function ReportsTab({ locationId }: { locationId: number }) {
 
   return (
     <div className="space-y-5">
-      {/* Summary KPIs */}
-      {/* <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <KpiCard
-          label="Tổng doanh thu"
-          value={formatVnd(totalRevenue)}
-          trend="+12.4%"
-          icon={<ArrowUpRight className="w-4 h-4 text-emerald-500" />}
-          color="emerald"
-        />
-        <KpiCard
-          label="Tổng chi phí"
-          value={formatVnd(totalCost)}
-          trend="+3.1%"
-          icon={<ArrowDownRight className="w-4 h-4 text-red-500" />}
-          color="red"
-        />
-        <KpiCard
-          label="Lợi nhuận ròng"
-          value={formatVnd(totalRevenue - totalCost)}
-          trend="+18.2%"
-          icon={<ArrowUpRight className="w-4 h-4 text-emerald-500" />}
-          color="emerald"
-        />
-      </div> */}
-
       {/* Sub tabs */}
       <div className="flex gap-1 bg-gray-100 p-1 rounded-lg w-fit">
         {subTabs.map((t) => (
@@ -1219,8 +1260,7 @@ function ReportsTab({ locationId }: { locationId: number }) {
                   Tổng quan doanh thu
                 </h4>
                 <p className="text-sm text-gray-500">
-                  Theo dõi xu hướng doanh thu và thêm ghi nhận thủ công bằng
-                  modal.
+                  Theo dõi xu hướng doanh thu và thêm ghi nhận thủ công.
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
@@ -1242,7 +1282,7 @@ function ReportsTab({ locationId }: { locationId: number }) {
 
                 <Button
                   onClick={() => {
-                    setManualError("");
+                    resetRevenueForm();
                     setIsRevenueModalOpen(true);
                   }}
                   className="bg-[#23C4C1] hover:bg-[#1aa8a5] text-white"
@@ -1511,18 +1551,28 @@ function ReportsTab({ locationId }: { locationId: number }) {
                       </TableCell>
                       <TableCell className="text-right pr-5">
                         {r.revenueType === "manual" ? (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="text-red-600 border-red-200 hover:bg-red-50"
-                            onClick={() =>
-                              handleDeleteManualRevenue(r.revenueId)
-                            }
-                            disabled={deleteRevenueMutation.isPending}
-                          >
-                            <Trash2 className="w-3.5 h-3.5 mr-1" />
-                            Xóa
-                          </Button>
+                          <div className="flex items-center justify-end gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleStartEditManualRevenue(r)}
+                              disabled={updateRevenueMutation.isPending}
+                            >
+                              Sửa
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="text-red-600 border-red-200 hover:bg-red-50"
+                              onClick={() =>
+                                handleDeleteManualRevenue(r.revenueId)
+                              }
+                              disabled={deleteRevenueMutation.isPending}
+                            >
+                              <Trash2 className="w-3.5 h-3.5 mr-1" />
+                              Xóa
+                            </Button>
+                          </div>
                         ) : (
                           <span className="text-xs text-gray-400">-</span>
                         )}
@@ -1573,14 +1623,20 @@ function ReportsTab({ locationId }: { locationId: number }) {
             open={isRevenueModalOpen}
             onOpenChange={(open) => {
               setIsRevenueModalOpen(open);
-              if (!open) setManualError("");
+              if (!open) resetRevenueForm();
             }}
           >
             <DialogContent className="sm:max-w-xl">
               <DialogHeader>
-                <DialogTitle>Tạo doanh thu thủ công</DialogTitle>
+                <DialogTitle>
+                  {editingRevenueId
+                    ? "Cập nhật doanh thu thủ công"
+                    : "Tạo doanh thu thủ công"}
+                </DialogTitle>
                 <DialogDescription>
-                  Nhập thông tin giao dịch để ghi nhận doanh thu ngoài đơn hàng.
+                  {editingRevenueId
+                    ? "Chỉnh sửa thông tin giao dịch doanh thu ngoài đơn hàng."
+                    : "Nhập thông tin giao dịch để ghi nhận doanh thu ngoài đơn hàng."}
                 </DialogDescription>
               </DialogHeader>
 
@@ -1645,28 +1701,32 @@ function ReportsTab({ locationId }: { locationId: number }) {
                 <Button
                   variant="outline"
                   onClick={() => {
+                    resetRevenueForm();
                     setIsRevenueModalOpen(false);
-                    setManualError("");
                   }}
                 >
                   Hủy
                 </Button>
                 <Button
                   onClick={async () => {
-                    const created = await handleCreateManualRevenue();
-                    if (created) {
+                    const saved = await handleSubmitManualRevenue();
+                    if (saved) {
                       setIsRevenueModalOpen(false);
                     }
                   }}
-                  disabled={createRevenueMutation.isPending}
+                  disabled={
+                    createRevenueMutation.isPending ||
+                    updateRevenueMutation.isPending
+                  }
                   className="bg-[#23C4C1] hover:bg-[#1aa8a5] text-white"
                 >
-                  {createRevenueMutation.isPending ? (
+                  {createRevenueMutation.isPending ||
+                  updateRevenueMutation.isPending ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
                   ) : (
                     <Plus className="w-4 h-4 mr-1" />
                   )}
-                  Lưu doanh thu
+                  {editingRevenueId ? "Lưu thay đổi" : "Lưu doanh thu"}
                 </Button>
               </DialogFooter>
             </DialogContent>
@@ -2916,12 +2976,10 @@ function BooksTab({ locationId }: { locationId: number }) {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="1">
-                  Nhóm 1 — Doanh thu {"<"} 500 triệu
-                </SelectItem>
-                <SelectItem value="2">Nhóm 2 — 500tr đến 3 tỷ</SelectItem>
-                <SelectItem value="3">Nhóm 3 — 3 tỷ đến 50 tỷ</SelectItem>
-                <SelectItem value="4">Nhóm 4 — {"≥"} 50 tỷ</SelectItem>
+                <SelectItem value="1">Nhóm 1</SelectItem>
+                <SelectItem value="2">Nhóm 2</SelectItem>
+                <SelectItem value="3">Nhóm 3</SelectItem>
+                <SelectItem value="4">Nhóm 4</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -2972,14 +3030,18 @@ function BooksTab({ locationId }: { locationId: number }) {
                 <label
                   key={tpl.templateId}
                   className={`flex items-start gap-3 p-3 rounded-xl border transition-all cursor-pointer ${
-                    checked
+                    suggested && checked
                       ? "bg-[#23C4C1]/5 border-[#23C4C1]/30"
-                      : "bg-white hover:bg-gray-50 border-gray-200"
+                      : suggested
+                        ? "bg-white hover:bg-gray-50 border-gray-200"
+                        : "bg-gray-50 border-gray-200 opacity-50 cursor-not-allowed"
                   }`}
                 >
                   <Checkbox
                     checked={checked}
+                    disabled={!suggested}
                     onCheckedChange={(c) => {
+                      if (!suggested) return;
                       if (c)
                         setSelectedTemplates((prev) => [
                           ...prev,

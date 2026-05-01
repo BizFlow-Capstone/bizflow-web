@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { CircleHelp } from "lucide-react";
+import { AlertTriangle, CircleHelp } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -65,14 +65,14 @@ interface FormulaRecipe {
 
 function formulaTypeToVariableDataType(formulaType: string): string {
   const normalized = formulaType.trim().toLowerCase();
-  if (!normalized) return "double";
+  if (!normalized) return "decimal";
   if (normalized.includes("string") || normalized.includes("text")) {
     return "string";
   }
   if (normalized.includes("int") || normalized.includes("long")) {
     return "integer";
   }
-  return "double";
+  return "decimal";
 }
 
 interface FormulaTabProps {
@@ -554,17 +554,28 @@ function validateExpressionAgainstSchemas(
   }
 
   const childCandidates: Array<{ key: string; value: unknown }> = [];
-  Object.entries(record).forEach(([key, value]) => {
-    if (!value || typeof value !== "object") return;
-    if (Array.isArray(value)) {
-      value.forEach((item, index) => {
-        if (asRecord(item))
-          childCandidates.push({ key: `${key}[${index}]`, value: item });
+  if (nodeType === "op") {
+    if (asRecord(record.left))
+      childCandidates.push({ key: "left", value: record.left });
+    if (asRecord(record.right))
+      childCandidates.push({ key: "right", value: record.right });
+  }
+
+  if (nodeType === "fn") {
+    if (Array.isArray(record.args)) {
+      record.args.forEach((arg, index) => {
+        if (asRecord(arg)) {
+          childCandidates.push({ key: `args[${index}]`, value: arg });
+        }
       });
-      return;
     }
-    if (asRecord(value)) childCandidates.push({ key, value });
-  });
+  }
+
+  if (nodeType === "foreach") {
+    if (asRecord(record.apply)) {
+      childCandidates.push({ key: "apply", value: record.apply });
+    }
+  }
 
   childCandidates.forEach((child) => {
     errors.push(
@@ -2955,8 +2966,8 @@ export default function FormulaTab(props: FormulaTabProps) {
 
   const variableTypeCount = useMemo(() => {
     return {
-      double: variables.filter((v) => v.dataType.includes("decimal")).length,
-      integer: variables.filter((v) => v.dataType.includes("int")).length,
+      double: variables.filter((v) => v.dataType === "decimal").length,
+      integer: variables.filter((v) => v.dataType === "integer").length,
       string: variables.filter((v) => v.dataType.includes("string")).length,
     };
   }, [variables]);
@@ -2967,13 +2978,13 @@ export default function FormulaTab(props: FormulaTabProps) {
       if (variableTypeFilter !== "all") {
         if (
           variableTypeFilter === "double" &&
-          !variable.dataType.includes("decimal")
+          variable.dataType !== "decimal"
         ) {
           return false;
         }
         if (
           variableTypeFilter === "integer" &&
-          !variable.dataType.includes("int")
+          variable.dataType !== "integer"
         ) {
           return false;
         }
@@ -3122,6 +3133,11 @@ export default function FormulaTab(props: FormulaTabProps) {
       return;
     }
 
+    if (builderError) {
+      setSaveValidationError(builderError);
+      return;
+    }
+
     if (schemaValidationIssues.length > 0) {
       setSaveValidationError(schemaValidationIssues[0]);
       return;
@@ -3168,31 +3184,45 @@ export default function FormulaTab(props: FormulaTabProps) {
     // Chỉ tính toán preview khi ở CELL_REF tab
     if (builderTab !== "CELL_REF" || !builderTokens.length) return "—";
     try {
-      const expression = builderTokens
-        .map((token) => {
-          if (token.type === "var") {
-            const raw = previewInputs[token.value] ?? "0";
-            const parsed = Number(raw);
-            return Number.isFinite(parsed) ? String(parsed) : "0";
-          }
-          if (token.type === "num") {
-            const parsed = Number(token.value);
-            return Number.isFinite(parsed) ? String(parsed) : "0";
-          }
-          return token.value;
-        })
-        .join(" ");
-      // eslint-disable-next-line no-new-func
-      const result = Function(`return (${expression});`)();
-      return Number.isFinite(Number(result))
-        ? Number(result).toLocaleString("vi-VN")
-        : String(result);
+      const ast = tokensToAst(builderTokens);
+      if (!ast) return "Lỗi biểu thức";
+
+      function evalAst(node: unknown): number {
+        if (!node || typeof node !== "object") return 0;
+        const n = node as Record<string, unknown>;
+        if (typeof n.literal === "number")
+          return Number.isFinite(n.literal) ? n.literal : 0;
+        if (typeof n.ref === "string") {
+          const raw = previewInputs[n.ref] ?? "0";
+          const parsed = Number(raw);
+          return Number.isFinite(parsed) ? parsed : 0;
+        }
+        if (typeof n.op === "string") {
+          const left = evalAst(n.left);
+          const right = evalAst(n.right);
+          if (n.op === "ADD") return left + right;
+          if (n.op === "SUBTRACT") return left - right;
+          if (n.op === "MULTIPLY") return left * right;
+          if (n.op === "DIVIDE") return right !== 0 ? left / right : 0;
+          return 0;
+        }
+        return 0;
+      }
+
+      const result = evalAst(ast);
+      return Number.isFinite(result)
+        ? result.toLocaleString("vi-VN")
+        : "Lỗi biểu thức";
     } catch {
       return "Lỗi biểu thức";
     }
   }, [builderTab, builderTokens, previewInputs]);
 
   function syncTokens(nextTokens: FormulaToken[]) {
+    // Guard: do not overwrite an advanced AST (foreach/lookup/fn/context) with
+    // a simplified token-based one. The user must use JSON Studio instead.
+    if (compatibleBuilderMode === "advanced") return;
+
     setBuilderTokens(nextTokens);
 
     if (!nextTokens.length) {
@@ -3967,95 +3997,114 @@ export default function FormulaTab(props: FormulaTabProps) {
                     {/* ── Left: expression builder ── */}
                     <div className="space-y-3">
                       {/* Drop zone */}
-                      <div
-                        onDragOver={(event) => event.preventDefault()}
-                        onDrop={onDropToBuilderEnd}
-                        className="min-h-36 rounded-xl border-2 border-dashed border-[#2563eb]/30 bg-[#f0f4ff] p-2"
-                      >
-                        <p className="mb-1.5 text-[11px] text-gray-400">
-                          Nhấn biến / toán tử để thêm · Kéo để sắp xếp · Nhấn ✕
-                          để xóa token
-                        </p>
-                        <div className="flex min-h-20 flex-wrap items-start gap-1.5 rounded-lg bg-[#0b1324] px-3 py-2.5">
-                          {builderTokens.length === 0 ? (
-                            <span className="text-xs text-gray-500">
-                              Biểu thức trống — thêm biến hoặc số từ bên phải
-                            </span>
-                          ) : (
-                            builderTokens.map((token, index) =>
-                              token.type === "num" &&
-                              editingNumTokenId === token.id ? (
-                                <input
-                                  key={token.id}
-                                  autoFocus
-                                  value={editingNumValue}
-                                  onChange={(e) =>
-                                    setEditingNumValue(e.target.value)
-                                  }
-                                  onBlur={commitEditNum}
-                                  onKeyDown={(e) => {
-                                    if (e.key === "Enter") commitEditNum();
-                                    if (e.key === "Escape")
-                                      setEditingNumTokenId(null);
-                                  }}
-                                  className="w-20 rounded-full bg-violet-900 px-2 py-0.5 text-center font-mono text-xs text-violet-200 outline-none ring-1 ring-violet-400"
-                                />
-                              ) : (
-                                <span
-                                  key={token.id}
-                                  draggable
-                                  onDragStart={(event) =>
-                                    onTokenDragStart(event, token.id)
-                                  }
-                                  onDragEnd={onTokenDragEnd}
-                                  onDragOver={(event) => event.preventDefault()}
-                                  onDrop={(event) => {
-                                    const rect =
-                                      event.currentTarget.getBoundingClientRect();
-                                    const insertAfter =
-                                      event.clientX >
-                                      rect.left + rect.width / 2;
-                                    onBuilderDropAt(
-                                      event,
-                                      index + (insertAfter ? 1 : 0),
-                                    );
-                                  }}
-                                  onDoubleClick={() =>
-                                    token.type === "num" && startEditNum(token)
-                                  }
-                                  className={`inline-flex cursor-grab items-center gap-1 rounded-full px-2 py-0.5 text-xs active:cursor-grabbing ${
-                                    token.type === "var"
-                                      ? "bg-cyan-900/70 text-cyan-200"
-                                      : token.type === "num"
-                                        ? "bg-violet-900/70 text-violet-200"
-                                        : "bg-slate-800 text-slate-200"
-                                  }`}
-                                  title={
-                                    token.type === "num"
-                                      ? "Nhấp đôi để sửa số"
-                                      : undefined
-                                  }
-                                >
-                                  {token.type === "var"
-                                    ? `[${token.label}]`
-                                    : token.label}
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      removeTokenById(token.id);
-                                    }}
-                                    className="ml-0.5 rounded-full text-[10px] leading-none opacity-50 hover:opacity-100"
-                                    title="Xóa token này"
-                                  >
-                                    ✕
-                                  </button>
-                                </span>
-                              ),
-                            )
-                          )}
+                      {compatibleBuilderMode === "advanced" ? (
+                        <div className="min-h-36 rounded-xl border-2 border-dashed border-amber-300 bg-amber-50 p-4 flex flex-col items-center justify-center gap-2 text-center">
+                          <AlertTriangle className="h-5 w-5 text-amber-500" />
+                          <p className="text-sm font-semibold text-amber-800">
+                            Công thức nâng cao — builder bị khóa
+                          </p>
+                          <p className="text-xs text-amber-600">
+                            Formula đang dùng node lookup / fn / foreach /
+                            context. Drag-drop cơ bản không bảo toàn được logic
+                            đó. Hãy chỉnh sửa qua{" "}
+                            <span className="font-medium">JSON Studio</span> bên
+                            dưới.
+                          </p>
                         </div>
-                      </div>
+                      ) : (
+                        <div
+                          onDragOver={(event) => event.preventDefault()}
+                          onDrop={onDropToBuilderEnd}
+                          className="min-h-36 rounded-xl border-2 border-dashed border-[#2563eb]/30 bg-[#f0f4ff] p-2"
+                        >
+                          <p className="mb-1.5 text-[11px] text-gray-400">
+                            Nhấn biến / toán tử để thêm · Kéo để sắp xếp · Nhấn
+                            ✕ để xóa token
+                          </p>
+                          <div className="flex min-h-20 flex-wrap items-start gap-1.5 rounded-lg bg-[#0b1324] px-3 py-2.5">
+                            {builderTokens.length === 0 ? (
+                              <span className="text-xs text-gray-500">
+                                Biểu thức trống — thêm biến hoặc số từ bên phải
+                              </span>
+                            ) : (
+                              builderTokens.map((token, index) =>
+                                token.type === "num" &&
+                                editingNumTokenId === token.id ? (
+                                  <input
+                                    key={token.id}
+                                    autoFocus
+                                    value={editingNumValue}
+                                    onChange={(e) =>
+                                      setEditingNumValue(e.target.value)
+                                    }
+                                    onBlur={commitEditNum}
+                                    onKeyDown={(e) => {
+                                      if (e.key === "Enter") commitEditNum();
+                                      if (e.key === "Escape")
+                                        setEditingNumTokenId(null);
+                                    }}
+                                    className="w-20 rounded-full bg-violet-900 px-2 py-0.5 text-center font-mono text-xs text-violet-200 outline-none ring-1 ring-violet-400"
+                                  />
+                                ) : (
+                                  <span
+                                    key={token.id}
+                                    draggable
+                                    onDragStart={(event) =>
+                                      onTokenDragStart(event, token.id)
+                                    }
+                                    onDragEnd={onTokenDragEnd}
+                                    onDragOver={(event) =>
+                                      event.preventDefault()
+                                    }
+                                    onDrop={(event) => {
+                                      const rect =
+                                        event.currentTarget.getBoundingClientRect();
+                                      const insertAfter =
+                                        event.clientX >
+                                        rect.left + rect.width / 2;
+                                      onBuilderDropAt(
+                                        event,
+                                        index + (insertAfter ? 1 : 0),
+                                      );
+                                    }}
+                                    onDoubleClick={() =>
+                                      token.type === "num" &&
+                                      startEditNum(token)
+                                    }
+                                    className={`inline-flex cursor-grab items-center gap-1 rounded-full px-2 py-0.5 text-xs active:cursor-grabbing ${
+                                      token.type === "var"
+                                        ? "bg-cyan-900/70 text-cyan-200"
+                                        : token.type === "num"
+                                          ? "bg-violet-900/70 text-violet-200"
+                                          : "bg-slate-800 text-slate-200"
+                                    }`}
+                                    title={
+                                      token.type === "num"
+                                        ? "Nhấp đôi để sửa số"
+                                        : undefined
+                                    }
+                                  >
+                                    {token.type === "var"
+                                      ? `[${token.label}]`
+                                      : token.label}
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        removeTokenById(token.id);
+                                      }}
+                                      className="ml-0.5 rounded-full text-[10px] leading-none opacity-50 hover:opacity-100"
+                                      title="Xóa token này"
+                                    >
+                                      ✕
+                                    </button>
+                                  </span>
+                                ),
+                              )
+                            )}
+                          </div>
+                        </div>
+                      )}
 
                       {/* Hint / Error */}
                       {builderHint ? (
@@ -4365,12 +4414,16 @@ export default function FormulaTab(props: FormulaTabProps) {
                           </p>
                           <input
                             value={previewInputs[code] ?? "0"}
-                            onChange={(e) =>
-                              setPreviewInputs((prev) => ({
-                                ...prev,
-                                [code]: e.target.value,
-                              }))
-                            }
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              if (/^-?\d*\.?\d*$/.test(val)) {
+                                setPreviewInputs((prev) => ({
+                                  ...prev,
+                                  [code]: val,
+                                }));
+                              }
+                            }}
+                            inputMode="decimal"
                             className="mt-2 w-full rounded-lg border border-sky-100 bg-white px-3 py-2 font-mono text-sm"
                           />
                         </div>

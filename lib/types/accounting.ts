@@ -88,6 +88,7 @@ export interface RevenueRecord {
   businessLocationId: number;
   revenueType: RevenueType;
   orderId?: number;
+  businessTypeId?: string;
   description: string;
   amount: number;
   revenueDate: string;
@@ -118,6 +119,19 @@ export interface CreateManualRevenueRequest {
   revenueDate: string;
   description: string;
   moneyChannel: "cash" | "bank";
+}
+
+export interface UpdateManualRevenueRequest {
+  businessTypeId: string;
+  amount?: number;
+  revenueDate?: string;
+  description: string;
+  moneyChannel?: "cash" | "bank";
+  documentNumber?: string;
+  documentDate?: string;
+  removeDocument?: boolean;
+  idempotencyKey?: string;
+  image?: File;
 }
 
 export interface RevenuePagination {

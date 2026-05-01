@@ -170,6 +170,8 @@ export async function getDispatches(
   pageNumber = 1,
   pageSize = 20,
   status?: string,
+  fromDate?: string,
+  toDate?: string,
 ): Promise<PaginatedResponse<NotificationDispatch>> {
   const params = new URLSearchParams({
     pageNumber: String(pageNumber),
@@ -177,6 +179,12 @@ export async function getDispatches(
   });
   if (status && status.trim().length > 0) {
     params.set("status", status);
+  }
+  if (fromDate) {
+    params.set("FromDate", fromDate);
+  }
+  if (toDate) {
+    params.set("ToDate", toDate);
   }
   return request<PaginatedResponse<NotificationDispatch>>(
     `/api/admin/notifications/dispatches?${params.toString()}`,

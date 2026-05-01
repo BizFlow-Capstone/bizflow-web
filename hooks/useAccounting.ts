@@ -10,6 +10,7 @@ import {
   getRevenuesWithFilters,
   getAllRevenuesWithFilters,
   createManualRevenue,
+  updateManualRevenue,
   deleteManualRevenue,
   getRevenueForecast,
   getCashFlowReport,
@@ -35,6 +36,7 @@ import type {
   UpdateManualCostRequest,
   RevenueFilters,
   CreateManualRevenueRequest,
+  UpdateManualRevenueRequest,
   CreatePeriodRequest,
   CreateCustomPeriodRequest,
   OpeningBalanceSuggestionRequest,
@@ -206,6 +208,29 @@ export function useCreateManualRevenue() {
       queryClient.invalidateQueries({
         queryKey: accountingKeys.revenues(variables.businessLocationId),
       });
+    },
+  });
+}
+
+export function useUpdateManualRevenue(locationId: number) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      revenueId,
+      data,
+    }: {
+      revenueId: number;
+      data: UpdateManualRevenueRequest;
+    }) => updateManualRevenue(revenueId, data),
+    onSuccess: (_result, variables) => {
+      queryClient.invalidateQueries({ queryKey: accountingKeys.all });
+      queryClient.invalidateQueries({
+        queryKey: accountingKeys.revenues(locationId),
+      });
+      queryClient.invalidateQueries({
+        queryKey: accountingKeys.revenuesByFilters({ locationId }),
+      });
+      void variables;
     },
   });
 }

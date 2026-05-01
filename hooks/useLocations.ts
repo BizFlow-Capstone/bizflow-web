@@ -14,6 +14,7 @@ import {
   deleteLocation,
   getLocationEmployees,
   assignLocationEmployees,
+  removeLocationEmployee,
 } from "@/services/locationService";
 import type {
   Location,
@@ -196,6 +197,29 @@ export function useAssignLocationEmployees() {
       locationId: number;
       employeeIds: string[];
     }) => assignLocationEmployees(locationId, employeeIds),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: locationKeys.lists() });
+      queryClient.invalidateQueries({
+        queryKey: locationKeys.employees(variables.locationId),
+      });
+    },
+  });
+}
+
+/**
+ * Hook to remove a single employee from a location
+ */
+export function useRemoveLocationEmployee() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      locationId,
+      employeeId,
+    }: {
+      locationId: number;
+      employeeId: string;
+    }) => removeLocationEmployee(locationId, employeeId),
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: locationKeys.lists() });
       queryClient.invalidateQueries({

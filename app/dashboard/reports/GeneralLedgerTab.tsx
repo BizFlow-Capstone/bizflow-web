@@ -40,7 +40,6 @@ import {
 import type {
   GLEntryFilters,
   GLEntryListItem,
-  GLEffectiveStatus,
   GLViewMode,
 } from "@/lib/types/accounting";
 
@@ -72,28 +71,84 @@ function resolveDateRange(
   };
 }
 
-function statusMeta(status: GLEffectiveStatus): { label: string; cls: string } {
-  switch (status) {
+function statusMeta(status: unknown): { label: string; cls: string } {
+  const raw = normalizeFilterValue(status).toLowerCase();
+
+  switch (raw) {
     case "reversal":
       return {
-        label: "Dòng đảo",
+        label: valueLabel(status) || beautifyEnumLabel(raw),
         cls: "bg-red-50 text-red-700 border-red-200",
       };
     case "reversed":
       return {
-        label: "Đã bị hủy hiệu lực",
+        label: valueLabel(status) || beautifyEnumLabel(raw),
         cls: "bg-slate-100 text-slate-700 border-slate-300",
+      };
+    case "replaced":
+      return {
+        label: valueLabel(status) || beautifyEnumLabel(raw),
+        cls: "bg-slate-100 text-slate-700 border-slate-300",
+      };
+    case "active":
+      return {
+        label: valueLabel(status) || beautifyEnumLabel(raw),
+        cls: "bg-emerald-50 text-emerald-700 border-emerald-200",
       };
     default:
       return {
-        label: "Đang hiệu lực",
+        label: valueLabel(status) || beautifyEnumLabel(raw),
         cls: "bg-emerald-50 text-emerald-700 border-emerald-200",
       };
   }
 }
 
-function beautifyEnumLabel(value: string): string {
-  return value
+function normalizeLabelValue(value: unknown): string {
+  if (typeof value === "string") {
+    return value;
+  }
+
+  if (value && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    const label = record.label ?? record.name ?? record.displayName;
+    if (typeof label === "string" && label.trim()) {
+      return label;
+    }
+
+    const code = record.code ?? record.value ?? record.id;
+    if (typeof code === "string" && code.trim()) {
+      return code;
+    }
+  }
+
+  return String(value ?? "");
+}
+
+function normalizeFilterValue(value: unknown): string {
+  if (typeof value === "string") {
+    return value;
+  }
+
+  if (value && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    const code = record.code ?? record.value ?? record.id;
+    if (typeof code === "string" && code.trim()) {
+      return code;
+    }
+    const label = record.label ?? record.name ?? record.displayName;
+    if (typeof label === "string" && label.trim()) {
+      return label;
+    }
+  }
+
+  return String(value ?? "");
+}
+
+function beautifyEnumLabel(value: unknown): string {
+  const raw = normalizeLabelValue(value);
+  if (!raw) return "";
+
+  return raw
     .replace(/_/g, " ")
     .split(" ")
     .filter(Boolean)
@@ -101,41 +156,63 @@ function beautifyEnumLabel(value: string): string {
     .join(" ");
 }
 
-function moneyChannelLabel(value?: string): string {
-  if (value === "cash") return "Tiền mặt";
-  if (value === "bank") return "Ngân hàng";
-  if (value === "debt") return "Ghi nợ";
-  return "Không rõ";
+function valueLabel(value: unknown): string {
+  const raw = normalizeLabelValue(value);
+  if (!raw) return "";
+
+  return raw.includes("_") ? beautifyEnumLabel(raw) : raw;
 }
 
-function viewModeLabel(value: GLViewMode): string {
-  if (value === "audit") return "Audit - Dòng thời gian đầy đủ";
-  return "Effective - Số liệu hiệu lực";
+function codeValueLabel(value: unknown): string {
+  const raw = normalizeFilterValue(value);
+  if (!raw) return "";
+
+  return raw.includes("_") ? beautifyEnumLabel(raw) : raw;
+}
+
+function resolveSelectedLabel(
+  options: unknown[] | undefined,
+  value: string,
+): string {
+  const matchedOption = options?.find(
+    (option) => normalizeFilterValue(option) === value,
+  );
+
+  return matchedOption ? valueLabel(matchedOption) : codeValueLabel(value);
 }
 
 function sourcePath(entry: GLEntryListItem): string | null {
-  const sourceType = (
-    entry.source?.entityType ||
-    entry.source?.referenceType ||
-    entry.referenceType ||
-    ""
+  const entityType = normalizeFilterValue(
+    entry.source?.entityType || "",
   ).toLowerCase();
-  const sourceId =
-    entry.source?.entityId ?? entry.source?.referenceId ?? entry.referenceId;
+  const referenceType = normalizeFilterValue(
+    entry.source?.referenceType || entry.referenceType || "",
+  ).toLowerCase();
+  const entityId = entry.source?.entityId;
+  const referenceId = entry.source?.referenceId ?? entry.referenceId;
 
-  if (!sourceId) {
-    return null;
+  if (entityId) {
+    if (
+      entityType === "order" ||
+      (!entityType && referenceType === "revenue")
+    ) {
+      return `/dashboard/orders/${entityId}`;
+    }
+
+    if (entityType === "import") {
+      return `/dashboard/imports/${entityId}`;
+    }
   }
 
-  if (sourceType === "order") {
-    return `/dashboard/orders/${sourceId}`;
+  if (referenceType === "order" && referenceId) {
+    return `/dashboard/orders/${referenceId}`;
   }
 
-  if (sourceType === "import") {
-    return `/dashboard/imports/${sourceId}`;
+  if (referenceType === "import" && referenceId) {
+    return `/dashboard/imports/${referenceId}`;
   }
 
-  if (sourceType === "debtor_payment") {
+  if (referenceType === "debtor_payment") {
     return "/dashboard/customers";
   }
 
@@ -151,7 +228,7 @@ function MultiSelectFilter({
   onSelectAll,
 }: {
   title: string;
-  options: string[];
+  options: unknown[];
   selected: string[];
   onToggle: (value: string) => void;
   onClear: () => void;
@@ -160,7 +237,7 @@ function MultiSelectFilter({
   const [query, setQuery] = useState("");
   const normalizedQuery = query.trim().toLowerCase();
   const filteredOptions = options.filter((option) =>
-    beautifyEnumLabel(option).toLowerCase().includes(normalizedQuery),
+    valueLabel(option).toLowerCase().includes(normalizedQuery),
   );
 
   if (options.length === 0) return null;
@@ -206,19 +283,18 @@ function MultiSelectFilter({
 
       <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
         {filteredOptions.map((option) => {
-          const checked = selected.includes(option);
+          const optionValue = normalizeFilterValue(option);
+          const checked = selected.includes(optionValue);
           return (
             <label
-              key={option}
+              key={optionValue || JSON.stringify(option)}
               className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700"
             >
               <Checkbox
                 checked={checked}
-                onCheckedChange={() => onToggle(option)}
+                onCheckedChange={() => onToggle(optionValue)}
               />
-              <span className="truncate text-sm">
-                {beautifyEnumLabel(option)}
-              </span>
+              <span className="truncate text-sm">{valueLabel(option)}</span>
             </label>
           );
         })}
@@ -245,7 +321,7 @@ export default function GeneralLedgerTab({
   const [moneyChannels, setMoneyChannels] = useState<
     Array<"cash" | "bank" | "debt">
   >([]);
-  const [viewMode, setViewMode] = useState<GLViewMode>("effective");
+  const [viewMode, setViewMode] = useState<GLViewMode>("audit");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
   const [pageNumber, setPageNumber] = useState(1);
@@ -302,9 +378,10 @@ export default function GeneralLedgerTab({
       totalIn += item.debitAmount;
       totalOut += item.creditAmount;
 
-      if (item.effectiveStatus === "active") activeCount += 1;
-      if (item.effectiveStatus === "reversed") reversedCount += 1;
-      if (item.effectiveStatus === "reversal") reversalCount += 1;
+      const status = normalizeFilterValue(item.effectiveStatus).toLowerCase();
+      if (status === "active") activeCount += 1;
+      if (status === "reversed") reversedCount += 1;
+      if (status === "reversal") reversalCount += 1;
     }
 
     return {
@@ -346,7 +423,7 @@ export default function GeneralLedgerTab({
     setTransactionTypes([]);
     setReferenceTypes([]);
     setMoneyChannels([]);
-    setViewMode("effective");
+    setViewMode("audit");
     setFromDate("");
     setToDate("");
     setPageNumber(1);
@@ -416,7 +493,7 @@ export default function GeneralLedgerTab({
             <Filter className="w-4 h-4 text-[#23C4C1]" />
             <h3 className="text-lg font-semibold">Bộ lọc sổ cái</h3>
             <Badge variant="outline" className="text-xs md:text-sm">
-              {viewModeLabel(viewMode)}
+              {resolveSelectedLabel(catalog?.viewModes, viewMode)}
             </Badge>
             <Badge variant="secondary" className="text-xs md:text-sm">
               {activeFilterCount} bộ lọc chi tiết
@@ -499,7 +576,7 @@ export default function GeneralLedgerTab({
                 }
                 className="inline-flex items-center gap-1 rounded-full border border-gray-200 bg-white px-2.5 py-1 text-xs text-gray-700 hover:bg-gray-50"
               >
-                Loại: {beautifyEnumLabel(value)}
+                Loại: {resolveSelectedLabel(catalog?.transactionTypes, value)}
                 <X className="w-3 h-3" />
               </button>
             ))}
@@ -512,7 +589,7 @@ export default function GeneralLedgerTab({
                 }
                 className="inline-flex items-center gap-1 rounded-full border border-gray-200 bg-white px-2.5 py-1 text-xs text-gray-700 hover:bg-gray-50"
               >
-                Nguồn: {beautifyEnumLabel(value)}
+                Nguồn: {resolveSelectedLabel(catalog?.referenceTypes, value)}
                 <X className="w-3 h-3" />
               </button>
             ))}
@@ -523,7 +600,7 @@ export default function GeneralLedgerTab({
                 onClick={() => toggleMoneyChannel(value)}
                 className="inline-flex items-center gap-1 rounded-full border border-gray-200 bg-white px-2.5 py-1 text-xs text-gray-700 hover:bg-gray-50"
               >
-                Kênh: {moneyChannelLabel(value)}
+                Kênh: {resolveSelectedLabel(catalog?.moneyChannels, value)}
                 <X className="w-3 h-3" />
               </button>
             ))}
@@ -547,11 +624,14 @@ export default function GeneralLedgerTab({
                   </SelectTrigger>
                   <SelectContent>
                     {(catalog?.viewModes ?? ["effective", "audit"]).map(
-                      (mode) => (
-                        <SelectItem key={mode} value={mode}>
-                          {viewModeLabel(mode)}
-                        </SelectItem>
-                      ),
+                      (mode) => {
+                        const value = normalizeFilterValue(mode);
+                        return (
+                          <SelectItem key={value} value={value}>
+                            {valueLabel(mode)}
+                          </SelectItem>
+                        );
+                      },
                     )}
                   </SelectContent>
                 </Select>
@@ -636,7 +716,11 @@ export default function GeneralLedgerTab({
                   }}
                   onSelectAll={() => {
                     setPageNumber(1);
-                    setTransactionTypes(catalog?.transactionTypes ?? []);
+                    setTransactionTypes(
+                      (catalog?.transactionTypes ?? []).map((item) =>
+                        normalizeFilterValue(item),
+                      ),
+                    );
                   }}
                 />
 
@@ -653,7 +737,11 @@ export default function GeneralLedgerTab({
                   }}
                   onSelectAll={() => {
                     setPageNumber(1);
-                    setReferenceTypes(catalog?.referenceTypes ?? []);
+                    setReferenceTypes(
+                      (catalog?.referenceTypes ?? []).map((item) =>
+                        normalizeFilterValue(item),
+                      ),
+                    );
                   }}
                 />
 
@@ -673,16 +761,14 @@ export default function GeneralLedgerTab({
                   onSelectAll={() => {
                     setPageNumber(1);
                     setMoneyChannels(
-                      (
-                        (catalog?.moneyChannels ?? []) as Array<
-                          "cash" | "bank" | "debt"
-                        >
-                      ).filter(
-                        (channel) =>
-                          channel === "cash" ||
-                          channel === "bank" ||
-                          channel === "debt",
-                      ),
+                      (catalog?.moneyChannels ?? [])
+                        .map((item) => normalizeFilterValue(item))
+                        .filter(
+                          (channel) =>
+                            channel === "cash" ||
+                            channel === "bank" ||
+                            channel === "debt",
+                        ) as Array<"cash" | "bank" | "debt">,
                     );
                   }}
                 />
@@ -755,14 +841,17 @@ export default function GeneralLedgerTab({
                 {(data?.items ?? []).map((entry) => {
                   const status = statusMeta(entry.effectiveStatus);
                   const path = sourcePath(entry);
-                  const muted = entry.effectiveStatus === "reversed";
+                  const eff = normalizeFilterValue(
+                    entry.effectiveStatus,
+                  ).toLowerCase();
+                  const muted = eff === "reversed" || eff === "replaced";
 
                   return (
                     <TableRow
                       key={entry.entryId}
                       className={
                         muted
-                          ? "opacity-75 bg-slate-50/60"
+                          ? "opacity-75 bg-slate-50/60 line-through text-slate-500"
                           : "hover:bg-gray-50/70"
                       }
                     >
@@ -771,11 +860,11 @@ export default function GeneralLedgerTab({
                       </TableCell>
                       <TableCell className="text-sm font-medium text-gray-800 py-3.5">
                         <span className="inline-flex rounded-md border px-2 py-1 bg-white">
-                          {beautifyEnumLabel(entry.transactionType)}
+                          {valueLabel(entry.transactionType)}
                         </span>
                       </TableCell>
                       <TableCell className="text-sm text-gray-600 py-3.5">
-                        {beautifyEnumLabel(
+                        {valueLabel(
                           entry.source?.referenceType || entry.referenceType,
                         )}
                       </TableCell>
@@ -785,7 +874,7 @@ export default function GeneralLedgerTab({
                         {entry.description}
                       </TableCell>
                       <TableCell className="text-sm text-gray-700 py-3.5 whitespace-nowrap">
-                        {moneyChannelLabel(entry.moneyChannel)}
+                        {valueLabel(entry.moneyChannel)}
                       </TableCell>
                       <TableCell className="py-3.5">
                         <span
