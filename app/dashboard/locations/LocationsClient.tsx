@@ -535,7 +535,10 @@ export default function LocationsClient() {
           (Array.isArray(alreadyAssignedIds) && alreadyAssignedIds.length > 0)
         ) {
           const names = (alreadyAssignedIds ?? [])
-            .map((id) => employees.find((e) => e.userId === id)?.userName ?? id)
+            .map(
+              (id: number | string) =>
+                employees.find((e) => e.userId === id)?.userName ?? id,
+            )
             .join(", ");
           toast.error(
             `${assignResult.message || "Nhân viên đã được gán"}${

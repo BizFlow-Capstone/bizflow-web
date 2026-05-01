@@ -18,6 +18,13 @@ import Link from "next/link";
 import { getAdminUsers } from "@/lib/admin-users-api";
 import { getDispatches } from "@/lib/admin-notification-api";
 import { authFetch } from "@/lib/auth/tokenManager";
+import {
+  formatDateTimeVi,
+  formatNumberVi,
+  formatTooltipCurrency,
+  formatVnd,
+  formatYAxisShort,
+} from "@/lib/format";
 import type { NotificationDispatch } from "@/lib/types/adminNotification";
 
 type RangeMode = "day" | "month" | "year" | "custom";
@@ -66,21 +73,9 @@ function resolveRange(mode: RangeMode, from: Date, to: Date) {
   return { from: new Date(today.getFullYear(), 0, 1), to: today };
 }
 
-function formatCompactNumber(value: number | null) {
+function formatCount(value: number | null) {
   if (value === null || !Number.isFinite(value)) return "—";
-  return new Intl.NumberFormat("vi-VN", {
-    notation: "compact",
-    compactDisplay: "short",
-  }).format(value);
-}
-
-function formatCurrency(value: number | null) {
-  if (value === null || !Number.isFinite(value)) return "—";
-  return new Intl.NumberFormat("vi-VN", {
-    style: "currency",
-    currency: "VND",
-    maximumFractionDigits: 0,
-  }).format(value);
+  return formatNumberVi(value);
 }
 
 async function getSubscriptionAnalytics(
@@ -235,28 +230,31 @@ export default function AdminOverviewClient() {
     () => [
       {
         title: "Tổng doanh thu",
-        value: formatCurrency(totalRevenue),
+        value:
+          totalRevenue === null || !Number.isFinite(totalRevenue)
+            ? "—"
+            : formatVnd(totalRevenue),
         trend: "—",
         trendText: "từ giao dịch thành công",
         isPositive: true,
       },
       {
         title: "Số người dùng",
-        value: formatCompactNumber(totalUsers),
+        value: formatCount(totalUsers),
         trend: "—",
         trendText: "tổng người dùng",
         isPositive: true,
       },
       {
         title: "Số Lượt Đăng Kí gói",
-        value: formatCompactNumber(totalSubscriptions),
+        value: formatCount(totalSubscriptions),
         trend: "—",
         trendText: `trong ${rangeLabel.toLowerCase()}`,
         isPositive: true,
       },
       {
         title: "Số Thông Báo",
-        value: formatCompactNumber(totalDispatches),
+        value: formatCount(totalDispatches),
         trend: "—",
         trendText: "đã gửi",
         isPositive: false,
@@ -272,7 +270,7 @@ export default function AdminOverviewClient() {
     }));
     (analytics?.dailySeries ?? []).forEach((item) => {
       const month = new Date(item.date).getMonth();
-      months[month].value += item.revenue / 1_000_000;
+      months[month].value += item.revenue;
     });
     return months;
   }, [analytics?.dailySeries]);
@@ -456,13 +454,13 @@ export default function AdminOverviewClient() {
                   axisLine={false}
                   tickLine={false}
                   tick={{ fontSize: 10, fill: "#9ca3af" }}
-                  tickFormatter={(value) => `${value}M`}
+                  tickFormatter={(value) => formatYAxisShort(Number(value))}
                 />
                 <Tooltip
                   cursor={{ fill: "#f3f4f6" }}
                   contentStyle={{ borderRadius: "8px", border: "none" }}
-                  formatter={(value: number | string | undefined) => [
-                    `${Number(value ?? 0)}M VND`,
+                  formatter={(value) => [
+                    formatTooltipCurrency(value),
                     "Doanh thu",
                   ]}
                 />
@@ -513,7 +511,7 @@ export default function AdminOverviewClient() {
                   <Users size={16} className="text-gray-500" />
                 </div>
                 <div className="text-2xl font-bold text-gray-900">
-                  {isLoading ? "…" : formatCompactNumber(totalUsers)}
+                  {isLoading ? "…" : formatCount(totalUsers)}
                 </div>
                 <div className="text-xs text-gray-500">Tổng người dùng</div>
               </div>
@@ -526,9 +524,7 @@ export default function AdminOverviewClient() {
                   Premium Plan
                 </span>
                 <span className="text-xl font-semibold">
-                  {isLoading
-                    ? "…"
-                    : formatCompactNumber(pieData[0]?.value ?? 0)}
+                  {isLoading ? "…" : formatCount(pieData[0]?.value ?? 0)}
                 </span>
               </div>
               <div className="flex flex-col items-end">
@@ -537,9 +533,7 @@ export default function AdminOverviewClient() {
                   <div className="w-2 h-2 rounded-full bg-gray-300"></div>
                 </span>
                 <span className="text-xl font-semibold">
-                  {isLoading
-                    ? "…"
-                    : formatCompactNumber(pieData[1]?.value ?? 0)}
+                  {isLoading ? "…" : formatCount(pieData[1]?.value ?? 0)}
                 </span>
               </div>
             </div>
@@ -568,7 +562,7 @@ export default function AdminOverviewClient() {
               dispatchItems.map((dispatch) => {
                 const sentAt = dispatch.sentAt || dispatch.createdAt;
                 const timeLabel = sentAt
-                  ? new Date(sentAt).toLocaleString("vi-VN")
+                  ? formatDateTimeVi(sentAt)
                   : "Chưa gửi";
                 const status = dispatch.status?.toString().toUpperCase();
                 const isSuccess = status === "SENT" || status === "COMPLETED";
