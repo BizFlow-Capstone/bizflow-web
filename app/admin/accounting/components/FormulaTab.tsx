@@ -271,84 +271,84 @@ function formulaTypeToBuilderTab(formulaType: string): BuilderTabKey {
   return "NONE";
 }
 
-const FORMULA_RECIPES: FormulaRecipe[] = [
-  {
-    id: "sum-revenue",
-    title: "Tổng doanh thu",
-    summary: "SUM Amount từ revenues trong kỳ hiện tại.",
-    formulaType: "AGGREGATE",
-    expression: {
-      aggregate: "SUM",
-      source: "revenues",
-      field: "Amount",
-      periodFilter: "current",
-    },
-  },
-  {
-    id: "profit",
-    title: "Lợi nhuận",
-    summary: "Lấy doanh thu trừ chi phí bằng ref + op.",
-    formulaType: "CELL_REF",
-    expression: {
-      op: "SUBTRACT",
-      left: { ref: "S2C_TOTAL_REVENUE" },
-      right: { ref: "S2C_TOTAL_COST" },
-    },
-  },
-  {
-    id: "pit-basic",
-    title: "PIT cơ bản",
-    summary: "MAX(0, profit) nhân với TaxRate(PIT_M1).",
-    formulaType: "TAX_RATE",
-    expression: {
-      op: "MULTIPLY",
-      left: {
-        fn: "MAX",
-        args: [{ literal: 0 }, { ref: "S2C_PROFIT" }],
-      },
-      right: {
-        lookup: {
-          entity: "IndustryTaxRates",
-          field: "TaxRate",
-          filter: { TaxType: "PIT_METHOD_1" },
-        },
-      },
-    },
-  },
-  {
-    id: "opening-cash",
-    title: "Số dư đầu kỳ",
-    summary: "Lookup OpeningCashBalance từ AccountingPeriods.",
-    formulaType: "EXTERNAL_LOOKUP",
-    expression: {
-      lookup: {
-        entity: "AccountingPeriods",
-        field: "OpeningCashBalance",
-      },
-    },
-  },
-  {
-    id: "foreach-vat",
-    title: "VAT theo ngành",
-    summary: "Foreach theo revenues, apply TaxRate VAT và reduce SUM.",
-    formulaType: "TAX_RATE",
-    expression: {
-      foreach: "industry",
-      apply: {
-        op: "MULTIPLY",
-        left: { context: "group_amount" },
-        right: {
-          lookup: {
-            entity: "IndustryTaxRates",
-            field: "TaxRate",
-            filter: { TaxType: "VAT" },
-          },
-        },
-      },
-      reduce: "SUM",
-    },
-  },
-];
+// const FORMULA_RECIPES: FormulaRecipe[] = [
+//   {
+//     id: "sum-revenue",
+//     title: "Tổng doanh thu",
+//     summary: "SUM Amount từ revenues trong kỳ hiện tại.",
+//     formulaType: "AGGREGATE",
+//     expression: {
+//       aggregate: "SUM",
+//       source: "revenues",
+//       field: "Amount",
+//       periodFilter: "current",
+//     },
+//   },
+//   {
+//     id: "profit",
+//     title: "Lợi nhuận",
+//     summary: "Lấy doanh thu trừ chi phí bằng ref + op.",
+//     formulaType: "CELL_REF",
+//     expression: {
+//       op: "SUBTRACT",
+//       left: { ref: "S2C_TOTAL_REVENUE" },
+//       right: { ref: "S2C_TOTAL_COST" },
+//     },
+//   },
+//   {
+//     id: "pit-basic",
+//     title: "PIT cơ bản",
+//     summary: "MAX(0, profit) nhân với TaxRate(PIT_M1).",
+//     formulaType: "TAX_RATE",
+//     expression: {
+//       op: "MULTIPLY",
+//       left: {
+//         fn: "MAX",
+//         args: [{ literal: 0 }, { ref: "S2C_PROFIT" }],
+//       },
+//       right: {
+//         lookup: {
+//           entity: "IndustryTaxRates",
+//           field: "TaxRate",
+//           filter: { TaxType: "PIT_METHOD_1" },
+//         },
+//       },
+//     },
+//   },
+//   {
+//     id: "opening-cash",
+//     title: "Số dư đầu kỳ",
+//     summary: "Lookup OpeningCashBalance từ AccountingPeriods.",
+//     formulaType: "EXTERNAL_LOOKUP",
+//     expression: {
+//       lookup: {
+//         entity: "AccountingPeriods",
+//         field: "OpeningCashBalance",
+//       },
+//     },
+//   },
+//   {
+//     id: "foreach-vat",
+//     title: "VAT theo ngành",
+//     summary: "Foreach theo revenues, apply TaxRate VAT và reduce SUM.",
+//     formulaType: "TAX_RATE",
+//     expression: {
+//       foreach: "industry",
+//       apply: {
+//         op: "MULTIPLY",
+//         left: { context: "group_amount" },
+//         right: {
+//           lookup: {
+//             entity: "IndustryTaxRates",
+//             field: "TaxRate",
+//             filter: { TaxType: "VAT" },
+//           },
+//         },
+//       },
+//       reduce: "SUM",
+//     },
+//   },
+// ];
 
 function tokenId(): string {
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -906,29 +906,114 @@ function AggregateEditor({
     }
   }, [exprJson]);
 
+  const aggregateNode =
+    typeof parsed.fn === "string" &&
+    parsed.fn &&
+    Array.isArray(parsed.args) &&
+    parsed.args.length > 0 &&
+    typeof parsed.args[0] === "object" &&
+    parsed.args[0] !== null &&
+    !Array.isArray(parsed.args[0])
+      ? (parsed.args[0] as Record<string, unknown>)
+      : parsed;
+
   const source =
-    typeof parsed.source === "string" && parsed.source in SOURCES_META
-      ? (parsed.source as SourceKey)
+    typeof aggregateNode.source === "string" &&
+    aggregateNode.source in SOURCES_META
+      ? (aggregateNode.source as SourceKey)
       : "";
-  const field = typeof parsed.field === "string" ? parsed.field : "";
-  const aggFn = typeof parsed.aggregate === "string" ? parsed.aggregate : "";
-  const scope = typeof parsed.scope === "string" ? parsed.scope : "";
+  const field =
+    typeof aggregateNode.field === "string" ? aggregateNode.field : "";
+  const fn = typeof parsed.fn === "string" ? parsed.fn : "";
+  const aggFn =
+    typeof aggregateNode.aggregate === "string" ? aggregateNode.aggregate : "";
+  const scope =
+    typeof aggregateNode.scope === "string" ? aggregateNode.scope : "";
   const period =
-    typeof parsed.periodFilter === "string" ? parsed.periodFilter : "";
-  const sign = typeof parsed.sign === "string" ? parsed.sign : "";
+    typeof aggregateNode.periodFilter === "string"
+      ? aggregateNode.periodFilter
+      : "";
+  const sign = typeof aggregateNode.sign === "string" ? aggregateNode.sign : "";
   const filter =
-    typeof parsed.filter === "object" &&
-    parsed.filter &&
-    !Array.isArray(parsed.filter)
-      ? (parsed.filter as Record<string, string[]>)
-      : ({} as Record<string, string[]>);
+    typeof aggregateNode.filter === "object" &&
+    aggregateNode.filter &&
+    !Array.isArray(aggregateNode.filter)
+      ? (aggregateNode.filter as Record<string, string[] | string>)
+      : ({} as Record<string, string[] | string>);
 
   const sourceMeta = source ? SOURCES_META[source] : null;
 
+  function readFilterValues(value: unknown): string[] {
+    if (Array.isArray(value)) {
+      return value.filter((item): item is string => typeof item === "string");
+    }
+    if (typeof value === "string" && value) {
+      return [value];
+    }
+    return [];
+  }
+
+  function serializeFilterValues(
+    value: string[],
+  ): string | string[] | undefined {
+    const normalized = value.filter((item) => item.trim());
+    if (normalized.length === 0) return undefined;
+    if (normalized.length === 1) return normalized[0];
+    return normalized;
+  }
+
+  function serializeFilterMap(
+    value: Record<string, string[] | string>,
+  ): Record<string, string | string[]> | undefined {
+    const nextFilter: Record<string, string | string[]> = {};
+    Object.entries(value).forEach(([key, item]) => {
+      const serialized = Array.isArray(item)
+        ? serializeFilterValues(item)
+        : typeof item === "string" && item.trim()
+          ? item.trim()
+          : undefined;
+      if (serialized !== undefined) {
+        nextFilter[key] = serialized;
+      }
+    });
+    return Object.keys(nextFilter).length ? nextFilter : undefined;
+  }
+
+  function buildNextJson(
+    updates: Record<string, unknown>,
+    nextFn: string,
+  ): void {
+    const nextAggregate: Record<string, unknown> = {
+      ...aggregateNode,
+      ...updates,
+    };
+    if (nextAggregate.filter && typeof nextAggregate.filter === "object") {
+      nextAggregate.filter = serializeFilterMap(
+        nextAggregate.filter as Record<string, string[] | string>,
+      );
+    }
+    Object.keys(nextAggregate).forEach(
+      (key) => nextAggregate[key] === undefined && delete nextAggregate[key],
+    );
+
+    if (nextFn) {
+      setExprJson(JSON.stringify({ fn: nextFn, args: [nextAggregate] }));
+      return;
+    }
+
+    setExprJson(JSON.stringify(nextAggregate));
+  }
+
   function patch(updates: Record<string, unknown>) {
-    const next: Record<string, unknown> = { ...parsed, ...updates };
-    Object.keys(next).forEach((k) => next[k] === undefined && delete next[k]);
-    setExprJson(JSON.stringify(next));
+    const hasFnUpdate = Object.prototype.hasOwnProperty.call(updates, "fn");
+    const nextFn = hasFnUpdate
+      ? typeof updates.fn === "string" && updates.fn.trim()
+        ? updates.fn.trim()
+        : ""
+      : fn;
+    const nextUpdates = { ...updates };
+    delete nextUpdates.fn;
+    buildNextJson(nextUpdates, nextFn);
   }
 
   function patchFilter(key: string, opts: string[]) {
@@ -980,6 +1065,25 @@ function AggregateEditor({
                 {v.label} · {k}
               </option>
             ))}
+          </select>
+        </div>
+
+        <div>
+          <label className={lbl}>
+            Hàm fn
+            <FieldHint hint="Chọn hàm bao ngoài aggregate. Khi có fn, JSON sẽ được bọc theo dạng { fn, args: [ { ...aggregate } ] } để phân biệt rõ lớp xử lý." />
+          </label>
+          <select
+            value={fn}
+            onChange={(e) =>
+              patch({ fn: e.target.value ? e.target.value : undefined })
+            }
+            className={sel}
+          >
+            <option value="">none</option>
+            <option value="MAX">MAX</option>
+            <option value="MIN">MIN</option>
+            <option value="ABS">ABS</option>
           </select>
         </div>
 
@@ -1090,9 +1194,7 @@ function AggregateEditor({
 
       {sourceMeta
         ? Object.entries(sourceMeta.filterKeys).map(([key, options]) => {
-            const selected: string[] = Array.isArray(filter[key])
-              ? filter[key]
-              : [];
+            const selected: string[] = readFilterValues(filter[key]);
             return (
               <div key={key}>
                 <label className={lbl}>Lọc: {key}</label>
@@ -1516,22 +1618,42 @@ function TaxRateEditor({
     return asRecord(parsed) ?? ({} as Record<string, unknown>);
   }, [exprJson]);
 
+  const applyNode = useMemo(() => {
+    if ("foreach" in parsedRoot && parsedRoot.apply) {
+      return asRecord(parsedRoot.apply) ?? ({} as Record<string, unknown>);
+    }
+    return parsedRoot;
+  }, [parsedRoot]);
+
+  const loopConfig = useMemo(() => {
+    return {
+      foreach: typeof parsedRoot.foreach === "string" ? parsedRoot.foreach : "",
+      source: typeof parsedRoot.source === "string" ? parsedRoot.source : "revenues",
+      field: typeof parsedRoot.field === "string" ? parsedRoot.field : "Amount",
+      groupBy: typeof parsedRoot.groupBy === "string" ? parsedRoot.groupBy : "BusinessTypeId",
+      reduce: typeof parsedRoot.reduce === "string" ? parsedRoot.reduce : "SUM",
+      costSource: typeof parsedRoot.costSource === "string" ? parsedRoot.costSource : "",
+      costField: typeof parsedRoot.costField === "string" ? parsedRoot.costField : "",
+    };
+  }, [parsedRoot]);
+
   const leftFallback = useMemo(
-    () => asRecord(parsedRoot.left) ?? { context: "group_amount" },
-    [parsedRoot.left],
+    () => asRecord(applyNode.left) ?? { context: "group_amount" },
+    [applyNode.left],
   );
 
   const rightFallback = useMemo(
-    () => asRecord(parsedRoot.right) ?? buildTaxLookupNode("VAT"),
-    [parsedRoot.right],
+    () => asRecord(applyNode.right) ?? buildTaxLookupNode("VAT"),
+    [applyNode.right],
   );
   const parsedOp =
-    typeof parsedRoot.op === "string" ? parsedRoot.op.toUpperCase() : "";
+    typeof applyNode.op === "string" ? applyNode.op.toUpperCase() : "";
   const defaultOp = TAX_RATE_OPERATOR_SIGN[parsedOp] ? parsedOp : "MULTIPLY";
   const hasTaxRateShape =
-    typeof parsedRoot.op === "string" ||
-    "left" in parsedRoot ||
-    "right" in parsedRoot;
+    "foreach" in parsedRoot ||
+    typeof applyNode.op === "string" ||
+    "left" in applyNode ||
+    "right" in applyNode;
 
   const leftPreset = toTaxRateOperandPreset(leftFallback);
   const rightPreset = toTaxRateOperandPreset(rightFallback);
@@ -1647,74 +1769,111 @@ function TaxRateEditor({
     nextOp: string,
     nextLeft: string,
     nextRight: string,
+    nextLoopConfig: Record<string, string>
   ): Record<string, unknown> {
-    const next: Record<string, unknown> = {};
+    const apply: Record<string, unknown> = {};
 
     if (nextOp) {
-      next.op = nextOp;
+      apply.op = nextOp;
     }
 
     if (nextLeft) {
-      next.left =
+      apply.left =
         nextLeft === "__UNSUPPORTED__"
           ? leftFallback
           : parseTaxRateOperandPreset(nextLeft);
     }
 
     if (nextRight) {
-      next.right =
+      apply.right =
         nextRight === "__UNSUPPORTED__"
           ? rightFallback
           : parseTaxRateOperandPreset(nextRight);
     }
 
-    return next;
+    if (!nextLoopConfig.foreach) {
+      return apply;
+    }
+
+    const result: Record<string, unknown> = {
+      foreach: nextLoopConfig.foreach,
+      source: nextLoopConfig.source,
+      field: nextLoopConfig.field,
+      groupBy: nextLoopConfig.groupBy,
+      costSource: nextLoopConfig.costSource,
+    costField: nextLoopConfig.costField,
+      reduce: nextLoopConfig.reduce,
+      apply
+    };
+    
+   
+
+    return result;
   }
 
   function persistTaxRateExpressionWithNodes(
     nextOp: string,
     nextLeftNode: Record<string, unknown> | null,
     nextRightNode: Record<string, unknown> | null,
+    nextLoopConfig: Record<string, string>
   ) {
-    const next: Record<string, unknown> = {};
+    const apply: Record<string, unknown> = {};
 
     if (nextOp) {
-      next.op = nextOp;
+      apply.op = nextOp;
     }
 
     if (nextLeftNode) {
-      next.left = nextLeftNode;
+      apply.left = nextLeftNode;
     }
 
     if (nextRightNode) {
-      next.right = nextRightNode;
+      apply.right = nextRightNode;
     }
 
-    if (Object.keys(next).length === 0) {
+    if (Object.keys(apply).length === 0) {
       setExprJson("{}");
       return;
     }
 
-    setExprJson(JSON.stringify(next, null, 2));
+    if (!nextLoopConfig.foreach) {
+      setExprJson(JSON.stringify(apply, null, 2));
+      return;
+    }
+
+    const root: Record<string, unknown> = {
+      foreach: nextLoopConfig.foreach,
+      source: nextLoopConfig.source,
+      field: nextLoopConfig.field,
+      groupBy: nextLoopConfig.groupBy,
+      reduce: nextLoopConfig.reduce,
+      apply
+    };
+
+    if (nextLoopConfig.costSource) root.costSource = nextLoopConfig.costSource;
+    if (nextLoopConfig.costField) root.costField = nextLoopConfig.costField;
+
+    setExprJson(JSON.stringify(root, null, 2));
   }
 
   function updateLeftNode(nextLeftNode: Record<string, unknown>) {
     const rightNode = resolveNodeFromPreset(selectedRight, rightFallback);
-    persistTaxRateExpressionWithNodes(selectedOp, nextLeftNode, rightNode);
+    persistTaxRateExpressionWithNodes(selectedOp, nextLeftNode, rightNode, loopConfig);
   }
 
   function updateRightNode(nextRightNode: Record<string, unknown>) {
     const leftNode = resolveNodeFromPreset(selectedLeft, leftFallback);
-    persistTaxRateExpressionWithNodes(selectedOp, leftNode, nextRightNode);
+    persistTaxRateExpressionWithNodes(selectedOp, leftNode, nextRightNode, loopConfig);
   }
 
   function persistTaxRateExpression(
     nextOp: string,
     nextLeft: string,
     nextRight: string,
+    nextLoopConfig: Record<string, string>
   ) {
-    const next = composeTaxRateExpression(nextOp, nextLeft, nextRight);
-    if (Object.keys(next).length === 0) {
+    const next = composeTaxRateExpression(nextOp, nextLeft, nextRight, nextLoopConfig);
+    if (Object.keys(next.apply as Record<string, unknown>).length === 0) {
       setExprJson("{}");
       return;
     }
@@ -1729,34 +1888,126 @@ function TaxRateEditor({
       <div className="rounded-lg border border-cyan-100 bg-cyan-50 px-3 py-2 text-xs text-cyan-900">
         <div className="flex items-start justify-between gap-2">
           <p>
-            Chỉnh thuế suất bằng UI: chọn phép toán và chọn 2 vế. Rê vào icon
-            trợ giúp để xem nghĩa của từng nhóm trong dropdown.
+            Chỉnh thuế suất bằng UI: Chọn cấu hình vòng lặp và phép toán. Rê vào icon trợ giúp để xem chi tiết.
           </p>
-          <FieldHint hint="Lookup thuế suất: trả về tỷ lệ thuế (0.01, 0.03...), chưa phải số tiền. EXTERNAL_LOOKUP: lấy số đầu kỳ hoặc giá trị đã định nghĩa sẵn từ formula khác. Hàm chuẩn MAX(0,...): chặn âm để tránh ra thuế âm trước khi nhân thuế suất." />
+          <FieldHint hint="Lookup thuế suất: trả về tỷ lệ thuế (0.01, 0.03...), chưa phải số tiền. EXTERNAL_LOOKUP: lấy số đầu kỳ hoặc giá trị đã định nghĩa sẵn. MAX(0,...): chặn âm để tránh thuế âm." />
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-3">
-        <div>
-          <label className="mb-1 block text-xs font-medium text-gray-600">
-            Phép toán
-          </label>
-          <select
-            value={selectedOp}
-            onChange={(event) => {
-              const nextOp = event.target.value;
-              persistTaxRateExpression(nextOp, selectedLeft, selectedRight);
-            }}
-            className={inputClass}
-          >
-            <option value="">none</option>
-            {TAX_RATE_OPERATOR_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label} ({TAX_RATE_OPERATOR_SIGN[option.value]})
-              </option>
-            ))}
-          </select>
+      <div className="rounded-lg border border-slate-200 bg-white p-4 space-y-4">
+        <h3 className="text-sm font-semibold text-slate-800">1. Cấu hình vòng lặp (Loop Configuration)</h3>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <div>
+            <label className="mb-1 block text-xs font-medium text-gray-600">Lặp theo (foreach)</label>
+            <select
+              value={loopConfig.foreach}
+              onChange={(e) => persistTaxRateExpression(selectedOp, selectedLeft, selectedRight, { ...loopConfig, foreach: e.target.value })}
+              className={inputClass}
+            >
+              <option value="">Không lặp (None)</option>
+              <option value="industry">industry (Ngành nghề)</option>
+              <option value="revenues">revenues (Doanh thu)</option>
+              <option value="costs">costs (Chi phí)</option>
+            </select>
+          </div>
+          
+          {loopConfig.foreach ? (
+            <>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-600">Nguồn dữ liệu (source)</label>
+                <select
+                  value={loopConfig.source}
+                  onChange={(e) => persistTaxRateExpression(selectedOp, selectedLeft, selectedRight, { ...loopConfig, source: e.target.value })}
+                  className={inputClass}
+                >
+                  <option value="revenues">revenues (Doanh thu)</option>
+                  <option value="costs">costs (Chi phí)</option>
+                  <option value="gl_entries">gl_entries (Sổ cái)</option>
+                  <option value="stock_movements">stock_movements (Kho)</option>
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-600">Trường dữ liệu (field)</label>
+                <input
+                  type="text"
+                  value={loopConfig.field}
+                  onChange={(e) => persistTaxRateExpression(selectedOp, selectedLeft, selectedRight, { ...loopConfig, field: e.target.value })}
+                  className={inputClass}
+                  placeholder="VD: Amount"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-600">Nhóm theo (groupBy)</label>
+                <input
+                  type="text"
+                  value={loopConfig.groupBy}
+                  onChange={(e) => persistTaxRateExpression(selectedOp, selectedLeft, selectedRight, { ...loopConfig, groupBy: e.target.value })}
+                  className={inputClass}
+                  placeholder="VD: BusinessTypeId"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-600">Gộp kết quả (reduce)</label>
+                <select
+                  value={loopConfig.reduce}
+                  onChange={(e) => persistTaxRateExpression(selectedOp, selectedLeft, selectedRight, { ...loopConfig, reduce: e.target.value })}
+                  className={inputClass}
+                >
+                  <option value="SUM">SUM</option>
+                  <option value="MAX">MAX</option>
+                  <option value="MIN">MIN</option>
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-600">Nguồn chi phí (costSource)</label>
+                <select
+                  value={loopConfig.costSource}
+                  onChange={(e) => persistTaxRateExpression(selectedOp, selectedLeft, selectedRight, { ...loopConfig, costSource: e.target.value })}
+                  className={inputClass}
+                >
+                  <option value="">(Không dùng)</option>
+                  <option value="costs">costs (Chi phí)</option>
+                  <option value="stock_movements">stock_movements (Kho)</option>
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-600">Trường chi phí (costField)</label>
+                <input
+                  type="text"
+                  value={loopConfig.costField}
+                  onChange={(e) => persistTaxRateExpression(selectedOp, selectedLeft, selectedRight, { ...loopConfig, costField: e.target.value })}
+                  className={inputClass}
+                  placeholder="VD: Amount"
+                />
+              </div>
+            </>
+          ) : null}
         </div>
+      </div>
+
+      <div className="rounded-lg border border-slate-200 bg-white p-4 space-y-4">
+        <h3 className="text-sm font-semibold text-slate-800">2. Tính toán giá trị (Apply Expression)</h3>
+        <div className="grid grid-cols-1 gap-3">
+          <div>
+            <label className="mb-1 block text-xs font-medium text-gray-600">
+              Phép toán
+            </label>
+            <select
+              value={selectedOp}
+              onChange={(event) => {
+                const nextOp = event.target.value;
+                persistTaxRateExpression(nextOp, selectedLeft, selectedRight, loopConfig);
+              }}
+              className={inputClass}
+            >
+              <option value="">none</option>
+              {TAX_RATE_OPERATOR_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label} ({TAX_RATE_OPERATOR_SIGN[option.value]})
+                </option>
+              ))}
+            </select>
+          </div>
 
         <div className="flex items-center gap-2">
           <div className="w-1/2">
@@ -1770,7 +2021,7 @@ function TaxRateEditor({
                   "left",
                   event.target.value,
                 );
-                persistTaxRateExpression(selectedOp, nextLeft, selectedRight);
+                persistTaxRateExpression(selectedOp, nextLeft, selectedRight, loopConfig);
               }}
               className={inputClass}
             >
@@ -1901,7 +2152,7 @@ function TaxRateEditor({
                   "right",
                   event.target.value,
                 );
-                persistTaxRateExpression(selectedOp, selectedLeft, nextRight);
+                persistTaxRateExpression(selectedOp, selectedLeft, nextRight, loopConfig);
               }}
               className={inputClass}
             >
@@ -2021,12 +2272,13 @@ function TaxRateEditor({
           </div>
         </div>
       </div>
+      </div>
 
       <div className="rounded-lg bg-[#0b1324] px-3 py-2.5">
         <p className="mb-1 text-[11px] text-gray-400">Xem trước dữ liệu JSON</p>
         <pre className="overflow-x-auto text-xs text-cyan-300">
           {JSON.stringify(
-            composeTaxRateExpression(selectedOp, selectedLeft, selectedRight),
+            composeTaxRateExpression(selectedOp, selectedLeft, selectedRight, loopConfig),
             null,
             2,
           )}
@@ -2175,6 +2427,11 @@ function createDefaultVisualNode(
     case "foreach":
       return {
         foreach: "industry",
+        source: "revenues",
+        field: "Amount",
+        groupBy: "BusinessTypeId",
+        costSource: "",
+        costField: "",
         apply: { context: "group_amount" },
         reduce: "SUM",
       };
@@ -2649,7 +2906,42 @@ function VisualNodeEditor({
               </select>
             </div>
             <div>
-              <label className={labelClass}>Cách gộp kết quả</label>
+              <label className={labelClass}>Nguồn dữ liệu (source)</label>
+              <select
+                className={inputClass}
+                value={
+                  typeof node.source === "string" ? node.source : "revenues"
+                }
+                onChange={(e) => onChange({ ...node, source: e.target.value })}
+              >
+                <option value="revenues">revenues</option>
+                <option value="costs">costs</option>
+                <option value="gl_entries">gl_entries</option>
+                <option value="stock_movements">stock_movements</option>
+              </select>
+            </div>
+            <div>
+              <label className={labelClass}>Trường dữ liệu (field)</label>
+              <input
+                className={inputClass}
+                value={typeof node.field === "string" ? node.field : "Amount"}
+                onChange={(e) => onChange({ ...node, field: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className={labelClass}>Nhóm theo (groupBy)</label>
+              <input
+                className={inputClass}
+                value={
+                  typeof node.groupBy === "string"
+                    ? node.groupBy
+                    : "BusinessTypeId"
+                }
+                onChange={(e) => onChange({ ...node, groupBy: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className={labelClass}>Cách gộp kết quả (reduce)</label>
               <select
                 className={inputClass}
                 value={typeof node.reduce === "string" ? node.reduce : "SUM"}
@@ -2659,6 +2951,28 @@ function VisualNodeEditor({
                 <option value="MAX">MAX</option>
                 <option value="MIN">MIN</option>
               </select>
+            </div>
+            <div>
+              <label className={labelClass}>Nguồn chi phí (costSource)</label>
+              <select
+                className={inputClass}
+                value={
+                  typeof node.costSource === "string" ? node.costSource : ""
+                }
+                onChange={(e) => onChange({ ...node, costSource: e.target.value })}
+              >
+                <option value="">(Không dùng)</option>
+                <option value="costs">costs</option>
+                <option value="stock_movements">stock_movements</option>
+              </select>
+            </div>
+            <div>
+              <label className={labelClass}>Trường chi phí (costField)</label>
+              <input
+                className={inputClass}
+                value={typeof node.costField === "string" ? node.costField : ""}
+                onChange={(e) => onChange({ ...node, costField: e.target.value })}
+              />
             </div>
           </div>
           <VisualNodeEditor
