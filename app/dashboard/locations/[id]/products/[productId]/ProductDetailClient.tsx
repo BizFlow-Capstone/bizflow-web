@@ -1234,9 +1234,15 @@ export default function ProductDetailClient({
                           </span>
                         </div>
                       </motion.div>
-                    )}
-                  </AnimatePresence>
-                </div>
+                ) : priceSubTab === "costHistory" ? (
+                  <motion.div
+                    key="costHistory"
+                    initial={{ opacity: 0, y: 6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -6 }}
+                    transition={{ duration: 0.18 }}
+                    className="space-y-6"
+                  >
 
                 {historyWithTrend.length > 0 && (
                   <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm ring-1 ring-slate-900/5">
@@ -1313,7 +1319,74 @@ export default function ProductDetailClient({
                     </div>
                   </div>
                 )}
-              </div>
+                  </motion.div>
+                ) : (
+                  <motion.div
+                    key="policies"
+                    initial={{ opacity: 0, y: 6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -6 }}
+                    transition={{ duration: 0.18 }}
+                    className="space-y-6"
+                  >
+                    {isLoadingPolicies ? (
+                      <div className="flex h-56 items-center justify-center">
+                        <Loader2 className="h-7 w-7 animate-spin text-[#23C4C1]" />
+                      </div>
+                    ) : !pricePolicies || pricePolicies.saleItems.length === 0 ? (
+                      <div className="flex h-56 flex-col items-center justify-center gap-2 text-center">
+                        <Tag className="h-10 w-10 text-slate-300" />
+                        <p className="text-sm font-medium text-slate-600">Chưa có chính sách điều chỉnh giá</p>
+                      </div>
+                    ) : (
+                      pricePolicies.saleItems.map((si) => (
+                        <div key={si.saleItemId} className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                          <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50/60 px-5 py-4">
+                            <div>
+                              <h4 className="text-sm font-bold text-slate-900">{si.unit}</h4>
+                              <p className="text-xs text-slate-500">1 {si.unit} = {si.quantity} đơn vị cơ bản</p>
+                            </div>
+                            {si.pricePolicies.find((p) => p.isDefault) && (
+                              <span className="rounded-full border border-[#23C4C1]/30 bg-[#23C4C1]/10 px-3 py-1 text-sm font-bold text-[#0c7f7d]">
+                                {formatVnd(si.pricePolicies.find((p) => p.isDefault)!.price)}
+                              </span>
+                            )}
+                          </div>
+                          <div className="divide-y divide-slate-50">
+                            {[...si.pricePolicies]
+                              .sort((a, b) => b.productPricePolicyId - a.productPricePolicyId)
+                              .map((pp) => (
+                                <div key={pp.productPricePolicyId} className="flex items-center gap-4 px-5 py-3.5">
+                                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border">
+                                    {pp.isDefault ? (
+                                      <CheckCircle2 className="h-4 w-4 text-[#23C4C1]" />
+                                    ) : (
+                                      <Clock className="h-4 w-4 text-slate-300" />
+                                    )}
+                                  </div>
+                                  <div className="flex-1">
+                                    <div className="flex items-center gap-2">
+                                      <span className={`text-sm font-bold ${ pp.isDefault ? "text-slate-900" : "text-slate-500 line-through" }`}>
+                                        {formatVnd(pp.price)}
+                                      </span>
+                                      {pp.isDefault && (
+                                        <span className="rounded border border-[#23C4C1]/30 bg-[#23C4C1]/10 px-1.5 py-0.5 text-[10px] font-bold text-[#0c7f7d]">Hiện tại</span>
+                                      )}
+                                    </div>
+                                    <div className="mt-0.5 text-xs text-slate-400">
+                                      Từ {formatDateTime(pp.startAt ?? undefined)}
+                                      {pp.endAt ? ` → ${formatDateTime(pp.endAt)}` : " → nay"}
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
           )}
         </div>
