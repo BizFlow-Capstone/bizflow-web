@@ -39,6 +39,7 @@ import {
   getFormulaDetail,
   getMappableEntities,
   getMappableEntityDetail,
+  getTemplateVersionFormulas,
   updateFieldMappingForTesting,
   updateFormulaTesting,
   updateMappableEntity,
@@ -257,6 +258,13 @@ function asArray(value: unknown): Array<Record<string, unknown>> {
     (item): item is Record<string, unknown> =>
       !!item && typeof item === "object",
   );
+}
+
+function asStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => (typeof item === "string" ? item.trim() : ""))
+    .filter(Boolean);
 }
 
 function parsePreviewRowsPage(data: unknown): {
@@ -670,7 +678,6 @@ export default function VersionTab(props: VersionTabProps) {
   const effectiveFrom = asString(result?.effectiveFrom);
   const changeNotes = asString(result?.changeNotes);
   const templateVersionId = asNumber(result?.templateVersionId);
-  const templateId = asNumber(result?.templateId);
   const isActive = asBoolean(result?.isActive);
 
   const fieldMappings = asArray(result?.fieldMappings);
@@ -731,9 +738,27 @@ export default function VersionTab(props: VersionTabProps) {
     useState<BookSectionsMeta | null>(null);
   const [bookSectionsBusy, setBookSectionsBusy] = useState(false);
   const [bookSectionsError, setBookSectionsError] = useState("");
+  const [templateVersionFormulas, setTemplateVersionFormulas] = useState<
+    Array<Record<string, unknown>>
+  >([]);
+  const [templateVersionFormulasBusy, setTemplateVersionFormulasBusy] =
+    useState(false);
+  const [templateVersionFormulasError, setTemplateVersionFormulasError] =
+    useState("");
   const renderPreviewLoaderMainRef = useRef<HTMLDivElement | null>(null);
   const renderPreviewLoaderWizardRef = useRef<HTMLDivElement | null>(null);
   const renderPreviewCanAutoLoadRef = useRef(true);
+
+  const templateVersionFormulaItems = useMemo(() => {
+    return templateVersionFormulas.map((formula) => ({
+      formulaId: asNumber(formula.formulaId),
+      code: asString(formula.code),
+      name: asString(formula.name),
+      formulaType: asString(formula.formulaType),
+      isActive: asBoolean(formula.isActive),
+      usedByFieldCodes: asStringArray(formula.usedByFieldCodes),
+    }));
+  }, [templateVersionFormulas]);
 
   const renderPreviewSummaryMeta = useMemo(() => {
     const root = asRecord(renderPreviewResult);
@@ -1264,6 +1289,52 @@ export default function VersionTab(props: VersionTabProps) {
       disposed = true;
     };
   }, [selectedVersionId]);
+
+  useEffect(() => {
+    if (templateVersionId === null) {
+      setTemplateVersionFormulas([]);
+      setTemplateVersionFormulasError("");
+      setTemplateVersionFormulasBusy(false);
+      return;
+    }
+
+    const resolvedTemplateVersionId = templateVersionId as number;
+
+    let disposed = false;
+
+    async function loadTemplateVersionFormulas() {
+      setTemplateVersionFormulasBusy(true);
+      setTemplateVersionFormulasError("");
+
+      try {
+        const formulas = await getTemplateVersionFormulas(
+          resolvedTemplateVersionId,
+        );
+        if (!disposed) {
+          setTemplateVersionFormulas(formulas);
+        }
+      } catch (error) {
+        if (!disposed) {
+          setTemplateVersionFormulas([]);
+          setTemplateVersionFormulasError(
+            error instanceof Error
+              ? error.message
+              : "Không tải được danh sách formula của template version.",
+          );
+        }
+      } finally {
+        if (!disposed) {
+          setTemplateVersionFormulasBusy(false);
+        }
+      }
+    }
+
+    void loadTemplateVersionFormulas();
+
+    return () => {
+      disposed = true;
+    };
+  }, [templateVersionId]);
 
   useEffect(() => {
     const entityId = toNullableNumber(mappingDraft.sourceEntityId);
@@ -2445,6 +2516,79 @@ export default function VersionTab(props: VersionTabProps) {
                     {changeNotes || "Không có ghi chú."}
                   </p>
                 </div>
+              </div>
+
+              <div className="border-t px-5 py-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                    Công thức được sử dụng trong template version này
+                  </p>
+                  {templateVersionFormulasBusy ? (
+                    <span className="text-xs text-gray-500">Đang tải...</span>
+                  ) : null}
+                </div>
+
+                {templateVersionFormulasError ? (
+                  <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                    {templateVersionFormulasError}
+                  </div>
+                ) : null}
+
+                {!templateVersionFormulasBusy &&
+                templateVersionFormulaItems.length === 0 ? (
+                  <p className="mt-3 text-sm text-gray-500">
+                    Chưa có formula nào được gắn cho template version này.
+                  </p>
+                ) : null}
+
+                {templateVersionFormulaItems.length > 0 ? (
+                  <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+                    {templateVersionFormulaItems.map((formula) => (
+                      <div
+                        key={String(formula.formulaId ?? formula.code)}
+                        className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <p className="text-sm font-semibold text-gray-900">
+                              {formula.code || "—"}
+                            </p>
+                            <p className="mt-0.5 text-xs text-gray-600">
+                              {formula.name || "Không có tên formula"}
+                            </p>
+                          </div>
+                          <Badge
+                            variant="secondary"
+                            className={
+                              formula.isActive
+                                ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-50"
+                                : "bg-gray-100 text-gray-600 hover:bg-gray-100"
+                            }
+                          >
+                            {formula.formulaType || "Formula"}
+                          </Badge>
+                        </div>
+
+                        <div className="mt-3 flex flex-wrap gap-1.5">
+                          {formula.usedByFieldCodes.length > 0 ? (
+                            formula.usedByFieldCodes.map((fieldCode) => (
+                              <span
+                                key={`${formula.code}-${fieldCode}`}
+                                className="rounded-full bg-cyan-50 px-2 py-0.5 text-[11px] font-medium text-cyan-700"
+                              >
+                                {fieldCode}
+                              </span>
+                            ))
+                          ) : (
+                            <span className="text-xs text-gray-400">
+                              Chưa gắn field code
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
               </div>
             </CardContent>
           </Card>
