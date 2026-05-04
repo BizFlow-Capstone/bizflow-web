@@ -39,6 +39,7 @@ import {
   getFormulaDetail,
   getMappableEntities,
   getMappableEntityDetail,
+  getTemplateVersionFormulas,
   updateFieldMappingForTesting,
   updateFormulaTesting,
   updateMappableEntity,
@@ -227,8 +228,7 @@ const PREVIEW_LOCATION_ID = 6;
 const PREVIEW_PERIOD_ID = 2;
 const PREVIEW_GROUP_NUMBER = 1;
 const PREVIEW_TAX_METHOD = "method_1";
-// Batch size per request (BE cursor pagination), not total rows limit.
-const PREVIEW_BATCH_SIZE = 10;
+const PREVIEW_BATCH_SIZE = 1000;
 
 function parseVisibleFieldCodes(raw: string): string[] {
   if (!raw.trim()) return [];
@@ -257,6 +257,13 @@ function asArray(value: unknown): Array<Record<string, unknown>> {
     (item): item is Record<string, unknown> =>
       !!item && typeof item === "object",
   );
+}
+
+function asStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => (typeof item === "string" ? item.trim() : ""))
+    .filter(Boolean);
 }
 
 function parsePreviewRowsPage(data: unknown): {
@@ -670,7 +677,6 @@ export default function VersionTab(props: VersionTabProps) {
   const effectiveFrom = asString(result?.effectiveFrom);
   const changeNotes = asString(result?.changeNotes);
   const templateVersionId = asNumber(result?.templateVersionId);
-  const templateId = asNumber(result?.templateId);
   const isActive = asBoolean(result?.isActive);
 
   const fieldMappings = asArray(result?.fieldMappings);
@@ -731,9 +737,27 @@ export default function VersionTab(props: VersionTabProps) {
     useState<BookSectionsMeta | null>(null);
   const [bookSectionsBusy, setBookSectionsBusy] = useState(false);
   const [bookSectionsError, setBookSectionsError] = useState("");
+  const [templateVersionFormulas, setTemplateVersionFormulas] = useState<
+    Array<Record<string, unknown>>
+  >([]);
+  const [templateVersionFormulasBusy, setTemplateVersionFormulasBusy] =
+    useState(false);
+  const [templateVersionFormulasError, setTemplateVersionFormulasError] =
+    useState("");
   const renderPreviewLoaderMainRef = useRef<HTMLDivElement | null>(null);
   const renderPreviewLoaderWizardRef = useRef<HTMLDivElement | null>(null);
   const renderPreviewCanAutoLoadRef = useRef(true);
+
+  const templateVersionFormulaItems = useMemo(() => {
+    return templateVersionFormulas.map((formula) => ({
+      formulaId: asNumber(formula.formulaId),
+      code: asString(formula.code),
+      name: asString(formula.name),
+      formulaType: asString(formula.formulaType),
+      isActive: asBoolean(formula.isActive),
+      usedByFieldCodes: asStringArray(formula.usedByFieldCodes),
+    }));
+  }, [templateVersionFormulas]);
 
   const renderPreviewSummaryMeta = useMemo(() => {
     const root = asRecord(renderPreviewResult);
@@ -1266,6 +1290,52 @@ export default function VersionTab(props: VersionTabProps) {
   }, [selectedVersionId]);
 
   useEffect(() => {
+    if (templateVersionId === null) {
+      setTemplateVersionFormulas([]);
+      setTemplateVersionFormulasError("");
+      setTemplateVersionFormulasBusy(false);
+      return;
+    }
+
+    const resolvedTemplateVersionId = templateVersionId as number;
+
+    let disposed = false;
+
+    async function loadTemplateVersionFormulas() {
+      setTemplateVersionFormulasBusy(true);
+      setTemplateVersionFormulasError("");
+
+      try {
+        const formulas = await getTemplateVersionFormulas(
+          resolvedTemplateVersionId,
+        );
+        if (!disposed) {
+          setTemplateVersionFormulas(formulas);
+        }
+      } catch (error) {
+        if (!disposed) {
+          setTemplateVersionFormulas([]);
+          setTemplateVersionFormulasError(
+            error instanceof Error
+              ? error.message
+              : "Không tải được danh sách formula của template version.",
+          );
+        }
+      } finally {
+        if (!disposed) {
+          setTemplateVersionFormulasBusy(false);
+        }
+      }
+    }
+
+    void loadTemplateVersionFormulas();
+
+    return () => {
+      disposed = true;
+    };
+  }, [templateVersionId]);
+
+  useEffect(() => {
     const entityId = toNullableNumber(mappingDraft.sourceEntityId);
     if (!entityId) return;
 
@@ -1669,7 +1739,7 @@ export default function VersionTab(props: VersionTabProps) {
         description: createTemplateForm.description.trim() || undefined,
         applicableGroups,
         applicableMethods:
-          applicableMethods.length > 0 ? applicableMethods : undefined,
+          applicableMethods.length > 0 ? applicableMethods : null,
         dataSourceType:
           createTemplateForm.dataSourceType as CreateTemplateRequest["dataSourceType"],
         initialVersionLabel:
@@ -1711,9 +1781,14 @@ export default function VersionTab(props: VersionTabProps) {
         throw new Error("Version Label không được để trống.");
       }
 
+      const effectiveFrom = createVersionForm.effectiveFrom.trim();
+      if (!effectiveFrom) {
+        throw new Error("Hiệu lực từ không được để trống.");
+      }
+
       const payload: CreateTemplateVersionRequest = {
         versionLabel,
-        effectiveFrom: createVersionForm.effectiveFrom.trim() || undefined,
+        effectiveFrom,
         changeNotes: createVersionForm.changeNotes.trim() || undefined,
       };
 
@@ -1755,6 +1830,11 @@ export default function VersionTab(props: VersionTabProps) {
   }
 
   async function handleSaveTemplateMetadata() {
+    if (!props.tvEffective.trim()) {
+      setWizardError("Hiệu lực từ không được để trống.");
+      return;
+    }
+
     setWizardBusy(true);
     setWizardError("");
     try {
@@ -2088,7 +2168,7 @@ export default function VersionTab(props: VersionTabProps) {
           <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
             <div className="space-y-1">
               <label className="text-xs font-medium text-gray-600">
-                Template code (VD: S1A)
+                Mã template (VD: S1A)
               </label>
               <input
                 value={createTemplateForm.templateCode}
@@ -2103,7 +2183,7 @@ export default function VersionTab(props: VersionTabProps) {
             </div>
             <div className="space-y-1">
               <label className="text-xs font-medium text-gray-600">
-                Template name
+                Tên template
               </label>
               <input
                 value={createTemplateForm.name}
@@ -2118,9 +2198,9 @@ export default function VersionTab(props: VersionTabProps) {
             </div>
             <div className="space-y-1">
               <label className="text-xs font-medium text-gray-600">
-                Applicable groups (VD: 1,2)
+                Nhóm áp dụng (VD: 1,2)
               </label>
-              <input
+              <select
                 value={createTemplateForm.applicableGroups}
                 onChange={(e) =>
                   setCreateTemplateForm((prev) => ({
@@ -2129,13 +2209,19 @@ export default function VersionTab(props: VersionTabProps) {
                   }))
                 }
                 className="w-full rounded-lg border bg-white px-3 py-2 text-sm"
-              />
+              >
+                <option value="1">Nhóm 1</option>
+                <option value="2">Nhóm 2</option>
+                <option value="3">Nhóm 3</option>
+                <option value="4">Nhóm 4</option>
+              </select>
             </div>
             <div className="space-y-1">
               <label className="text-xs font-medium text-gray-600">
-                Applicable methods (VD: method_1)
+                Phương pháp kế toán áp dụng
               </label>
-              <input
+              {/* //dùng select ở đây để có được value */}
+              <select
                 value={createTemplateForm.applicableMethods}
                 onChange={(e) =>
                   setCreateTemplateForm((prev) => ({
@@ -2144,11 +2230,15 @@ export default function VersionTab(props: VersionTabProps) {
                   }))
                 }
                 className="w-full rounded-lg border bg-white px-3 py-2 text-sm"
-              />
+              >
+                <option value="">Miễn Thuế</option>
+                <option value="method_1">Tính theo cách 1</option>
+                <option value="method_2">Tính theo cách 2</option>
+              </select>
             </div>
             <div className="space-y-1">
               <label className="text-xs font-medium text-gray-600">
-                Data source type
+                Loại dữ liệu nguồn
               </label>
               <select
                 value={createTemplateForm.dataSourceType}
@@ -2160,15 +2250,21 @@ export default function VersionTab(props: VersionTabProps) {
                 }
                 className="w-full rounded-lg border bg-white px-3 py-2 text-sm"
               >
-                <option value="revenues">revenues</option>
-                <option value="revenue_cost">revenue_cost</option>
-                <option value="gl_entries">gl_entries</option>
-                <option value="stock_movements">stock_movements</option>
+                <option value="revenues">revenues - Doanh thu</option>
+                <option value="revenue_cost">
+                  revenue_cost - Chi phí doanh thu
+                </option>
+                <option value="gl_entries">
+                  gl_entries - Bút toán kế toán
+                </option>
+                <option value="stock_movements">
+                  stock_movements - Di chuyển hàng tồn kho
+                </option>
               </select>
             </div>
             <div className="space-y-1">
               <label className="text-xs font-medium text-gray-600">
-                Initial version label
+                Label phiên bản đầu tiên (VD: v1-draft)
               </label>
               <input
                 value={createTemplateForm.initialVersionLabel}
@@ -2184,9 +2280,7 @@ export default function VersionTab(props: VersionTabProps) {
           </div>
 
           <div className="space-y-1">
-            <label className="text-xs font-medium text-gray-600">
-              Description
-            </label>
+            <label className="text-xs font-medium text-gray-600">Mô tả</label>
             <textarea
               value={createTemplateForm.description}
               onChange={(e) =>
@@ -2245,7 +2339,7 @@ export default function VersionTab(props: VersionTabProps) {
           <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
             <div className="space-y-1">
               <label className="text-xs font-medium text-gray-600">
-                Template
+                Chọn template
               </label>
               <select
                 value={createVersionForm.templateId}
@@ -2267,7 +2361,7 @@ export default function VersionTab(props: VersionTabProps) {
             </div>
             <div className="space-y-1">
               <label className="text-xs font-medium text-gray-600">
-                Version label (VD: v2-draft)
+                Label phiên bản (VD: v2-draft)
               </label>
               <input
                 value={createVersionForm.versionLabel}
@@ -2282,7 +2376,7 @@ export default function VersionTab(props: VersionTabProps) {
             </div>
             <div className="space-y-1">
               <label className="text-xs font-medium text-gray-600">
-                Effective from
+                Hiệu lực từ
               </label>
               <input
                 type="date"
@@ -2294,13 +2388,14 @@ export default function VersionTab(props: VersionTabProps) {
                   }))
                 }
                 className="w-full rounded-lg border bg-white px-3 py-2 text-sm"
+                required
               />
             </div>
           </div>
 
           <div className="space-y-1">
             <label className="text-xs font-medium text-gray-600">
-              Change notes
+              Ghi chú thay đổi
             </label>
             <textarea
               value={createVersionForm.changeNotes}
@@ -2390,8 +2485,8 @@ export default function VersionTab(props: VersionTabProps) {
                   icon={FileText}
                 />
                 <MetricCard
-                  label="Template ID"
-                  value={templateId ?? "—"}
+                  label="Template"
+                  value={templateCode ?? "—"}
                   icon={Layers}
                 />
                 <MetricCard
@@ -2421,6 +2516,79 @@ export default function VersionTab(props: VersionTabProps) {
                   </p>
                 </div>
               </div>
+
+              <div className="border-t px-5 py-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                    Công thức được sử dụng trong template version này
+                  </p>
+                  {templateVersionFormulasBusy ? (
+                    <span className="text-xs text-gray-500">Đang tải...</span>
+                  ) : null}
+                </div>
+
+                {templateVersionFormulasError ? (
+                  <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                    {templateVersionFormulasError}
+                  </div>
+                ) : null}
+
+                {!templateVersionFormulasBusy &&
+                templateVersionFormulaItems.length === 0 ? (
+                  <p className="mt-3 text-sm text-gray-500">
+                    Chưa có formula nào được gắn cho template version này.
+                  </p>
+                ) : null}
+
+                {templateVersionFormulaItems.length > 0 ? (
+                  <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+                    {templateVersionFormulaItems.map((formula) => (
+                      <div
+                        key={String(formula.formulaId ?? formula.code)}
+                        className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <p className="text-sm font-semibold text-gray-900">
+                              {formula.code || "—"}
+                            </p>
+                            <p className="mt-0.5 text-xs text-gray-600">
+                              {formula.name || "Không có tên formula"}
+                            </p>
+                          </div>
+                          <Badge
+                            variant="secondary"
+                            className={
+                              formula.isActive
+                                ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-50"
+                                : "bg-gray-100 text-gray-600 hover:bg-gray-100"
+                            }
+                          >
+                            {formula.formulaType || "Formula"}
+                          </Badge>
+                        </div>
+
+                        <div className="mt-3 flex flex-wrap gap-1.5">
+                          {formula.usedByFieldCodes.length > 0 ? (
+                            formula.usedByFieldCodes.map((fieldCode) => (
+                              <span
+                                key={`${formula.code}-${fieldCode}`}
+                                className="rounded-full bg-cyan-50 px-2 py-0.5 text-[11px] font-medium text-cyan-700"
+                              >
+                                {fieldCode}
+                              </span>
+                            ))
+                          ) : (
+                            <span className="text-xs text-gray-400">
+                              Chưa gắn field code
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
             </CardContent>
           </Card>
 
@@ -2438,11 +2606,7 @@ export default function VersionTab(props: VersionTabProps) {
                         Version active không được sửa trực tiếp.
                       </p>
                       <p className="text-xs text-emerald-700">
-                        Flow đúng theo BE: clone ra draft mới, mở wizard step,
-                        rà soát template, mappings, rows, formulas và entities
-                        {isConsultantMode
-                          ? " rồi gửi Admin duyệt và activate."
-                          : " rồi mới activate draft."}
+                        Yêu cầu phải tạo bản draft mới để chỉnh sửa.
                       </p>
                       <Button
                         size="sm"
@@ -2510,9 +2674,7 @@ export default function VersionTab(props: VersionTabProps) {
 
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-base">
-                Sổ mẫu (Full Structure + Preview Data)
-              </CardTitle>
+              <CardTitle className="text-base">Sổ mẫu</CardTitle>
             </CardHeader>
             <CardContent>
               {sampleBookColumns.length === 0 ? (
@@ -2579,11 +2741,6 @@ export default function VersionTab(props: VersionTabProps) {
         <DialogContent className="max-h-[92vh] overflow-hidden p-0 sm:max-w-6xl">
           <DialogHeader className="border-b px-6 py-5">
             <DialogTitle>Template Draft Flow</DialogTitle>
-            <DialogDescription>
-              Clone xong sẽ đi tuần tự: chỉnh template, mappings, rows rồi
-              review trước khi activate. Formulas và entities được quản lý ở tab
-              riêng.
-            </DialogDescription>
           </DialogHeader>
 
           <div className="border-b px-6 py-4">
@@ -2637,7 +2794,7 @@ export default function VersionTab(props: VersionTabProps) {
                 <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
                   <div>
                     <label className="mb-1 block text-xs font-medium text-gray-600">
-                      Version label
+                      Label phiên bản
                     </label>
                     <input
                       value={props.tvLabel}
@@ -2647,19 +2804,20 @@ export default function VersionTab(props: VersionTabProps) {
                   </div>
                   <div>
                     <label className="mb-1 block text-xs font-medium text-gray-600">
-                      Effective from
+                      Hiệu lực từ
                     </label>
                     <input
                       value={props.tvEffective}
                       onChange={(e) => props.setTvEffective(e.target.value)}
                       type="date"
                       className="w-full rounded-lg border px-3 py-2 text-sm"
+                      required
                     />
                   </div>
                 </div>
                 <div>
                   <label className="mb-1 block text-xs font-medium text-gray-600">
-                    Change notes
+                    Ghi chú thay đổi
                   </label>
                   <textarea
                     value={props.tvNotes}
@@ -2675,7 +2833,7 @@ export default function VersionTab(props: VersionTabProps) {
                     disabled={wizardBusy}
                   >
                     <Save className="mr-1.5 h-3.5 w-3.5" />
-                    Lưu metadata draft
+                    Lưu bản draft
                   </Button>
                 </div>
               </div>
@@ -3618,12 +3776,12 @@ export default function VersionTab(props: VersionTabProps) {
                     icon={Layers}
                   />
                   <MetricCard
-                    label="Formulas linked"
+                    label="Số Công Thức Đã Dùng"
                     value={linkedFormulaIds.length}
                     icon={Sparkles}
                   />
                   <MetricCard
-                    label="Entities linked"
+                    label="Số Entities Đã Dùng"
                     value={linkedEntityIds.length}
                     icon={Database}
                   />
@@ -3654,9 +3812,7 @@ export default function VersionTab(props: VersionTabProps) {
 
                 <Card>
                   <CardHeader>
-                    <CardTitle className="text-base">
-                      Mẫu sổ preview (Full Structure + Preview Data)
-                    </CardTitle>
+                    <CardTitle className="text-base">Xem Lại Mẫu Sổ</CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-4">
                     {sampleBookColumns.length === 0 ? (

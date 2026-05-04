@@ -53,7 +53,7 @@ export interface CreateTemplateRequest {
   name: string;
   description?: string;
   applicableGroups: number[];
-  applicableMethods?: string[];
+  applicableMethods?: string[] | null;
   dataSourceType:
     | "revenues"
     | "revenue_cost"

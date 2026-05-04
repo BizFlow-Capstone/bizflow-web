@@ -10,6 +10,7 @@ export interface AccountingTemplateSummary {
   templateId: number;
   templateCode: string;
   name: string;
+  description?: string;
   isActive: boolean;
   versions: AccountingVersionSummary[];
 }

@@ -353,14 +353,14 @@ export default function AdminAccountsClient() {
             </div>
 
             <div className="space-y-1.5">
-              <Label htmlFor="users-role-filter">Role</Label>
+              <Label htmlFor="users-role-filter">Vai trò</Label>
               <Select value={roleFilter} onValueChange={handleRoleFilterChange}>
                 <SelectTrigger id="users-role-filter" className="w-full">
                   <Filter className="w-3.5 h-3.5 mr-1.5 text-gray-400" />
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="ALL">Tất cả role</SelectItem>
+                  <SelectItem value="ALL">Tất cả vai trò</SelectItem>
                   <SelectItem value="User">User</SelectItem>
                   <SelectItem value="Consultant">Consultant</SelectItem>
                 </SelectContent>
@@ -374,7 +374,7 @@ export default function AdminAccountsClient() {
               <TableRow>
                 <TableHead>Người dùng</TableHead>
                 <TableHead>SĐT</TableHead>
-                <TableHead>Role</TableHead>
+                <TableHead>Vai trò</TableHead>
                 <TableHead>Ngày tạo</TableHead>
                 <TableHead>Login cuối</TableHead>
                 <TableHead>Trạng thái</TableHead>
@@ -585,8 +585,6 @@ export default function AdminAccountsClient() {
             <DialogTitle>Tạo tài khoản consultant</DialogTitle>
             <DialogDescription>
               Hệ thống sẽ tạo tài khoản role consultant và gửi email chào mừng.
-              Khi đăng nhập lần đầu, consultant sẽ được yêu cầu đổi mật khẩu
-              mới.
             </DialogDescription>
           </DialogHeader>
 

@@ -1628,12 +1628,18 @@ function TaxRateEditor({
   const loopConfig = useMemo(() => {
     return {
       foreach: typeof parsedRoot.foreach === "string" ? parsedRoot.foreach : "",
-      source: typeof parsedRoot.source === "string" ? parsedRoot.source : "revenues",
+      source:
+        typeof parsedRoot.source === "string" ? parsedRoot.source : "revenues",
       field: typeof parsedRoot.field === "string" ? parsedRoot.field : "Amount",
-      groupBy: typeof parsedRoot.groupBy === "string" ? parsedRoot.groupBy : "BusinessTypeId",
+      groupBy:
+        typeof parsedRoot.groupBy === "string"
+          ? parsedRoot.groupBy
+          : "BusinessTypeId",
       reduce: typeof parsedRoot.reduce === "string" ? parsedRoot.reduce : "SUM",
-      costSource: typeof parsedRoot.costSource === "string" ? parsedRoot.costSource : "",
-      costField: typeof parsedRoot.costField === "string" ? parsedRoot.costField : "",
+      costSource:
+        typeof parsedRoot.costSource === "string" ? parsedRoot.costSource : "",
+      costField:
+        typeof parsedRoot.costField === "string" ? parsedRoot.costField : "",
     };
   }, [parsedRoot]);
 
@@ -1769,7 +1775,7 @@ function TaxRateEditor({
     nextOp: string,
     nextLeft: string,
     nextRight: string,
-    nextLoopConfig: Record<string, string>
+    nextLoopConfig: Record<string, string>,
   ): Record<string, unknown> {
     const apply: Record<string, unknown> = {};
 
@@ -1801,12 +1807,10 @@ function TaxRateEditor({
       field: nextLoopConfig.field,
       groupBy: nextLoopConfig.groupBy,
       costSource: nextLoopConfig.costSource,
-    costField: nextLoopConfig.costField,
+      costField: nextLoopConfig.costField,
       reduce: nextLoopConfig.reduce,
-      apply
+      apply,
     };
-    
-   
 
     return result;
   }
@@ -1815,7 +1819,7 @@ function TaxRateEditor({
     nextOp: string,
     nextLeftNode: Record<string, unknown> | null,
     nextRightNode: Record<string, unknown> | null,
-    nextLoopConfig: Record<string, string>
+    nextLoopConfig: Record<string, string>,
   ) {
     const apply: Record<string, unknown> = {};
 
@@ -1847,7 +1851,7 @@ function TaxRateEditor({
       field: nextLoopConfig.field,
       groupBy: nextLoopConfig.groupBy,
       reduce: nextLoopConfig.reduce,
-      apply
+      apply,
     };
 
     if (nextLoopConfig.costSource) root.costSource = nextLoopConfig.costSource;
@@ -1858,21 +1862,36 @@ function TaxRateEditor({
 
   function updateLeftNode(nextLeftNode: Record<string, unknown>) {
     const rightNode = resolveNodeFromPreset(selectedRight, rightFallback);
-    persistTaxRateExpressionWithNodes(selectedOp, nextLeftNode, rightNode, loopConfig);
+    persistTaxRateExpressionWithNodes(
+      selectedOp,
+      nextLeftNode,
+      rightNode,
+      loopConfig,
+    );
   }
 
   function updateRightNode(nextRightNode: Record<string, unknown>) {
     const leftNode = resolveNodeFromPreset(selectedLeft, leftFallback);
-    persistTaxRateExpressionWithNodes(selectedOp, leftNode, nextRightNode, loopConfig);
+    persistTaxRateExpressionWithNodes(
+      selectedOp,
+      leftNode,
+      nextRightNode,
+      loopConfig,
+    );
   }
 
   function persistTaxRateExpression(
     nextOp: string,
     nextLeft: string,
     nextRight: string,
-    nextLoopConfig: Record<string, string>
+    nextLoopConfig: Record<string, string>,
   ) {
-    const next = composeTaxRateExpression(nextOp, nextLeft, nextRight, nextLoopConfig);
+    const next = composeTaxRateExpression(
+      nextOp,
+      nextLeft,
+      nextRight,
+      nextLoopConfig,
+    );
     if (Object.keys(next.apply as Record<string, unknown>).length === 0) {
       setExprJson("{}");
       return;
@@ -1888,20 +1907,32 @@ function TaxRateEditor({
       <div className="rounded-lg border border-cyan-100 bg-cyan-50 px-3 py-2 text-xs text-cyan-900">
         <div className="flex items-start justify-between gap-2">
           <p>
-            Chỉnh thuế suất bằng UI: Chọn cấu hình vòng lặp và phép toán. Rê vào icon trợ giúp để xem chi tiết.
+            Chỉnh thuế suất bằng UI: Chọn cấu hình vòng lặp và phép toán. Rê vào
+            icon trợ giúp để xem chi tiết.
           </p>
           <FieldHint hint="Lookup thuế suất: trả về tỷ lệ thuế (0.01, 0.03...), chưa phải số tiền. EXTERNAL_LOOKUP: lấy số đầu kỳ hoặc giá trị đã định nghĩa sẵn. MAX(0,...): chặn âm để tránh thuế âm." />
         </div>
       </div>
 
       <div className="rounded-lg border border-slate-200 bg-white p-4 space-y-4">
-        <h3 className="text-sm font-semibold text-slate-800">1. Cấu hình vòng lặp (Loop Configuration)</h3>
+        <h3 className="text-sm font-semibold text-slate-800">
+          1. Cấu hình vòng lặp (Loop Configuration)
+        </h3>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <div>
-            <label className="mb-1 block text-xs font-medium text-gray-600">Lặp theo (foreach)</label>
+            <label className="mb-1 block text-xs font-medium text-gray-600">
+              Lặp theo (foreach)
+            </label>
             <select
               value={loopConfig.foreach}
-              onChange={(e) => persistTaxRateExpression(selectedOp, selectedLeft, selectedRight, { ...loopConfig, foreach: e.target.value })}
+              onChange={(e) =>
+                persistTaxRateExpression(
+                  selectedOp,
+                  selectedLeft,
+                  selectedRight,
+                  { ...loopConfig, foreach: e.target.value },
+                )
+              }
               className={inputClass}
             >
               <option value="">Không lặp (None)</option>
@@ -1910,14 +1941,23 @@ function TaxRateEditor({
               <option value="costs">costs (Chi phí)</option>
             </select>
           </div>
-          
+
           {loopConfig.foreach ? (
             <>
               <div>
-                <label className="mb-1 block text-xs font-medium text-gray-600">Nguồn dữ liệu (source)</label>
+                <label className="mb-1 block text-xs font-medium text-gray-600">
+                  Nguồn dữ liệu (source)
+                </label>
                 <select
                   value={loopConfig.source}
-                  onChange={(e) => persistTaxRateExpression(selectedOp, selectedLeft, selectedRight, { ...loopConfig, source: e.target.value })}
+                  onChange={(e) =>
+                    persistTaxRateExpression(
+                      selectedOp,
+                      selectedLeft,
+                      selectedRight,
+                      { ...loopConfig, source: e.target.value },
+                    )
+                  }
                   className={inputClass}
                 >
                   <option value="revenues">revenues (Doanh thu)</option>
@@ -1927,30 +1967,57 @@ function TaxRateEditor({
                 </select>
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium text-gray-600">Trường dữ liệu (field)</label>
+                <label className="mb-1 block text-xs font-medium text-gray-600">
+                  Trường dữ liệu (field)
+                </label>
                 <input
                   type="text"
                   value={loopConfig.field}
-                  onChange={(e) => persistTaxRateExpression(selectedOp, selectedLeft, selectedRight, { ...loopConfig, field: e.target.value })}
+                  onChange={(e) =>
+                    persistTaxRateExpression(
+                      selectedOp,
+                      selectedLeft,
+                      selectedRight,
+                      { ...loopConfig, field: e.target.value },
+                    )
+                  }
                   className={inputClass}
                   placeholder="VD: Amount"
                 />
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium text-gray-600">Nhóm theo (groupBy)</label>
+                <label className="mb-1 block text-xs font-medium text-gray-600">
+                  Nhóm theo (groupBy)
+                </label>
                 <input
                   type="text"
                   value={loopConfig.groupBy}
-                  onChange={(e) => persistTaxRateExpression(selectedOp, selectedLeft, selectedRight, { ...loopConfig, groupBy: e.target.value })}
+                  onChange={(e) =>
+                    persistTaxRateExpression(
+                      selectedOp,
+                      selectedLeft,
+                      selectedRight,
+                      { ...loopConfig, groupBy: e.target.value },
+                    )
+                  }
                   className={inputClass}
                   placeholder="VD: BusinessTypeId"
                 />
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium text-gray-600">Gộp kết quả (reduce)</label>
+                <label className="mb-1 block text-xs font-medium text-gray-600">
+                  Gộp kết quả (reduce)
+                </label>
                 <select
                   value={loopConfig.reduce}
-                  onChange={(e) => persistTaxRateExpression(selectedOp, selectedLeft, selectedRight, { ...loopConfig, reduce: e.target.value })}
+                  onChange={(e) =>
+                    persistTaxRateExpression(
+                      selectedOp,
+                      selectedLeft,
+                      selectedRight,
+                      { ...loopConfig, reduce: e.target.value },
+                    )
+                  }
                   className={inputClass}
                 >
                   <option value="SUM">SUM</option>
@@ -1959,10 +2026,19 @@ function TaxRateEditor({
                 </select>
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium text-gray-600">Nguồn chi phí (costSource)</label>
+                <label className="mb-1 block text-xs font-medium text-gray-600">
+                  Nguồn chi phí (costSource)
+                </label>
                 <select
                   value={loopConfig.costSource}
-                  onChange={(e) => persistTaxRateExpression(selectedOp, selectedLeft, selectedRight, { ...loopConfig, costSource: e.target.value })}
+                  onChange={(e) =>
+                    persistTaxRateExpression(
+                      selectedOp,
+                      selectedLeft,
+                      selectedRight,
+                      { ...loopConfig, costSource: e.target.value },
+                    )
+                  }
                   className={inputClass}
                 >
                   <option value="">(Không dùng)</option>
@@ -1971,11 +2047,20 @@ function TaxRateEditor({
                 </select>
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium text-gray-600">Trường chi phí (costField)</label>
+                <label className="mb-1 block text-xs font-medium text-gray-600">
+                  Trường chi phí (costField)
+                </label>
                 <input
                   type="text"
                   value={loopConfig.costField}
-                  onChange={(e) => persistTaxRateExpression(selectedOp, selectedLeft, selectedRight, { ...loopConfig, costField: e.target.value })}
+                  onChange={(e) =>
+                    persistTaxRateExpression(
+                      selectedOp,
+                      selectedLeft,
+                      selectedRight,
+                      { ...loopConfig, costField: e.target.value },
+                    )
+                  }
                   className={inputClass}
                   placeholder="VD: Amount"
                 />
@@ -1986,7 +2071,9 @@ function TaxRateEditor({
       </div>
 
       <div className="rounded-lg border border-slate-200 bg-white p-4 space-y-4">
-        <h3 className="text-sm font-semibold text-slate-800">2. Tính toán giá trị (Apply Expression)</h3>
+        <h3 className="text-sm font-semibold text-slate-800">
+          2. Tính toán giá trị (Apply Expression)
+        </h3>
         <div className="grid grid-cols-1 gap-3">
           <div>
             <label className="mb-1 block text-xs font-medium text-gray-600">
@@ -1996,7 +2083,12 @@ function TaxRateEditor({
               value={selectedOp}
               onChange={(event) => {
                 const nextOp = event.target.value;
-                persistTaxRateExpression(nextOp, selectedLeft, selectedRight, loopConfig);
+                persistTaxRateExpression(
+                  nextOp,
+                  selectedLeft,
+                  selectedRight,
+                  loopConfig,
+                );
               }}
               className={inputClass}
             >
@@ -2009,276 +2101,294 @@ function TaxRateEditor({
             </select>
           </div>
 
-        <div className="flex items-center gap-2">
-          <div className="w-1/2">
-            <label className="mb-1 block text-xs font-medium text-gray-600">
-              Vế trái
-            </label>
-            <select
-              value={selectedLeft}
-              onChange={(event) => {
-                const nextLeft = resolveCustomMaxZeroSubtractPreset(
-                  "left",
-                  event.target.value,
-                );
-                persistTaxRateExpression(selectedOp, nextLeft, selectedRight, loopConfig);
-              }}
-              className={inputClass}
-            >
-              <option value="">none</option>
-              {selectedLeft === "__UNSUPPORTED__" ? (
-                <option value="__UNSUPPORTED__">
-                  Giá trị hiện tại chưa hỗ trợ UI
-                </option>
-              ) : null}
-
-              <optgroup label="Lookup thuế suất">
-                {TAX_TYPE_OPTIONS.map((item) => (
-                  <option key={item.value} value={`LOOKUP:${item.value}`}>
-                    TaxRate {item.label}
+          <div className="flex items-center gap-2">
+            <div className="w-1/2">
+              <label className="mb-1 block text-xs font-medium text-gray-600">
+                Vế trái
+              </label>
+              <select
+                value={selectedLeft}
+                onChange={(event) => {
+                  const nextLeft = resolveCustomMaxZeroSubtractPreset(
+                    "left",
+                    event.target.value,
+                  );
+                  persistTaxRateExpression(
+                    selectedOp,
+                    nextLeft,
+                    selectedRight,
+                    loopConfig,
+                  );
+                }}
+                className={inputClass}
+              >
+                <option value="">none</option>
+                {selectedLeft === "__UNSUPPORTED__" ? (
+                  <option value="__UNSUPPORTED__">
+                    Giá trị hiện tại chưa hỗ trợ UI
                   </option>
-                ))}
-              </optgroup>
+                ) : null}
 
-              <optgroup label="Công thức EXTERNAL_LOOKUP">
-                {externalLookupFormulas.length > 0 ? (
-                  externalLookupFormulas.map((formula) => {
+                <optgroup label="Lookup thuế suất">
+                  {TAX_TYPE_OPTIONS.map((item) => (
+                    <option key={item.value} value={`LOOKUP:${item.value}`}>
+                      TaxRate {item.label}
+                    </option>
+                  ))}
+                </optgroup>
+
+                <optgroup label="Công thức EXTERNAL_LOOKUP">
+                  {externalLookupFormulas.length > 0 ? (
+                    externalLookupFormulas.map((formula) => {
+                      const code = String(formula.code).trim();
+                      return (
+                        <option
+                          key={`ext-${formula.formulaId}`}
+                          value={`REF:${code}`}
+                        >
+                          {code} - {formula.name}
+                        </option>
+                      );
+                    })
+                  ) : (
+                    <option value="" disabled>
+                      Chưa có công thức EXTERNAL_LOOKUP
+                    </option>
+                  )}
+                </optgroup>
+
+                <optgroup label="Hàm chuẩn">
+                  {maxZeroRefPresets.length > 0 ? (
+                    maxZeroRefPresets.map((item) => (
+                      <option key={`max-left-${item.value}`} value={item.value}>
+                        {item.label}
+                      </option>
+                    ))
+                  ) : (
+                    <option value="" disabled>
+                      Chưa có công thức để tạo MAX(0, REF)
+                    </option>
+                  )}
+                </optgroup>
+
+                <optgroup label="Mẫu linh động">
+                  <option value={MAX0_SUB_REF_LIT_CUSTOM}>
+                    MAX(0, REF - threshold) (dùng input)
+                  </option>
+                  {leftMaxZeroSubtract ? (
+                    <option value={selectedLeft}>
+                      {formatMaxZeroSubtractLabel(selectedLeft)}
+                    </option>
+                  ) : null}
+                </optgroup>
+
+                <optgroup label="Công thức tham chiếu">
+                  {referenceFormulas.map((formula) => {
                     const code = String(formula.code).trim();
                     return (
                       <option
-                        key={`ext-${formula.formulaId}`}
+                        key={`ref-${formula.formulaId}`}
                         value={`REF:${code}`}
                       >
                         {code} - {formula.name}
                       </option>
                     );
-                  })
-                ) : (
-                  <option value="" disabled>
-                    Chưa có công thức EXTERNAL_LOOKUP
-                  </option>
-                )}
-              </optgroup>
+                  })}
+                </optgroup>
 
-              <optgroup label="Hàm chuẩn">
-                {maxZeroRefPresets.length > 0 ? (
-                  maxZeroRefPresets.map((item) => (
-                    <option key={`max-left-${item.value}`} value={item.value}>
-                      {item.label}
+                <optgroup label="Giá trị cố định">
+                  <option value="LITERAL:0">0</option>
+                  <option value="LITERAL:1">1</option>
+                </optgroup>
+
+                <optgroup label="Biến ngữ cảnh">
+                  {TAX_RATE_CONTEXT_OPTIONS.map((contextKey) => (
+                    <option key={contextKey} value={`CONTEXT:${contextKey}`}>
+                      {contextKey}
                     </option>
-                  ))
-                ) : (
-                  <option value="" disabled>
-                    Chưa có công thức để tạo MAX(0, REF)
-                  </option>
-                )}
-              </optgroup>
+                  ))}
+                </optgroup>
+              </select>
 
-              <optgroup label="Mẫu linh động">
-                <option value={MAX0_SUB_REF_LIT_CUSTOM}>
-                  MAX(0, REF - threshold) (dùng input)
-                </option>
-                {leftMaxZeroSubtract ? (
-                  <option value={selectedLeft}>
-                    {formatMaxZeroSubtractLabel(selectedLeft)}
-                  </option>
-                ) : null}
-              </optgroup>
-
-              <optgroup label="Công thức tham chiếu">
-                {referenceFormulas.map((formula) => {
-                  const code = String(formula.code).trim();
-                  return (
-                    <option
-                      key={`ref-${formula.formulaId}`}
-                      value={`REF:${code}`}
-                    >
-                      {code} - {formula.name}
-                    </option>
-                  );
-                })}
-              </optgroup>
-
-              <optgroup label="Giá trị cố định">
-                <option value="LITERAL:0">0</option>
-                <option value="LITERAL:1">1</option>
-              </optgroup>
-
-              <optgroup label="Biến ngữ cảnh">
-                {TAX_RATE_CONTEXT_OPTIONS.map((contextKey) => (
-                  <option key={contextKey} value={`CONTEXT:${contextKey}`}>
-                    {contextKey}
-                  </option>
-                ))}
-              </optgroup>
-            </select>
-
-            <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50 p-2">
-              <p className="mb-1 text-[11px] font-medium text-slate-600">
-                Cây vế trái: chọn node, dùng + để thêm cùng cấp, ++ để thêm node
-                con, X để xóa.
-              </p>
-              <VisualNodeEditor
-                title="Root left"
-                node={normalizeFormulaNodeOrFallback(leftNodeForEditor)}
-                formulaList={formulaList}
-                onChange={updateLeftNode}
-                onAddSibling={() =>
-                  updateLeftNode({
-                    fn: "MAX",
-                    args: [
-                      normalizeFormulaNodeOrFallback(leftNodeForEditor),
-                      { literal: 0 },
-                    ],
-                  })
-                }
-                onDelete={() => updateLeftNode({ literal: 0 })}
-              />
+              <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50 p-2">
+                <p className="mb-1 text-[11px] font-medium text-slate-600">
+                  Cây vế trái: chọn node, dùng + để thêm cùng cấp, ++ để thêm
+                  node con, X để xóa.
+                </p>
+                <VisualNodeEditor
+                  title="Root left"
+                  node={normalizeFormulaNodeOrFallback(leftNodeForEditor)}
+                  formulaList={formulaList}
+                  onChange={updateLeftNode}
+                  onAddSibling={() =>
+                    updateLeftNode({
+                      fn: "MAX",
+                      args: [
+                        normalizeFormulaNodeOrFallback(leftNodeForEditor),
+                        { literal: 0 },
+                      ],
+                    })
+                  }
+                  onDelete={() => updateLeftNode({ literal: 0 })}
+                />
+              </div>
             </div>
-          </div>
 
-          <div className="mt-6 flex h-10 w-14 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-lg font-semibold text-slate-600">
-            {TAX_RATE_OPERATOR_SIGN[selectedOp] ?? "*"}
-          </div>
+            <div className="mt-6 flex h-10 w-14 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-lg font-semibold text-slate-600">
+              {TAX_RATE_OPERATOR_SIGN[selectedOp] ?? "*"}
+            </div>
 
-          <div className="w-1/2">
-            <label className="mb-1 block text-xs font-medium text-gray-600">
-              Vế phải
-            </label>
-            <select
-              value={selectedRight}
-              onChange={(event) => {
-                const nextRight = resolveCustomMaxZeroSubtractPreset(
-                  "right",
-                  event.target.value,
-                );
-                persistTaxRateExpression(selectedOp, selectedLeft, nextRight, loopConfig);
-              }}
-              className={inputClass}
-            >
-              <option value="">none</option>
-              {selectedRight === "__UNSUPPORTED__" ? (
-                <option value="__UNSUPPORTED__">
-                  Giá trị hiện tại chưa hỗ trợ UI
-                </option>
-              ) : null}
-
-              <optgroup label="Lookup thuế suất">
-                {TAX_TYPE_OPTIONS.map((item) => (
-                  <option key={item.value} value={`LOOKUP:${item.value}`}>
-                    TaxRate {item.label}
+            <div className="w-1/2">
+              <label className="mb-1 block text-xs font-medium text-gray-600">
+                Vế phải
+              </label>
+              <select
+                value={selectedRight}
+                onChange={(event) => {
+                  const nextRight = resolveCustomMaxZeroSubtractPreset(
+                    "right",
+                    event.target.value,
+                  );
+                  persistTaxRateExpression(
+                    selectedOp,
+                    selectedLeft,
+                    nextRight,
+                    loopConfig,
+                  );
+                }}
+                className={inputClass}
+              >
+                <option value="">none</option>
+                {selectedRight === "__UNSUPPORTED__" ? (
+                  <option value="__UNSUPPORTED__">
+                    Giá trị hiện tại chưa hỗ trợ UI
                   </option>
-                ))}
-              </optgroup>
+                ) : null}
 
-              <optgroup label="Công thức EXTERNAL_LOOKUP">
-                {externalLookupFormulas.length > 0 ? (
-                  externalLookupFormulas.map((formula) => {
+                <optgroup label="Lookup thuế suất">
+                  {TAX_TYPE_OPTIONS.map((item) => (
+                    <option key={item.value} value={`LOOKUP:${item.value}`}>
+                      TaxRate {item.label}
+                    </option>
+                  ))}
+                </optgroup>
+
+                <optgroup label="Công thức EXTERNAL_LOOKUP">
+                  {externalLookupFormulas.length > 0 ? (
+                    externalLookupFormulas.map((formula) => {
+                      const code = String(formula.code).trim();
+                      return (
+                        <option
+                          key={`ext-right-${formula.formulaId}`}
+                          value={`REF:${code}`}
+                        >
+                          {code} - {formula.name}
+                        </option>
+                      );
+                    })
+                  ) : (
+                    <option value="" disabled>
+                      Chưa có công thức EXTERNAL_LOOKUP
+                    </option>
+                  )}
+                </optgroup>
+
+                <optgroup label="Hàm chuẩn">
+                  {maxZeroRefPresets.length > 0 ? (
+                    maxZeroRefPresets.map((item) => (
+                      <option
+                        key={`max-right-${item.value}`}
+                        value={item.value}
+                      >
+                        {item.label}
+                      </option>
+                    ))
+                  ) : (
+                    <option value="" disabled>
+                      Chưa có công thức để tạo MAX(0, REF)
+                    </option>
+                  )}
+                </optgroup>
+
+                <optgroup label="Mẫu linh động">
+                  <option value={MAX0_SUB_REF_LIT_CUSTOM}>
+                    MAX(0, REF - threshold) (dùng input)
+                  </option>
+                  {rightMaxZeroSubtract ? (
+                    <option value={selectedRight}>
+                      {formatMaxZeroSubtractLabel(selectedRight)}
+                    </option>
+                  ) : null}
+                </optgroup>
+
+                <optgroup label="Công thức tham chiếu">
+                  {referenceFormulas.map((formula) => {
                     const code = String(formula.code).trim();
                     return (
                       <option
-                        key={`ext-right-${formula.formulaId}`}
+                        key={`ref-right-${formula.formulaId}`}
                         value={`REF:${code}`}
                       >
                         {code} - {formula.name}
                       </option>
                     );
-                  })
-                ) : (
-                  <option value="" disabled>
-                    Chưa có công thức EXTERNAL_LOOKUP
-                  </option>
-                )}
-              </optgroup>
+                  })}
+                </optgroup>
 
-              <optgroup label="Hàm chuẩn">
-                {maxZeroRefPresets.length > 0 ? (
-                  maxZeroRefPresets.map((item) => (
-                    <option key={`max-right-${item.value}`} value={item.value}>
-                      {item.label}
-                    </option>
-                  ))
-                ) : (
-                  <option value="" disabled>
-                    Chưa có công thức để tạo MAX(0, REF)
-                  </option>
-                )}
-              </optgroup>
+                <optgroup label="Giá trị cố định">
+                  <option value="LITERAL:0">0</option>
+                  <option value="LITERAL:1">1</option>
+                </optgroup>
 
-              <optgroup label="Mẫu linh động">
-                <option value={MAX0_SUB_REF_LIT_CUSTOM}>
-                  MAX(0, REF - threshold) (dùng input)
-                </option>
-                {rightMaxZeroSubtract ? (
-                  <option value={selectedRight}>
-                    {formatMaxZeroSubtractLabel(selectedRight)}
-                  </option>
-                ) : null}
-              </optgroup>
-
-              <optgroup label="Công thức tham chiếu">
-                {referenceFormulas.map((formula) => {
-                  const code = String(formula.code).trim();
-                  return (
+                <optgroup label="Biến ngữ cảnh">
+                  {TAX_RATE_CONTEXT_OPTIONS.map((contextKey) => (
                     <option
-                      key={`ref-right-${formula.formulaId}`}
-                      value={`REF:${code}`}
+                      key={`right-${contextKey}`}
+                      value={`CONTEXT:${contextKey}`}
                     >
-                      {code} - {formula.name}
+                      {contextKey}
                     </option>
-                  );
-                })}
-              </optgroup>
+                  ))}
+                </optgroup>
+              </select>
 
-              <optgroup label="Giá trị cố định">
-                <option value="LITERAL:0">0</option>
-                <option value="LITERAL:1">1</option>
-              </optgroup>
-
-              <optgroup label="Biến ngữ cảnh">
-                {TAX_RATE_CONTEXT_OPTIONS.map((contextKey) => (
-                  <option
-                    key={`right-${contextKey}`}
-                    value={`CONTEXT:${contextKey}`}
-                  >
-                    {contextKey}
-                  </option>
-                ))}
-              </optgroup>
-            </select>
-
-            <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50 p-2">
-              <p className="mb-1 text-[11px] font-medium text-slate-600">
-                Cây vế phải: chọn node, dùng + để thêm cùng cấp, ++ để thêm node
-                con, X để xóa.
-              </p>
-              <VisualNodeEditor
-                title="Root right"
-                node={normalizeFormulaNodeOrFallback(rightNodeForEditor)}
-                formulaList={formulaList}
-                onChange={updateRightNode}
-                onAddSibling={() =>
-                  updateRightNode({
-                    fn: "MAX",
-                    args: [
-                      normalizeFormulaNodeOrFallback(rightNodeForEditor),
-                      { literal: 0 },
-                    ],
-                  })
-                }
-                onDelete={() => updateRightNode({ literal: 0 })}
-              />
+              <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50 p-2">
+                <p className="mb-1 text-[11px] font-medium text-slate-600">
+                  Cây vế phải: chọn node, dùng + để thêm cùng cấp, ++ để thêm
+                  node con, X để xóa.
+                </p>
+                <VisualNodeEditor
+                  title="Root right"
+                  node={normalizeFormulaNodeOrFallback(rightNodeForEditor)}
+                  formulaList={formulaList}
+                  onChange={updateRightNode}
+                  onAddSibling={() =>
+                    updateRightNode({
+                      fn: "MAX",
+                      args: [
+                        normalizeFormulaNodeOrFallback(rightNodeForEditor),
+                        { literal: 0 },
+                      ],
+                    })
+                  }
+                  onDelete={() => updateRightNode({ literal: 0 })}
+                />
+              </div>
             </div>
           </div>
         </div>
-      </div>
       </div>
 
       <div className="rounded-lg bg-[#0b1324] px-3 py-2.5">
         <p className="mb-1 text-[11px] text-gray-400">Xem trước dữ liệu JSON</p>
         <pre className="overflow-x-auto text-xs text-cyan-300">
           {JSON.stringify(
-            composeTaxRateExpression(selectedOp, selectedLeft, selectedRight, loopConfig),
+            composeTaxRateExpression(
+              selectedOp,
+              selectedLeft,
+              selectedRight,
+              loopConfig,
+            ),
             null,
             2,
           )}
@@ -2959,7 +3069,9 @@ function VisualNodeEditor({
                 value={
                   typeof node.costSource === "string" ? node.costSource : ""
                 }
-                onChange={(e) => onChange({ ...node, costSource: e.target.value })}
+                onChange={(e) =>
+                  onChange({ ...node, costSource: e.target.value })
+                }
               >
                 <option value="">(Không dùng)</option>
                 <option value="costs">costs</option>
@@ -2971,7 +3083,9 @@ function VisualNodeEditor({
               <input
                 className={inputClass}
                 value={typeof node.costField === "string" ? node.costField : ""}
-                onChange={(e) => onChange({ ...node, costField: e.target.value })}
+                onChange={(e) =>
+                  onChange({ ...node, costField: e.target.value })
+                }
               />
             </div>
           </div>
@@ -3131,7 +3245,7 @@ export default function FormulaTab(props: FormulaTabProps) {
     props.setFmFType("");
     props.setFmExprJson("{}");
     props.setFmIsActive("false");
-    props.setFmResultDataType("decimal");
+    props.setFmResultDataType("");
     props.setFmRoundingMode("");
     props.setFmRoundingPrecision("2");
   }
@@ -3713,49 +3827,6 @@ export default function FormulaTab(props: FormulaTabProps) {
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
-        <Card className="rounded-xl border border-gray-200 bg-white shadow-sm">
-          <CardContent className="p-4">
-            <p className="text-2xl font-semibold text-gray-900">
-              {props.formulaList.length}
-            </p>
-            <p className="text-xs text-gray-500">Tổng công thức</p>
-          </CardContent>
-        </Card>
-        <Card className="rounded-xl border border-gray-200 bg-white shadow-sm">
-          <CardContent className="p-4">
-            <p className="text-2xl font-semibold text-emerald-600">
-              {props.formulaList.filter((item) => item.isActive).length}
-            </p>
-            <p className="text-xs text-gray-500">Đang hoạt động</p>
-          </CardContent>
-        </Card>
-        <Card className="rounded-xl border border-gray-200 bg-white shadow-sm">
-          <CardContent className="p-4">
-            <p className="text-2xl font-semibold text-sky-600">
-              {variableTypeCount.double}
-            </p>
-            <p className="text-xs text-gray-500">Biến số thực</p>
-          </CardContent>
-        </Card>
-        <Card className="rounded-xl border border-gray-200 bg-white shadow-sm">
-          <CardContent className="p-4">
-            <p className="text-2xl font-semibold text-violet-600">
-              {variableTypeCount.integer}
-            </p>
-            <p className="text-xs text-gray-500">Biến số nguyên</p>
-          </CardContent>
-        </Card>
-        <Card className="rounded-xl border border-gray-200 bg-white shadow-sm">
-          <CardContent className="p-4">
-            <p className="text-2xl font-semibold text-amber-600">
-              {variableTypeCount.string}
-            </p>
-            <p className="text-xs text-gray-500">Biến chuỗi</p>
-          </CardContent>
-        </Card>
-      </div>
-
       <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-[1.15fr_1.85fr]">
         <Card className="h-fit self-start rounded-xl border border-gray-200 bg-white shadow-sm">
           <CardHeader>
@@ -4039,7 +4110,7 @@ export default function FormulaTab(props: FormulaTabProps) {
                   onClick={openCloneDialog}
                   disabled={isCreateMode}
                 >
-                  Nhân bản
+                  Clone
                 </Button>
                 {isActiveFormula ? (
                   <Button
@@ -4528,12 +4599,7 @@ export default function FormulaTab(props: FormulaTabProps) {
                         className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
                       />
                       <div className="flex flex-wrap gap-1.5">
-                        {[
-                          { key: "all", label: "Tất cả" },
-                          { key: "double", label: "Số thực" },
-                          { key: "integer", label: "Số nguyên" },
-                          { key: "string", label: "Chuỗi" },
-                        ].map((item) => (
+                        {[{ key: "all", label: "Tất cả" }].map((item) => (
                           <button
                             key={item.key}
                             type="button"
