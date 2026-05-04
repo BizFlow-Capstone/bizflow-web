@@ -818,7 +818,7 @@ export default function AdminAccountingClient({
   const [pvMeth, setPvMeth] = useState("method_1");
   const [pvRule, setPvRule] = useState("1");
   const [pvBiz, setPvBiz] = useState("");
-  const [pvBatch, setPvBatch] = useState("10");
+  const [pvBatch, setPvBatch] = useState("20");
   const [previewResult, setPreviewResult] = useState<Record<
     string,
     unknown
@@ -2695,7 +2695,7 @@ export default function AdminAccountingClient({
               .map((item) => item.trim())
               .filter(Boolean)
           : [],
-        batchSize: Number(pvBatch || 10),
+        batchSize: Number(pvBatch || 20),
       };
 
       setPreviewFullStructure(null);

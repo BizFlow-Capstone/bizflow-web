@@ -228,8 +228,7 @@ const PREVIEW_LOCATION_ID = 6;
 const PREVIEW_PERIOD_ID = 2;
 const PREVIEW_GROUP_NUMBER = 1;
 const PREVIEW_TAX_METHOD = "method_1";
-// Batch size per request (BE cursor pagination), not total rows limit.
-const PREVIEW_BATCH_SIZE = 10;
+const PREVIEW_BATCH_SIZE = 1000;
 
 function parseVisibleFieldCodes(raw: string): string[] {
   if (!raw.trim()) return [];
