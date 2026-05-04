@@ -165,73 +165,73 @@ const tabs: Array<{
 }> = [
   {
     key: "overview",
-    label: "Overview",
+    label: "Tổng Quan Mẫu Sổ",
     icon: <Boxes className="h-4 w-4" />,
     group: "core",
   },
   {
     key: "business-types",
-    label: "Business Types & Tax Rates",
+    label: "Loại Hình Kinh Doanh & Thuế Suất",
     icon: <BookOpen className="h-4 w-4" />,
     group: "core",
   },
   {
     key: "version",
-    label: "Template Versions",
+    label: "Phiên Bản Template",
     icon: <GitBranch className="h-4 w-4" />,
     group: "core",
   },
   {
     key: "formulas",
-    label: "Formulas",
+    label: "Công Thức",
     icon: <FunctionSquare className="h-4 w-4" />,
     group: "core",
   },
   {
     key: "mappings",
-    label: "Field Mappings",
+    label: "Mappings: Trường & Nguồn Dữ Liệu",
     icon: <Plug className="h-4 w-4" />,
     group: "core",
   },
   {
     key: "rowdefs",
-    label: "Row Definitions",
+    label: "Định Nghĩa Dòng Sổ",
     icon: <Rows className="h-4 w-4" />,
     group: "core",
   },
   {
     key: "entities",
-    label: "Entities & Fields",
+    label: "Entities Và Trường Dữ Liệu",
     icon: <Database className="h-4 w-4" />,
     group: "core",
   },
   {
     key: "compare",
-    label: "Compare (A/B)",
+    label: "So sánh Mẫu Sổ",
     icon: <Scale className="h-4 w-4" />,
     group: "support",
   },
-  {
-    key: "preview",
-    label: "Preview",
-    icon: <Play className="h-4 w-4" />,
-    group: "support",
-  },
+  // {
+  //   key: "preview",
+  //   label: "Xem Trước",
+  //   icon: <Play className="h-4 w-4" />,
+  //   group: "support",
+  // },
   {
     key: "trace",
-    label: "Trace Logic",
+    label: "Theo Dõi Luồng Tính Toán",
     icon: <TreePine className="h-4 w-4" />,
     group: "support",
   },
   {
     key: "reference",
-    label: "Enums Reference",
+    label: "Reference",
     icon: <BookOpen className="h-4 w-4" />,
     group: "support",
   },
   {
     key: "schema",
-    label: "Node Schemas",
+    label: "Schemas Công Thức",
     icon: <FileJson className="h-4 w-4" />,
     group: "support",
   },
@@ -1121,7 +1121,7 @@ export default function AdminAccountingClient({
             )
           : [toDisplayText(rawValue)];
 
-      const previewItems = normalizedValues.slice(0, 8);
+      const previewItems = normalizedValues.slice(0, 20);
       return {
         groupName,
         count: normalizedValues.length,
@@ -2777,26 +2777,12 @@ export default function AdminAccountingClient({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      {/* {isConsultantMode ? (
-        <Card className="rounded-xl border border-amber-200 bg-amber-50 shadow-sm">
-          <CardContent className="flex flex-col gap-1 p-4 text-sm text-amber-800">
-            <p className="font-semibold">Consultant workspace</p>
-            <p>
-              Consultant có thể dùng đầy đủ công cụ accounting như admin để tạo
-              và chỉnh sửa draft. Riêng publish thì Admin sẽ review và
-              activate/deactivate/delete.
-            </p>
-          </CardContent>
-        </Card>
-      ) : null} */}
-
       <Card className="rounded-xl border border-gray-200 bg-white shadow-sm">
         <CardContent className="p-3">
           <nav aria-label="Admin accounting sections" className="space-y-3">
             <section aria-label="Core management" className="space-y-2">
               <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                Core Management
+                Chức năng chính
               </p>
               <div className="flex flex-wrap gap-2">
                 {coreTabs.map((tab) => (
@@ -2820,7 +2806,7 @@ export default function AdminAccountingClient({
             {supportTabs.length > 0 ? (
               <section aria-label="Support tools" className="space-y-2">
                 <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                  Support Tools
+                  Công cụ hỗ trợ
                 </p>
                 <div className="flex flex-wrap gap-2">
                   {supportTabs.map((tab) => (
@@ -2849,23 +2835,9 @@ export default function AdminAccountingClient({
         <div className="space-y-6">
           <Card className="rounded-xl border border-gray-200 bg-white shadow-sm">
             <CardHeader>
-              <CardTitle>Templates</CardTitle>
+              <CardTitle>Các Mẫu Sổ</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              {overviewAppliedRuleset ? (
-                <div className="flex flex-wrap gap-2">
-                  <span
-                    key={overviewAppliedRuleset.rulesetId}
-                    className="inline-flex items-center gap-1.5 rounded-full border border-[#23C4C1]/30 bg-[#23C4C1]/8 px-3 py-1 text-xs font-medium text-[#15918f]"
-                  >
-                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                    Áp dụng theo: {overviewAppliedRuleset.name}
-                    <span className="ml-1 font-mono text-[10px] text-gray-400">
-                      ({overviewAppliedRuleset.code})
-                    </span>
-                  </span>
-                </div>
-              ) : null}
               <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
                 <table className="w-full text-sm">
                   <thead className="sticky top-0 bg-gray-50 text-left text-xs uppercase text-gray-500">
@@ -2887,7 +2859,14 @@ export default function AdminAccountingClient({
                           <td className="px-3 py-2 font-mono text-xs">
                             {t.templateCode}
                           </td>
-                          <td className="px-3 py-2">{t.name}</td>
+                          <td className="px-3 py-2">
+                            {t.name}
+                            {t.description && (
+                              <div className=" text-gray-400 ">
+                                {t.description}
+                              </div>
+                            )}
+                          </td>
                           <td className="px-3 py-2">
                             <Badge
                               variant="secondary"
@@ -2933,24 +2912,17 @@ export default function AdminAccountingClient({
 
           <Card className="rounded-xl border border-gray-200 bg-white shadow-sm">
             <CardHeader className="flex-row items-center justify-between">
-              <CardTitle>Business Types</CardTitle>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => goBusinessType()}
-              >
-                Open Manager
-              </Button>
+              <CardTitle>Loại Hình Kinh Doanh</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
                 <table className="w-full text-sm">
                   <thead className="sticky top-0 bg-gray-50 text-left text-xs uppercase text-gray-500">
                     <tr>
-                      <th className="px-3 py-2">Code</th>
+                      <th className="px-3 py-2">Mã</th>
                       <th className="px-3 py-2">Tên ngành</th>
                       <th className="px-3 py-2">ID</th>
-                      <th className="px-3 py-2 text-right">Action</th>
+                      <th className="px-3 py-2 text-right">Thao tác</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -2979,7 +2951,7 @@ export default function AdminAccountingClient({
                                 }
                                 className="inline-flex items-center gap-1 text-sky-700 hover:underline"
                               >
-                                Manage <ArrowRight className="h-3 w-3" />
+                                Di chuyển <ArrowRight className="h-3 w-3" />
                               </button>
                             </td>
                           </tr>
@@ -2994,7 +2966,7 @@ export default function AdminAccountingClient({
 
           <Card className="rounded-xl border border-gray-200 bg-white shadow-sm">
             <CardHeader>
-              <CardTitle>Formulas</CardTitle>
+              <CardTitle>Công Thức</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
@@ -3006,7 +2978,7 @@ export default function AdminAccountingClient({
                       <th className="px-3 py-2">Tên</th>
                       <th className="px-3 py-2">Loại</th>
                       <th className="px-3 py-2">Hoạt động</th>
-                      <th className="px-3 py-2"></th>
+                      <th className="px-3 py-2">Thao tác</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -3036,7 +3008,7 @@ export default function AdminAccountingClient({
                             onClick={() => goFormula(f.formulaId)}
                             className="inline-flex items-center gap-1 text-sky-700"
                           >
-                            Mở <ArrowRight className="h-3 w-3" />
+                            Di chuyển <ArrowRight className="h-3 w-3" />
                           </button>
                         </td>
                       </tr>
@@ -3060,7 +3032,7 @@ export default function AdminAccountingClient({
               <Card className="relative z-10 max-h-[85vh] w-full max-w-2xl overflow-auto rounded-xl border border-gray-200 bg-white shadow-xl">
                 <CardHeader>
                   <div className="flex items-center justify-between gap-2">
-                    <CardTitle>Create New Ruleset</CardTitle>
+                    <CardTitle>Tạo mới Ruleset</CardTitle>
                     <Button
                       type="button"
                       size="sm"
@@ -3068,7 +3040,7 @@ export default function AdminAccountingClient({
                       className="h-8 px-2"
                       onClick={() => setShowCreateRulesetModal(false)}
                     >
-                      Close
+                      Đóng
                     </Button>
                   </div>
                 </CardHeader>
@@ -3127,7 +3099,7 @@ export default function AdminAccountingClient({
                     />
                     <div className="space-y-1">
                       <label className="text-xs text-gray-500">
-                        Effective From *
+                        Hiệu lực từ *
                       </label>
                       <input
                         type="date"
@@ -3143,7 +3115,7 @@ export default function AdminAccountingClient({
                     </div>
                     <div className="space-y-1">
                       <label className="text-xs text-gray-500">
-                        Effective To (tùy chọn)
+                        Hiệu lực đến (tùy chọn)
                       </label>
                       <input
                         type="date"
@@ -3165,7 +3137,7 @@ export default function AdminAccountingClient({
                           description: e.target.value,
                         }))
                       }
-                      placeholder="Description"
+                      placeholder="Mô tả"
                       rows={2}
                       className="col-span-2 w-full resize-y rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
                     />
@@ -3320,7 +3292,7 @@ export default function AdminAccountingClient({
             <Card className="xl:col-span-2 rounded-xl border border-gray-200 bg-white shadow-sm">
               <CardHeader>
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <CardTitle>Business Types By Ruleset</CardTitle>
+                  <CardTitle>Các Loại Hình Kinh Doanh</CardTitle>
                   <div className="flex flex-wrap gap-2">
                     <Button
                       type="button"
@@ -3328,7 +3300,7 @@ export default function AdminAccountingClient({
                       variant="outline"
                       onClick={() => setShowCreateRulesetModal(true)}
                     >
-                      Create New Ruleset
+                      Tạo Ruleset Mới
                     </Button>
                     <Button
                       type="button"
@@ -3336,7 +3308,7 @@ export default function AdminAccountingClient({
                       variant="outline"
                       onClick={() => setShowCreateBtModal(true)}
                     >
-                      Create New Business Type
+                      Tạo Loại Hình Kinh Doanh Mới
                     </Button>
                   </div>
                 </div>
@@ -3388,8 +3360,8 @@ export default function AdminAccountingClient({
                         }
                       >
                         {selectedRulesetIsActive
-                          ? "Deactivate Ruleset"
-                          : "Activate Ruleset"}
+                          ? "Vô hiệu hóa Ruleset"
+                          : "Kích hoạt Ruleset"}
                       </Button>
                     ) : null}
                   </div>
@@ -3399,10 +3371,10 @@ export default function AdminAccountingClient({
                   <table className="w-full text-sm">
                     <thead className="sticky top-0 bg-gray-50 text-left text-xs uppercase text-gray-500">
                       <tr>
-                        <th className="px-3 py-2">Code</th>
-                        <th className="px-3 py-2">Name</th>
-                        <th className="px-3 py-2">Status</th>
-                        <th className="px-3 py-2">Rates</th>
+                        <th className="px-3 py-2">Mã</th>
+                        <th className="px-3 py-2">Tên</th>
+                        <th className="px-3 py-2">Trạng Thái</th>
+                        <th className="px-3 py-2">Tỷ Lệ Thuế</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -3464,7 +3436,7 @@ export default function AdminAccountingClient({
 
             <Card className="rounded-xl border border-gray-200 bg-white shadow-sm">
               <CardHeader>
-                <CardTitle>Business Type Editor</CardTitle>
+                <CardTitle>Chỉnh Sửa Loại Hình Kinh Doanh</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
                 <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs text-gray-600">
@@ -3477,7 +3449,7 @@ export default function AdminAccountingClient({
 
                 <div className="space-y-2 rounded-xl border border-gray-100 bg-gray-50/60 p-3">
                   <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                    Metadata (PATCH)
+                    Mô Tả
                   </p>
                   <input
                     value={btMetadataForm.name}
@@ -3515,8 +3487,8 @@ export default function AdminAccountingClient({
                     className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
                     disabled={!selectedBusinessTypeWithRates}
                   >
-                    <option value="active">active</option>
-                    <option value="inactive">inactive</option>
+                    <option value="active">Kích hoạt</option>
+                    <option value="inactive">Vô hiệu hóa</option>
                   </select>
                   <Button
                     size="sm"
@@ -3524,14 +3496,14 @@ export default function AdminAccountingClient({
                     onClick={() => void btUpdateMetadata()}
                     disabled={!selectedBusinessTypeWithRates}
                   >
-                    Save Metadata
+                    Lưu
                   </Button>
                 </div>
 
                 <div className="space-y-2 rounded-xl border border-gray-100 bg-gray-50/60 p-3">
                   <div className="flex items-center justify-between gap-2">
                     <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                      Tax Rates (PUT Replace)
+                      Tỷ Lệ Thuế Áp Dụng
                     </p>
                     <Button
                       size="sm"
@@ -3539,7 +3511,7 @@ export default function AdminAccountingClient({
                       onClick={addBtRate}
                       disabled={!selectedBusinessTypeWithRates}
                     >
-                      Add Rate
+                      Thêm Tỷ Lệ Thuế
                     </Button>
                   </div>
                   <div className="max-h-72 space-y-2 overflow-auto">
@@ -3619,7 +3591,7 @@ export default function AdminAccountingClient({
                     onClick={() => void btReplaceRates()}
                     disabled={!selectedBusinessTypeWithRates}
                   >
-                    Replace Tax Rates
+                    Áp Dụng
                   </Button>
                 </div>
               </CardContent>
@@ -3721,7 +3693,7 @@ export default function AdminAccountingClient({
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
           <Card className="xl:col-span-2 rounded-xl border border-gray-200 bg-white shadow-sm">
             <CardHeader>
-              <CardTitle>Row Definitions</CardTitle>
+              <CardTitle>Định nghĩa hàng</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
               <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
@@ -3755,16 +3727,16 @@ export default function AdminAccountingClient({
               </div>
               <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
                 <table className="w-full text-sm">
-                  <thead className="sticky top-0 bg-gray-50 text-left text-xs uppercase text-gray-500">
+                  <thead className="sticky top-0 bg-gray-50 text-left text-xs  text-gray-500">
                     <tr>
                       <th className="px-3 py-2">ID</th>
-                      <th className="px-3 py-2">Type</th>
+                      <th className="px-3 py-2">Loại</th>
                       <th className="px-3 py-2">Label</th>
-                      <th className="px-3 py-2">Position</th>
-                      <th className="px-3 py-2">Sort</th>
-                      <th className="px-3 py-2">Formula</th>
-                      <th className="px-3 py-2">Tax</th>
-                      <th className="px-3 py-2 text-right">Actions</th>
+                      <th className="px-3 py-2">Vị trí</th>
+                      <th className="px-3 py-2">Thứ tự</th>
+                      <th className="px-3 py-2">Công thức</th>
+                      <th className="px-3 py-2">Loại thuế</th>
+                      <th className="px-3 py-2 text-right">Thao tác</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -3826,7 +3798,7 @@ export default function AdminAccountingClient({
                                   }}
                                   className="w-full rounded px-2 py-1.5 text-left text-xs text-red-600 hover:bg-red-50"
                                 >
-                                  Delete
+                                  Xóa
                                 </button>
                               </div>
                             ) : null}
@@ -3843,7 +3815,7 @@ export default function AdminAccountingClient({
           <Card className="rounded-xl border border-gray-200 bg-white shadow-sm">
             <CardHeader>
               <div className="flex items-center justify-between gap-2">
-                <CardTitle>Row Editor</CardTitle>
+                <CardTitle>Chỉnh sửa</CardTitle>
                 <Button
                   size="sm"
                   variant="link"
@@ -3863,7 +3835,7 @@ export default function AdminAccountingClient({
                   }}
                   className=" text-[#23C4C1] hover:text-[#1ea8a6]"
                 >
-                  {rowEditorMode === "create" ? "Update" : "Create"}
+                  {rowEditorMode === "create" ? "Cập nhật" : "Tạo mới"}
                 </Button>
               </div>
             </CardHeader>
@@ -3871,7 +3843,7 @@ export default function AdminAccountingClient({
               {rowEditorMode === "update" ? (
                 <div className="space-y-1">
                   <label className="block text-xs font-medium text-gray-600">
-                    Row ID
+                    ID
                   </label>
                   <input
                     value={rowForm.rowDefId}
@@ -3915,7 +3887,7 @@ export default function AdminAccountingClient({
               <div className="grid grid-cols-2 gap-2">
                 <div className="space-y-1">
                   <label className="block text-xs font-medium text-gray-600">
-                    Position
+                    Vị trí
                   </label>
                   <select
                     value={rowForm.position}
@@ -3947,7 +3919,7 @@ export default function AdminAccountingClient({
               </div>
               <div className="space-y-1">
                 <label className="block text-xs font-medium text-gray-600">
-                  Formula ID
+                  Công thức
                 </label>
                 <select
                   value={rowForm.formulaId}
@@ -4048,7 +4020,7 @@ export default function AdminAccountingClient({
               ) : null}
               <div className="space-y-1">
                 <label className="block text-xs font-medium text-gray-600">
-                  Visible field codes (quick pick)
+                  Thứ tự các field hiển thị
                 </label>
                 <div className="max-h-28 overflow-auto rounded-lg border border-gray-200 bg-gray-50 p-2">
                   <div className="flex flex-wrap gap-1.5">
@@ -4078,7 +4050,7 @@ export default function AdminAccountingClient({
               </div>
               <div className="space-y-1">
                 <label className="block text-xs font-medium text-gray-600">
-                  Visible field codes
+                  Mã các field hiển thị
                 </label>
                 <input
                   value={rowForm.visibleFieldCodes}
@@ -4099,7 +4071,7 @@ export default function AdminAccountingClient({
                     className="w-full bg-[#23C4C1] text-white hover:bg-[#1ea8a6]"
                     onClick={() => void rdCreate()}
                   >
-                    Create
+                    Tạo mới
                   </Button>
                 </div>
               ) : (
@@ -4110,7 +4082,7 @@ export default function AdminAccountingClient({
                     onClick={() => void rdUpdate()}
                     disabled={!rowForm.rowDefId}
                   >
-                    Update
+                    Cập nhật
                   </Button>
                 </div>
               )}
@@ -4132,12 +4104,12 @@ export default function AdminAccountingClient({
                     <thead className="sticky top-0 z-10 border-b border-gray-200 bg-white/95 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600 backdrop-blur">
                       <tr>
                         <th className="px-3 py-2">ID</th>
-                        <th className="px-3 py-2">Code</th>
-                        <th className="px-3 py-2">Name</th>
-                        <th className="px-3 py-2">Category</th>
+                        <th className="px-3 py-2">Mã</th>
+                        <th className="px-3 py-2">Tên</th>
+                        <th className="px-3 py-2">Danh mục</th>
                         <th className="px-3 py-2">Fields</th>
-                        <th className="px-3 py-2">Status</th>
-                        <th className="px-3 py-2 text-right">Actions</th>
+                        <th className="px-3 py-2">Trạng thái</th>
+                        <th className="px-3 py-2 text-right">Thao tác</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -4227,7 +4199,7 @@ export default function AdminAccountingClient({
 
             <Card className="rounded-xl border border-gray-200 bg-white shadow-sm">
               <CardHeader>
-                <CardTitle>Fields of {selectedEntityName}</CardTitle>
+                <CardTitle>Fields của {selectedEntityName}</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
@@ -4235,11 +4207,11 @@ export default function AdminAccountingClient({
                     <thead className="sticky top-0 z-10 border-b border-gray-200 bg-white/95 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600 backdrop-blur">
                       <tr>
                         <th className="px-3 py-2">ID</th>
-                        <th className="px-3 py-2">Code</th>
-                        <th className="px-3 py-2">Name</th>
-                        <th className="px-3 py-2">Description</th>
-                        <th className="px-3 py-2">Type</th>
-                        <th className="px-3 py-2">Status</th>
+                        <th className="px-3 py-2">Mã</th>
+                        <th className="px-3 py-2">Tên</th>
+                        <th className="px-3 py-2">Mô tả</th>
+                        <th className="px-3 py-2">Loại</th>
+                        <th className="px-3 py-2">Trạng thái</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -4318,7 +4290,7 @@ export default function AdminAccountingClient({
             <Card className="rounded-xl border border-gray-200 bg-white shadow-sm">
               <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <div className="space-y-1">
-                  <CardTitle>Entity Editor</CardTitle>
+                  <CardTitle>Chỉnh sửa</CardTitle>
                   <p className="text-xs text-gray-500">
                     {hasSelectedEntity
                       ? `Đang chỉnh sửa entity #${entEditId}`
@@ -4337,7 +4309,7 @@ export default function AdminAccountingClient({
                     setEntIsActive("true");
                   }}
                 >
-                  New Entity
+                  Tạo mới Entity
                 </Button>
               </CardHeader>
               <CardContent className="space-y-3">
@@ -4367,7 +4339,7 @@ export default function AdminAccountingClient({
                     </div>
                     <div className="space-y-1">
                       <label className="block text-xs font-medium text-gray-600">
-                        Display Name
+                        Tên Entity
                       </label>
                       <input
                         value={entName}
@@ -4380,36 +4352,36 @@ export default function AdminAccountingClient({
                   <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                     <div className="space-y-1">
                       <label className="block text-xs font-medium text-gray-600">
-                        Category
+                        Danh mục
                       </label>
                       <select
                         value={entCat}
                         onChange={(e) => setEntCat(e.target.value)}
                         className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
                       >
-                        <option>revenue</option>
-                        <option>cost</option>
-                        <option>tax</option>
-                        <option>asset</option>
+                        <option>revenue - Doanh thu</option>
+                        <option>cost - Chi phí</option>
+                        <option>tax - Thuế</option>
+                        <option>asset - Tài sản</option>
                       </select>
                     </div>
                     <div className="space-y-1">
                       <label className="block text-xs font-medium text-gray-600">
-                        Status
+                        Trạng thái
                       </label>
                       <select
                         value={entIsActive}
                         onChange={(e) => setEntIsActive(e.target.value)}
                         className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
                       >
-                        <option value="true">Active</option>
-                        <option value="false">Inactive</option>
+                        <option value="true">Hiệu lực</option>
+                        <option value="false">Vô hiệu</option>
                       </select>
                     </div>
                   </div>
                   <div className="space-y-1">
                     <label className="block text-xs font-medium text-gray-600">
-                      Description
+                      Mô tả
                     </label>
                     <textarea
                       value={entDesc}
@@ -4427,7 +4399,7 @@ export default function AdminAccountingClient({
                     onClick={() => void entCreate()}
                     disabled={!entCode.trim() || !entName.trim()}
                   >
-                    Create Entity
+                    Tạo Entity
                   </Button>
                   <Button
                     size="sm"
@@ -4435,7 +4407,7 @@ export default function AdminAccountingClient({
                     onClick={() => void entUpdate()}
                     disabled={!hasSelectedEntity}
                   >
-                    Update Entity
+                    Cập nhật Entity
                   </Button>
                 </div>
               </CardContent>
@@ -4444,7 +4416,7 @@ export default function AdminAccountingClient({
             <Card className="rounded-xl border border-gray-200 bg-white shadow-sm">
               <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <div className="space-y-1">
-                  <CardTitle>Field Editor</CardTitle>
+                  <CardTitle>Chỉnh sửa</CardTitle>
                   <p className="text-xs text-gray-500">
                     {hasSelectedField
                       ? `Đang chỉnh sửa field #${efEditId}`
@@ -4466,7 +4438,7 @@ export default function AdminAccountingClient({
                   }}
                   disabled={!currentFieldEntityId}
                 >
-                  New Field
+                  Tạo Field
                 </Button>
               </CardHeader>
               <CardContent className="space-y-3">
@@ -4510,7 +4482,7 @@ export default function AdminAccountingClient({
                     </div>
                     <div className="space-y-1">
                       <label className="block text-xs font-medium text-gray-600">
-                        Display Name
+                        Tên hiển thị
                       </label>
                       <input
                         value={efName}
@@ -4524,66 +4496,33 @@ export default function AdminAccountingClient({
                   <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                     <div className="space-y-1">
                       <label className="block text-xs font-medium text-gray-600">
-                        Data Type
+                        Loại dữ liệu
                       </label>
                       <select
                         value={efDtype}
                         onChange={(e) => setEfDtype(e.target.value)}
                         className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
                       >
-                        <option>decimal</option>
-                        <option>string</option>
-                        <option>text</option>
-                        <option>date</option>
-                        <option>long</option>
-                        <option>guid</option>
+                        <option>decimal - Số thập phân</option>
+                        <option>string - Chuỗi</option>
+                        <option>text - Văn bản</option>
+                        <option>date - Ngày tháng</option>
+                        <option>long - Số nguyên lớn</option>
+                        <option>guid - ID duy nhất</option>
                       </select>
                     </div>
                     <div className="space-y-1">
                       <label className="block text-xs font-medium text-gray-600">
-                        Status
+                        Trạng thái
                       </label>
                       <select
                         value={efIsActive}
                         onChange={(e) => setEfIsActive(e.target.value)}
                         className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
                       >
-                        <option value="true">Active</option>
-                        <option value="false">Inactive</option>
+                        <option value="true">Hiệu lực</option>
+                        <option value="false">Vô hiệu</option>
                       </select>
-                    </div>
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="block text-xs font-medium text-gray-600">
-                      Allowed Aggregations
-                    </label>
-                    <div className="rounded-lg border border-gray-200 bg-gray-50 p-2">
-                      <div className="flex flex-wrap gap-1.5">
-                        {fieldAggregationOptions.map((aggregation) => {
-                          const selected =
-                            selectedFieldAggregations.includes(aggregation);
-                          return (
-                            <button
-                              key={aggregation}
-                              type="button"
-                              onClick={() =>
-                                toggleFieldAggregation(aggregation)
-                              }
-                              className={`rounded-full border px-2.5 py-1 text-xs transition ${
-                                selected
-                                  ? "border-[#23C4C1]/40 bg-[#23C4C1]/10 text-[#15918f]"
-                                  : "border-gray-200 bg-white text-gray-600 hover:bg-gray-100"
-                              }`}
-                            >
-                              {aggregation}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                    <div className="text-[11px] text-gray-500">
-                      Payload: {efAggs}
                     </div>
                   </div>
 
@@ -4609,7 +4548,7 @@ export default function AdminAccountingClient({
                       !currentFieldEntityId || !efCode.trim() || !efName.trim()
                     }
                   >
-                    Create Field
+                    Tạo mới Field
                   </Button>
                   <Button
                     size="sm"
@@ -4617,7 +4556,7 @@ export default function AdminAccountingClient({
                     onClick={() => void efUpdate()}
                     disabled={!hasSelectedField || !currentFieldEntityId}
                   >
-                    Update Field
+                    Cập nhật Field
                   </Button>
                 </div>
               </CardContent>
@@ -4629,7 +4568,7 @@ export default function AdminAccountingClient({
       {activeTab === "compare" ? (
         <Card className="rounded-xl border border-gray-200 bg-white shadow-sm">
           <CardHeader>
-            <CardTitle>Compare Engine</CardTitle>
+            <CardTitle>So sánh</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
@@ -4724,7 +4663,7 @@ export default function AdminAccountingClient({
               className="gap-2 bg-[#23C4C1] text-white hover:bg-[#1ea8a6]"
             >
               <Play className="h-4 w-4" />
-              Run Compare
+              So sánh
             </Button>
 
             {!compareResult ? (
@@ -4906,7 +4845,7 @@ export default function AdminAccountingClient({
                           <thead>
                             <tr className="bg-[#ecfbfa] text-gray-700">
                               <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
-                                Formula
+                                Công thức
                               </th>
                               <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
                                 Giá trị
@@ -5503,7 +5442,7 @@ export default function AdminAccountingClient({
       {activeTab === "trace" ? (
         <Card className="rounded-xl border border-gray-200 bg-white shadow-sm">
           <CardHeader>
-            <CardTitle>Logic Trace</CardTitle>
+            <CardTitle>Truy Vết</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
@@ -5633,25 +5572,25 @@ export default function AdminAccountingClient({
                     <thead>
                       <tr className="bg-[#ecfbfa] text-gray-700">
                         <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
-                          Step
+                          Bước
                         </th>
                         <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
-                          Node Type
+                          Số hiệu
                         </th>
                         <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
-                          Description
+                          Mô tả
                         </th>
                         <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
-                          Resolved Value
+                          Giá trị
                         </th>
                         <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
-                          Source
+                          Nguồn
                         </th>
                         <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
                           Debug
                         </th>
                         <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
-                          Children
+                          Node con
                         </th>
                       </tr>
                     </thead>
@@ -5710,9 +5649,9 @@ export default function AdminAccountingClient({
       {activeTab === "reference" ? (
         <Card className="rounded-xl border border-gray-200 bg-white shadow-sm">
           <CardHeader className="flex-row items-center justify-between">
-            <CardTitle>Enums Reference</CardTitle>
+            <CardTitle>Reference</CardTitle>
             <Button variant="outline" size="sm" onClick={() => void loadRef()}>
-              Load
+              Xem
             </Button>
           </CardHeader>
           <CardContent>
@@ -5746,10 +5685,8 @@ export default function AdminAccountingClient({
                           {row.count}
                         </td>
                         <td className="border border-gray-200 px-3 py-2 text-xs text-gray-700">
+                          {/* //i want it down the line for each value */}
                           {row.previewText}
-                          {row.remainingCount > 0
-                            ? ` ... (+${row.remainingCount})`
-                            : ""}
                         </td>
                       </tr>
                     ))}
@@ -5770,13 +5707,13 @@ export default function AdminAccountingClient({
               size="sm"
               onClick={() => void loadSchemas()}
             >
-              Load
+              Xem
             </Button>
           </CardHeader>
           <CardContent>
             {schemaRows.length === 0 ? (
               <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 px-4 py-6 text-center text-sm text-gray-500">
-                Bấm Load để lấy danh sách node schemas.
+                Bấm Xem để lấy danh sách node schemas.
               </div>
             ) : (
               <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
@@ -5784,16 +5721,16 @@ export default function AdminAccountingClient({
                   <thead>
                     <tr className="bg-[#ecfbfa] text-gray-700">
                       <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
-                        Node Type
+                        Loại Node
                       </th>
                       <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
-                        Name
+                        Tên
                       </th>
                       <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
-                        Category
+                        Danh mục
                       </th>
                       <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
-                        Result Type
+                        Kiểu kết quả
                       </th>
                       <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
                         Inputs
@@ -5802,7 +5739,7 @@ export default function AdminAccountingClient({
                         Fields
                       </th>
                       <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
-                        Description
+                        Mô tả
                       </th>
                     </tr>
                   </thead>
@@ -5839,33 +5776,6 @@ export default function AdminAccountingClient({
           </CardContent>
         </Card>
       ) : null}
-
-      {/* <Card className="rounded-xl border border-gray-200 bg-white shadow-sm">
-        <CardHeader>
-          <CardTitle>API Console</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="max-h-52 overflow-auto rounded-xl border border-gray-200 bg-gray-50 p-3 font-mono text-xs text-gray-700">
-            {logs.length === 0 ? (
-              <p className="text-gray-400">No logs yet.</p>
-            ) : null}
-            {logs.map((entry) => (
-              <div
-                key={entry.id}
-                className={
-                  entry.type === "error"
-                    ? "text-rose-600"
-                    : entry.type === "ok"
-                      ? "text-emerald-700"
-                      : "text-sky-700"
-                }
-              >
-                {entry.message}
-              </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card> */}
     </main>
   );
 }

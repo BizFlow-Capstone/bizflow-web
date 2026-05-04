@@ -1298,7 +1298,7 @@ export default function AdminNotificationsClient({
             <Card className="border-0 shadow-sm">
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-semibold text-gray-500 uppercase tracking-wide">
-                  Auto Trigger Events
+                  Các Event Tự Động Kích Hoạt Thông Báo
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -1352,7 +1352,7 @@ export default function AdminNotificationsClient({
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="__none__">
-                          (không dùng template)
+                          Không dùng template
                         </SelectItem>
                         {templates.map((t) => (
                           <SelectItem
@@ -1471,7 +1471,7 @@ export default function AdminNotificationsClient({
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1.5">
                       <Label className="text-xs text-gray-500">
-                        Action Type
+                        Điều hướng
                       </Label>
                       <Select
                         value={normalizeActionType(campaignForm.actionType)}
@@ -1511,7 +1511,7 @@ export default function AdminNotificationsClient({
                     </div>
                     <div className="space-y-1.5">
                       <Label className="text-xs text-gray-500">
-                        Target Screen
+                        Màn hình điều hướng tới
                       </Label>
                       <Select
                         value={campaignForm.targetScreen || "__none__"}
@@ -1554,7 +1554,7 @@ export default function AdminNotificationsClient({
 
                   <div className="space-y-1.5">
                     <Label className="text-xs text-gray-500">
-                      Action Payload JSON
+                      Xem trước điều hướng
                     </Label>
                     <Input
                       value={campaignForm.actionPayloadJson ?? ""}
@@ -1585,7 +1585,7 @@ export default function AdminNotificationsClient({
 
                   <div className="space-y-1.5">
                     <Label className="text-xs text-gray-500">
-                      Recipient Mode
+                      Đối tượng nhận thông báo
                     </Label>
                     <Select
                       value={normalizedRecipientMode}
@@ -1921,7 +1921,7 @@ export default function AdminNotificationsClient({
                         <TableHead className="w-16">ID</TableHead>
                         <TableHead>Tiêu đề</TableHead>
                         <TableHead>Loại</TableHead>
-                        <TableHead>Phạm vi</TableHead>
+                        <TableHead>Hướng Tối</TableHead>
                         <TableHead>Lịch gửi</TableHead>
                         <TableHead>Đã gửi</TableHead>
                         <TableHead className="text-right">Trạng thái</TableHead>

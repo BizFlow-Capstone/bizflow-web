@@ -73,14 +73,14 @@ export default function MappingTab(props: MappingTabProps) {
               <thead className="sticky top-0 bg-gray-50 text-left text-xs uppercase text-gray-500">
                 <tr>
                   <th className="px-3 py-2">ID</th>
-                  <th className="px-3 py-2">Code</th>
+                  <th className="px-3 py-2">Mã</th>
                   <th className="px-3 py-2">Label</th>
-                  <th className="px-3 py-2">Type</th>
-                  <th className="px-3 py-2">Source</th>
+                  <th className="px-3 py-2">Loại</th>
+                  <th className="px-3 py-2">Nguồn</th>
                   <th className="px-3 py-2">Entity</th>
                   <th className="px-3 py-2">Field</th>
                   <th className="px-3 py-2">Sort</th>
-                  <th className="px-3 py-2 text-right">Actions</th>
+                  <th className="px-3 py-2 text-right">Thao Tác</th>
                 </tr>
               </thead>
               <tbody>
@@ -155,7 +155,7 @@ export default function MappingTab(props: MappingTabProps) {
                                   }}
                                   className="w-full rounded px-2 py-1.5 text-left text-xs text-red-600 hover:bg-red-50"
                                 >
-                                  Delete
+                                  Xóa
                                 </button>
                               </div>
                             ) : null}
@@ -174,7 +174,7 @@ export default function MappingTab(props: MappingTabProps) {
       <Card className="rounded-xl border border-gray-200 bg-white shadow-sm">
         <CardHeader>
           <div className="flex items-center justify-between gap-2">
-            <CardTitle>Mapping Editor</CardTitle>
+            <CardTitle>Chỉnh sửa</CardTitle>
             <Button
               size="sm"
               variant="link"
@@ -193,7 +193,7 @@ export default function MappingTab(props: MappingTabProps) {
               }}
               className=" text-[#23C4C1] hover:text-[#1ea8a6]"
             >
-              {isUpdateMode ? "Create" : "Update"}
+              {isUpdateMode ? "Tạo mới" : "Cập nhật"}
             </Button>
           </div>
         </CardHeader>
@@ -413,7 +413,7 @@ export default function MappingTab(props: MappingTabProps) {
           </div>
           <div className="space-y-1">
             <label className="block text-xs font-medium text-gray-600">
-              Formula expression
+              Công thức tính toán
             </label>
             <input
               value={props.mappingForm.formulaExpression}
@@ -423,7 +423,7 @@ export default function MappingTab(props: MappingTabProps) {
                   formulaExpression: e.target.value,
                 })
               }
-              placeholder="Formula Expression"
+              placeholder="Công thức tính toán, dùng khi source type là formula"
               className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
             />
           </div>
@@ -460,8 +460,8 @@ export default function MappingTab(props: MappingTabProps) {
               }
               className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
             >
-              <option value="false">Required: No</option>
-              <option value="true">Required: Yes</option>
+              <option value="false">Không </option>
+              <option value="true">Có</option>
             </select>
           </div>
           {!isUpdateMode ? (
@@ -471,7 +471,7 @@ export default function MappingTab(props: MappingTabProps) {
                 className={`w-full ${primaryBtnClass}`}
                 onClick={props.onCreate}
               >
-                Create
+                Tạo mới
               </Button>
             </div>
           ) : (
@@ -482,7 +482,7 @@ export default function MappingTab(props: MappingTabProps) {
                 onClick={props.onUpdate}
                 disabled={!props.mappingForm.mappingId}
               >
-                Update
+                Cập nhật
               </Button>
             </div>
           )}
