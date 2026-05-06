@@ -110,6 +110,7 @@ interface FormulaTabProps {
   onUpdate: () => void;
   onActivate: () => void;
   onDeactivate: () => void;
+  onDelete: () => void;
   onCreate: () => void;
 }
 
@@ -3146,6 +3147,7 @@ export default function FormulaTab(props: FormulaTabProps) {
   );
   const [draggingTokenId, setDraggingTokenId] = useState<string | null>(null);
   const [cloneDialogOpen, setCloneDialogOpen] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [cloneDraftCode, setCloneDraftCode] = useState("");
   const [cloneDraftSuffix, setCloneDraftSuffix] = useState(" (draft)");
   const [editingNumTokenId, setEditingNumTokenId] = useState<string | null>(
@@ -4131,6 +4133,15 @@ export default function FormulaTab(props: FormulaTabProps) {
                     Kích hoạt
                   </Button>
                 )}
+                {!isCreateMode && !isActiveFormula ? (
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    onClick={() => setDeleteConfirmOpen(true)}
+                  >
+                    Xóa
+                  </Button>
+                ) : null}
               </div>
               {saveValidationError ? (
                 <p className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
@@ -4190,6 +4201,41 @@ export default function FormulaTab(props: FormulaTabProps) {
                 </Button>
                 <Button onClick={() => cloneWithOptionalPayload(false)}>
                   Nhân bản
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          <Dialog
+            open={deleteConfirmOpen}
+            onOpenChange={setDeleteConfirmOpen}
+          >
+            <DialogContent className="sm:max-w-sm">
+              <DialogHeader>
+                <DialogTitle>Xác nhận xóa công thức</DialogTitle>
+              </DialogHeader>
+              <p className="text-sm text-gray-600">
+                Bạn có chắc chắn muốn xóa công thức{" "}
+                <span className="font-semibold text-gray-900">
+                  {props.fmCode || `#${props.fmId}`}
+                </span>{" "}
+                không? Chỉ công thức đang inactive mới xóa được.
+              </p>
+              <DialogFooter className="gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => setDeleteConfirmOpen(false)}
+                >
+                  Hủy
+                </Button>
+                <Button
+                  variant="destructive"
+                  onClick={() => {
+                    setDeleteConfirmOpen(false);
+                    props.onDelete();
+                  }}
+                >
+                  Xóa
                 </Button>
               </DialogFooter>
             </DialogContent>

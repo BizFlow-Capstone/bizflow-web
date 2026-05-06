@@ -781,6 +781,10 @@ Template "S1a - Sổ Chi Tiết Doanh Thu"
 | EXTERNAL_LOOKUP | `{ lookup: { entity: "AccountingPeriods", field: "OpeningCashBalance" }}`         | Lấy số dư đầu kỳ                  |
 | WEIGHTED_AVG    | Composition op + aggregate                                                        | Giá vốn bình quân gia quyền       |
 
+Khi bạn có nhiều lần nhập hàng với giá khác nhau
+Không xác định cụ thể bán lô nào
+→ Dùng bình quân gia quyền để ra giá vốn trung bình
+
 #### F.4.2. AST node types (8 loại)
 
 Engine BE hỗ trợ AST với 8 node types:

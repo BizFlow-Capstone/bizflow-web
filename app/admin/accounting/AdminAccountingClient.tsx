@@ -43,6 +43,8 @@ import {
   createRowDefinition,
   deleteMappableEntity,
   deactivateTemplateVersion,
+  deleteBusinessType,
+  deleteFormula,
   deleteFieldMapping,
   deleteRowDefinition,
   deleteTemplateVersion,
@@ -744,6 +746,7 @@ export default function AdminAccountingClient({
     BusinessTypeWithRatesDto[]
   >([]);
   const [btSelectedId, setBtSelectedId] = useState("");
+  const [btDeleteConfirmOpen, setBtDeleteConfirmOpen] = useState(false);
   const [btMetadataForm, setBtMetadataForm] =
     useState<BusinessTypeMetadataForm>(emptyBusinessTypeMetadataForm);
   const [btRatesForm, setBtRatesForm] = useState<BusinessTypeTaxRateForm[]>([]);
@@ -1598,6 +1601,18 @@ export default function AdminAccountingClient({
     });
   };
 
+  const btDelete = async () => {
+    if (!selectedBusinessTypeWithRates) return;
+    await runSafe(async () => {
+      await deleteBusinessType(selectedBusinessTypeWithRates.businessTypeId);
+      log(`Đã xóa business type ${selectedBusinessTypeWithRates.code}`, "ok");
+      setBtSelectedId("");
+      await loadOverview();
+      await btLoad(effectiveBtRulesetId, undefined);
+    });
+    setBtDeleteConfirmOpen(false);
+  };
+
   const handleCreateRuleset = async () => {
     setCreateRulesetLoading(true);
     await runSafe(async () => {
@@ -1969,6 +1984,17 @@ export default function AdminAccountingClient({
       setFmIsActive("false");
       await fmDetail(String(id));
       log(`Deactivated formula ${id}`, "ok");
+      await loadOverview();
+    });
+  };
+
+  const fmDelete = async () => {
+    const id = toNum(fmId);
+    if (!id) return;
+    await runSafe(async () => {
+      await deleteFormula(id);
+      log(`Đã xóa formula #${id}`, "ok");
+      setFmId("");
       await loadOverview();
     });
   };
@@ -2777,6 +2803,33 @@ export default function AdminAccountingClient({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <Dialog
+        open={btDeleteConfirmOpen}
+        onOpenChange={(open) => setBtDeleteConfirmOpen(open)}
+      >
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Xác nhận xóa loại hình kinh doanh</DialogTitle>
+            <DialogDescription>
+              {selectedBusinessTypeWithRates
+                ? `Bạn có chắc chắn muốn xóa "${selectedBusinessTypeWithRates.name || selectedBusinessTypeWithRates.code}" không?`
+                : "Không có loại hình kinh doanh nào được chọn."}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setBtDeleteConfirmOpen(false)}
+            >
+              Hủy
+            </Button>
+            <Button variant="destructive" onClick={() => void btDelete()}>
+              Xóa
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Card className="rounded-xl border border-gray-200 bg-white shadow-sm">
         <CardContent className="p-3">
           <nav aria-label="Admin accounting sections" className="space-y-3">
@@ -3490,14 +3543,24 @@ export default function AdminAccountingClient({
                     <option value="active">Kích hoạt</option>
                     <option value="inactive">Vô hiệu hóa</option>
                   </select>
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    onClick={() => void btUpdateMetadata()}
-                    disabled={!selectedBusinessTypeWithRates}
-                  >
-                    Lưu
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => void btUpdateMetadata()}
+                      disabled={!selectedBusinessTypeWithRates}
+                    >
+                      Lưu
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      onClick={() => setBtDeleteConfirmOpen(true)}
+                      disabled={!selectedBusinessTypeWithRates}
+                    >
+                      Xóa
+                    </Button>
+                  </div>
                 </div>
 
                 <div className="space-y-2 rounded-xl border border-gray-100 bg-gray-50/60 p-3">
@@ -3664,6 +3727,7 @@ export default function AdminAccountingClient({
           onCreate={() => void fmCreate()}
           onActivate={() => void fmActivate()}
           onDeactivate={() => void fmDeactivate()}
+          onDelete={() => void fmDelete()}
           onUpdate={() => void fmUpdate()}
         />
       ) : null}
