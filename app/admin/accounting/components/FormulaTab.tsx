@@ -19,6 +19,10 @@ import type {
   AccountingBusinessTypeSummary,
   AccountingTaxRulesetSummary,
 } from "@/lib/types/adminAccounting";
+import type { AccountingPeriod } from "@/lib/types/accounting";
+import type { Location } from "@/lib/types/location";
+import { getLocations } from "@/services/locationService";
+import { getAccountingPeriods } from "@/services/accountingService";
 import { cn } from "@/lib/utils";
 import type { AccountingFormulaSummary } from "@/lib/types/adminAccounting";
 import type { FormulaOption } from "./types";
@@ -53,6 +57,68 @@ interface FormulaNodeSchema {
   description: string;
   example?: string;
   fields: FormulaNodeFieldSchema[];
+}
+
+type TraceNode = {
+  step: number;
+  nodeType: string;
+  description: string;
+  resolvedValue: number | null;
+  source: string;
+  debug: string | null;
+  children: TraceNode[] | null;
+};
+
+function TraceNodeRow({
+  node,
+  depth,
+}: {
+  node: TraceNode;
+  depth: number;
+}): React.ReactElement {
+  const nodeTypeStyle: Record<string, string> = {
+    op: "bg-blue-50 text-blue-700 border-blue-200",
+    fn: "bg-purple-50 text-purple-700 border-purple-200",
+    ref: "bg-amber-50 text-amber-700 border-amber-200",
+    literal: "bg-green-50 text-green-700 border-green-200",
+  };
+  const sourceLabel: Record<string, string> = {
+    computed: "tinh toan",
+    constant: "hang so",
+    formula_cache: "cache formula",
+  };
+  const badgeClass =
+    nodeTypeStyle[node.nodeType] ?? "bg-gray-50 text-gray-600 border-gray-200";
+
+  return (
+    <>
+      <div
+        className="flex items-start gap-2 rounded px-2 py-1 text-xs hover:bg-slate-50"
+        style={{ marginLeft: depth * 20 }}
+      >
+        <span className="shrink-0 font-mono text-gray-400">#{node.step}</span>
+        <span
+          className={`shrink-0 rounded border px-1.5 py-0.5 font-mono text-[10px] ${badgeClass}`}
+        >
+          {node.nodeType}
+        </span>
+        <span className="flex-1 font-mono text-gray-800">
+          {node.description}
+        </span>
+        <span className="shrink-0 text-right font-mono font-semibold text-slate-700">
+          {node.resolvedValue == null
+            ? "—"
+            : node.resolvedValue.toLocaleString("vi-VN")}
+        </span>
+        <span className="shrink-0 text-[10px] text-gray-400 italic">
+          ({sourceLabel[node.source] ?? node.source})
+        </span>
+      </div>
+      {node.children?.map((child) => (
+        <TraceNodeRow key={child.step} node={child} depth={depth + 1} />
+      ))}
+    </>
+  );
 }
 
 interface FormulaRecipe {
@@ -157,6 +223,22 @@ function normalizeTaxType(value: string): string {
     .replace(/[\s-]+/g, "_");
   if (!normalized) return "";
   return TAX_TYPE_ALIAS[normalized] ?? normalized;
+}
+
+function isTaxRelatedFormula(formulaType: string, ...parts: string[]): boolean {
+  const haystack = [formulaType, ...parts]
+    .join(" ")
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+
+  return (
+    haystack.includes("tax_rate") ||
+    haystack.includes("tax") ||
+    haystack.includes("vat") ||
+    haystack.includes("pit") ||
+    haystack.includes("thuế") ||
+    haystack.includes("thue")
+  );
 }
 
 function normalizeFormulaType(value: string): string {
@@ -3180,8 +3262,15 @@ export default function FormulaTab(props: FormulaTabProps) {
   const [overviewRulesets, setOverviewRulesets] = useState<
     AccountingTaxRulesetSummary[]
   >([]);
+  const [traceLocations, setTraceLocations] = useState<Location[]>([]);
+  const [traceLocationsBusy, setTraceLocationsBusy] = useState(false);
+  const [traceLocationsError, setTraceLocationsError] = useState("");
+  const [tracePeriods, setTracePeriods] = useState<AccountingPeriod[]>([]);
+  const [tracePeriodsBusy, setTracePeriodsBusy] = useState(false);
+  const [tracePeriodsError, setTracePeriodsError] = useState("");
   const tokenDragHandledRef = useRef(false);
   const lastSelectedFormulaIdRef = useRef("");
+  const traceAutoRunKeyRef = useRef("");
 
   const isCreateMode = !props.fmId.trim();
   const isFormulaTypeEditable = isCreateMode;
@@ -3286,6 +3375,28 @@ export default function FormulaTab(props: FormulaTabProps) {
     });
   }
 
+  function handleRunTrace() {
+    setTraceLoading(true);
+    setTraceError("");
+    setTraceResult(null);
+    void runAccountingTrace({
+      formulaId: Number(props.fmId),
+      businessLocationId: Number(traceBusinessLocationId),
+      periodId: Number(tracePeriodId),
+      rulesetId: Number(traceRulesetId),
+      businessTypeIds: traceSelectedBtIds,
+    })
+      .then((data) => {
+        setTraceResult(data);
+      })
+      .catch((err: unknown) => {
+        setTraceError(
+          err instanceof Error ? err.message : "Lỗi khi chạy trace",
+        );
+      })
+      .finally(() => setTraceLoading(false));
+  }
+
   useEffect(() => {
     if (props.fmId.trim()) {
       lastSelectedFormulaIdRef.current = props.fmId.trim();
@@ -3296,6 +3407,196 @@ export default function FormulaTab(props: FormulaTabProps) {
   const builderTab: BuilderTabKey = useMemo(() => {
     return formulaTypeToBuilderTab(props.fmFType);
   }, [props.fmFType]);
+
+  const isTraceTaxFormula = useMemo(() => {
+    return isTaxRelatedFormula(
+      props.fmFType,
+      props.fmCode,
+      props.fmName,
+      props.fmDesc,
+      props.fmExplanation,
+    );
+  }, [
+    props.fmCode,
+    props.fmDesc,
+    props.fmExplanation,
+    props.fmFType,
+    props.fmName,
+  ]);
+
+  useEffect(() => {
+    let isMounted = true;
+    setTraceLocationsBusy(true);
+    setTraceLocationsError("");
+
+    void getLocations()
+      .then((response) => {
+        if (!isMounted) return;
+        const locations = (response.data ?? [])
+          .slice()
+          .sort((left, right) => left.id - right.id);
+        setTraceLocations(locations);
+      })
+      .catch((error) => {
+        if (!isMounted) return;
+        setTraceLocations([]);
+        setTraceLocationsError(
+          error instanceof Error
+            ? error.message
+            : "Không tải được danh sách location.",
+        );
+      })
+      .finally(() => {
+        if (isMounted) setTraceLocationsBusy(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isTraceTaxFormula) return;
+
+    setTraceBusinessLocationId((current) => current || "6");
+    setTracePeriodId((current) => current || "2");
+    setTraceRulesetId((current) => current || "1");
+    setTraceSelectedBtIds([]);
+    traceAutoRunKeyRef.current = "";
+  }, [isTraceTaxFormula, props.fmId]);
+
+  useEffect(() => {
+    const locationId = Number(traceBusinessLocationId);
+    if (!Number.isFinite(locationId) || locationId <= 0) {
+      setTracePeriods([]);
+      setTracePeriodsError("");
+      setTracePeriodsBusy(false);
+      return;
+    }
+
+    let isMounted = true;
+    setTracePeriodsBusy(true);
+    setTracePeriodsError("");
+
+    void getAccountingPeriods(locationId)
+      .then((response) => {
+        if (!isMounted) return;
+        const periods = (response.data ?? []).slice().sort((left, right) => {
+          if (left.periodId !== right.periodId) {
+            return right.periodId - left.periodId;
+          }
+          return right.year - left.year;
+        });
+
+        setTracePeriods(periods);
+        setTracePeriodId((current) => {
+          const currentPeriodId = Number(current);
+          if (periods.some((period) => period.periodId === currentPeriodId)) {
+            return current;
+          }
+
+          if (isTraceTaxFormula && locationId === 6) {
+            const preferredTaxPeriod = periods.find(
+              (period) => period.periodId === 2,
+            );
+            if (preferredTaxPeriod) {
+              return String(preferredTaxPeriod.periodId);
+            }
+          }
+
+          return String(periods[0]?.periodId ?? "");
+        });
+      })
+      .catch((error) => {
+        if (!isMounted) return;
+        setTracePeriods([]);
+        setTracePeriodsError(
+          error instanceof Error
+            ? error.message
+            : "Không tải được danh sách kỳ kế toán.",
+        );
+      })
+      .finally(() => {
+        if (isMounted) setTracePeriodsBusy(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [isTraceTaxFormula, traceBusinessLocationId]);
+
+  useEffect(() => {
+    if (!isTraceTaxFormula || builderTab !== "TAX_RATE" || !props.fmId.trim()) {
+      traceAutoRunKeyRef.current = "";
+      return;
+    }
+
+    if (
+      !traceBusinessLocationId ||
+      !tracePeriodId ||
+      !traceRulesetId ||
+      traceLoading
+    ) {
+      return;
+    }
+
+    const autoRunKey = [
+      props.fmId.trim(),
+      traceBusinessLocationId,
+      tracePeriodId,
+      traceRulesetId,
+      traceSelectedBtIds.join(","),
+    ].join("|");
+
+    if (traceAutoRunKeyRef.current === autoRunKey) return;
+    traceAutoRunKeyRef.current = autoRunKey;
+    void handleRunTrace();
+  }, [
+    builderTab,
+    isTraceTaxFormula,
+    props.fmId,
+    traceBusinessLocationId,
+    tracePeriodId,
+    traceRulesetId,
+    traceSelectedBtIds,
+    traceLoading,
+  ]);
+
+  const traceLocationOptions = useMemo(
+    () =>
+      traceLocations.map((location) => ({
+        value: String(location.id),
+        label: `#${location.id} - ${location.name}`,
+      })),
+    [traceLocations],
+  );
+
+  const tracePeriodOptions = useMemo(
+    () =>
+      tracePeriods.map((period) => {
+        const periodLabel =
+          period.periodType === "quarter"
+            ? `Q${period.quarter ?? "?"} / ${period.year}`
+            : period.periodType === "year"
+              ? `Năm ${period.year}`
+              : `${period.startDate} - ${period.endDate}`;
+
+        return {
+          value: String(period.periodId),
+          label: `#${period.periodId} - ${periodLabel}`,
+        };
+      }),
+    [tracePeriods],
+  );
+
+  const traceRulesetOptions = useMemo(
+    () =>
+      overviewRulesets.map((ruleset) => ({
+        value: String(ruleset.rulesetId),
+        label: `${ruleset.code} — ${ruleset.name}`,
+      })),
+    [overviewRulesets],
+  );
 
   function setBuilderTab(tab: BuilderTabKey) {
     if (tab === "NONE") {
@@ -4206,10 +4507,7 @@ export default function FormulaTab(props: FormulaTabProps) {
             </DialogContent>
           </Dialog>
 
-          <Dialog
-            open={deleteConfirmOpen}
-            onOpenChange={setDeleteConfirmOpen}
-          >
+          <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
             <DialogContent className="sm:max-w-sm">
               <DialogHeader>
                 <DialogTitle>Xác nhận xóa công thức</DialogTitle>
@@ -4872,29 +5170,75 @@ export default function FormulaTab(props: FormulaTabProps) {
                   <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                     <div>
                       <label className="mb-1 block text-xs font-medium text-gray-500">
-                        Business Location ID
+                        Business Location
                       </label>
-                      <input
-                        type="number"
+                      <select
                         value={traceBusinessLocationId}
                         onChange={(e) =>
                           setTraceBusinessLocationId(e.target.value)
                         }
-                        placeholder="vd: 3"
                         className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-                      />
+                        disabled={traceLocationsBusy}
+                      >
+                        <option value="">-- Chọn location --</option>
+                        {traceBusinessLocationId &&
+                        !traceLocationOptions.some(
+                          (option) => option.value === traceBusinessLocationId,
+                        ) ? (
+                          <option value={traceBusinessLocationId}>
+                            #{traceBusinessLocationId} - Mặc định / custom
+                          </option>
+                        ) : null}
+                        {traceLocationOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                      {traceLocationsError ? (
+                        <p className="mt-1 text-[11px] text-amber-600">
+                          {traceLocationsError}
+                        </p>
+                      ) : traceLocationsBusy ? (
+                        <p className="mt-1 text-[11px] text-gray-400">
+                          Đang tải danh sách location...
+                        </p>
+                      ) : null}
                     </div>
                     <div>
                       <label className="mb-1 block text-xs font-medium text-gray-500">
                         Period ID
                       </label>
-                      <input
-                        type="number"
+                      <select
                         value={tracePeriodId}
                         onChange={(e) => setTracePeriodId(e.target.value)}
-                        placeholder="vd: 6"
                         className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-                      />
+                        disabled={tracePeriodsBusy || !traceBusinessLocationId}
+                      >
+                        <option value="">-- Chọn period --</option>
+                        {tracePeriodId &&
+                        !tracePeriodOptions.some(
+                          (option) => option.value === tracePeriodId,
+                        ) ? (
+                          <option value={tracePeriodId}>
+                            #{tracePeriodId} - Mặc định / custom
+                          </option>
+                        ) : null}
+                        {tracePeriodOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                      {tracePeriodsError ? (
+                        <p className="mt-1 text-[11px] text-amber-600">
+                          {tracePeriodsError}
+                        </p>
+                      ) : tracePeriodsBusy ? (
+                        <p className="mt-1 text-[11px] text-gray-400">
+                          Đang tải danh sách kỳ kế toán...
+                        </p>
+                      ) : null}
                     </div>
                     <div>
                       <label className="mb-1 block text-xs font-medium text-gray-500">
@@ -4906,12 +5250,17 @@ export default function FormulaTab(props: FormulaTabProps) {
                         className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
                       >
                         <option value="">-- Chọn ruleset --</option>
-                        {overviewRulesets.map((rs) => (
-                          <option
-                            key={rs.rulesetId}
-                            value={String(rs.rulesetId)}
-                          >
-                            {rs.code} — {rs.name}
+                        {traceRulesetId &&
+                        !traceRulesetOptions.some(
+                          (option) => option.value === traceRulesetId,
+                        ) ? (
+                          <option value={traceRulesetId}>
+                            #{traceRulesetId} - Mặc định / custom
+                          </option>
+                        ) : null}
+                        {traceRulesetOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
                           </option>
                         ))}
                       </select>
@@ -5020,6 +5369,13 @@ export default function FormulaTab(props: FormulaTabProps) {
                           : [];
                       const finalValue =
                         r.finalValue ?? r.resolvedValue ?? r.result ?? "—";
+                      const traceNodes = Array.isArray(r.trace)
+                        ? (r.trace as TraceNode[])
+                        : [];
+                      const finalValueDisplay =
+                        typeof finalValue === "number"
+                          ? finalValue.toLocaleString("vi-VN")
+                          : String(finalValue);
                       return (
                         <>
                           {/* Summary */}
@@ -5057,15 +5413,27 @@ export default function FormulaTab(props: FormulaTabProps) {
                                     Final Value
                                   </td>
                                   <td className="px-4 py-2 font-mono font-semibold text-teal-700">
-                                    {String(finalValue)}
+                                    {finalValueDisplay}
                                   </td>
                                 </tr>
                               </tbody>
                             </table>
                           </div>
 
-                          {/* Trace steps table */}
-                          {steps.length > 0 && (
+                          {traceNodes.length > 0 && (
+                            <div className="rounded-lg border bg-white p-2 max-h-96 overflow-auto">
+                              {traceNodes.map((node) => (
+                                <TraceNodeRow
+                                  key={node.step}
+                                  node={node}
+                                  depth={0}
+                                />
+                              ))}
+                            </div>
+                          )}
+
+                          {/* Trace steps table (fallback) */}
+                          {traceNodes.length === 0 && steps.length > 0 && (
                             <div className="overflow-x-auto rounded-lg border border-gray-200">
                               <table className="w-full text-sm">
                                 <thead className="bg-teal-50">

@@ -147,13 +147,15 @@ function assembleRowsFromSections(
 
   dataRows.forEach((row) => {
     const businessTypeId = normalizeKey(resolveBusinessTypeId(row));
-    if (!businessTypeId) {
+    const sectionKey = normalizeKey(asString(row.section));
+    const groupKey = businessTypeId || sectionKey;
+    if (!groupKey) {
       ungroupedRows.push(row);
       return;
     }
-    const group = groupedDataRows.get(businessTypeId) ?? [];
+    const group = groupedDataRows.get(groupKey) ?? [];
     group.push(row);
-    groupedDataRows.set(businessTypeId, group);
+    groupedDataRows.set(groupKey, group);
   });
 
   const assembledRows: BookRow[] = [];
@@ -167,7 +169,10 @@ function assembleRowsFromSections(
       }
 
       const placeholderBusinessType = normalizeKey(
-        layoutRow.dataFilter?.businessTypeId ?? section.businessTypeId ?? "",
+        layoutRow.dataFilter?.businessTypeId ??
+          layoutRow.dataFilter?.section ??
+          section.businessTypeId ??
+          "",
       );
 
       if (placeholderBusinessType) {
