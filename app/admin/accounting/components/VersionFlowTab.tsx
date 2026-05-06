@@ -40,6 +40,7 @@ import {
   getMappableEntities,
   getMappableEntityDetail,
   getTemplateVersionFormulas,
+  runAccountingTrace,
   updateFieldMappingForTesting,
   updateFormulaTesting,
   updateMappableEntity,
@@ -769,6 +770,68 @@ function ReferenceHelpLabel({
   );
 }
 
+type TraceNode = {
+  step: number;
+  nodeType: string;
+  description: string;
+  resolvedValue: number | null;
+  source: string;
+  debug: string | null;
+  children: TraceNode[] | null;
+};
+
+function TraceNodeRow({
+  node,
+  depth,
+}: {
+  node: TraceNode;
+  depth: number;
+}): React.ReactElement {
+  const nodeTypeStyle: Record<string, string> = {
+    op: "bg-blue-50 text-blue-700 border-blue-200",
+    fn: "bg-purple-50 text-purple-700 border-purple-200",
+    ref: "bg-amber-50 text-amber-700 border-amber-200",
+    literal: "bg-green-50 text-green-700 border-green-200",
+  };
+  const sourceLabel: Record<string, string> = {
+    computed: "tính toán",
+    constant: "hằng số",
+    formula_cache: "cache formula",
+  };
+  const badgeClass =
+    nodeTypeStyle[node.nodeType] ?? "bg-gray-50 text-gray-600 border-gray-200";
+
+  return (
+    <>
+      <div
+        className="flex items-start gap-2 rounded px-2 py-1 text-xs hover:bg-slate-50"
+        style={{ marginLeft: depth * 20 }}
+      >
+        <span className="shrink-0 font-mono text-gray-400">#{node.step}</span>
+        <span
+          className={`shrink-0 rounded border px-1.5 py-0.5 font-mono text-[10px] ${badgeClass}`}
+        >
+          {node.nodeType}
+        </span>
+        <span className="flex-1 font-mono text-gray-800">
+          {node.description}
+        </span>
+        <span className="shrink-0 text-right font-mono font-semibold text-slate-700">
+          {node.resolvedValue == null
+            ? "—"
+            : node.resolvedValue.toLocaleString("vi-VN")}
+        </span>
+        <span className="shrink-0 text-[10px] text-gray-400 italic">
+          ({sourceLabel[node.source] ?? node.source})
+        </span>
+      </div>
+      {node.children?.map((child) => (
+        <TraceNodeRow key={child.step} node={child} depth={depth + 1} />
+      ))}
+    </>
+  );
+}
+
 export default function VersionTab(props: VersionTabProps) {
   const selectedVersionId = props.tvId;
   const isConsultantMode = props.mode === "consultant";
@@ -839,6 +902,8 @@ export default function VersionTab(props: VersionTabProps) {
   );
   const [renderPreviewHasMore, setRenderPreviewHasMore] = useState(false);
   const [renderPreviewError, setRenderPreviewError] = useState("");
+  const [deactivateBusy, setDeactivateBusy] = useState(false);
+  const [deactivateError, setDeactivateError] = useState("");
   const [previewBookId, setPreviewBookId] = useState<number | null>(null);
   const [previewPeriodId, setPreviewPeriodId] = useState<number | null>(
     PREVIEW_DEFAULT_PERIOD_ID,
@@ -1063,6 +1128,16 @@ export default function VersionTab(props: VersionTabProps) {
     null,
   );
   const [selectedEntityId, setSelectedEntityId] = useState<number | null>(null);
+  const [traceLocationId, setTraceLocationId] = useState("6");
+  const [tracePeriodId, setTracePeriodId] = useState("");
+  const [traceRulesetId, setTraceRulesetId] = useState("1");
+  const [traceBusinessTypeIds, setTraceBusinessTypeIds] = useState("");
+  const [traceResult, setTraceResult] = useState<Record<
+    string,
+    unknown
+  > | null>(null);
+  const [traceBusy, setTraceBusy] = useState(false);
+  const [traceError, setTraceError] = useState("");
 
   const selectedMapping = useMemo(
     () =>
@@ -2186,6 +2261,30 @@ export default function VersionTab(props: VersionTabProps) {
     }
   }
 
+  async function handleRunTrace() {
+    if (!selectedFormulaId) return;
+    setTraceBusy(true);
+    setTraceError("");
+    setTraceResult(null);
+    try {
+      const res = await runAccountingTrace({
+        formulaId: selectedFormulaId,
+        businessLocationId: Number(traceLocationId) || 6,
+        periodId: Number(tracePeriodId) || 0,
+        rulesetId: Number(traceRulesetId) || 1,
+        businessTypeIds: traceBusinessTypeIds
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean),
+      });
+      setTraceResult((res as Record<string, unknown>) ?? null);
+    } catch (err) {
+      setTraceError(err instanceof Error ? err.message : "Lỗi khi chạy trace");
+    } finally {
+      setTraceBusy(false);
+    }
+  }
+
   async function handleCloneFormulaForDraft() {
     const formulaId = toNullableNumber(formulaDraft.formulaId);
     if (!formulaId) return;
@@ -2840,6 +2939,34 @@ export default function VersionTab(props: VersionTabProps) {
                         <Sparkles className="mr-1.5 h-3.5 w-3.5" />
                         Clone và mở flow chỉnh sửa
                       </Button>
+                      {!isConsultantMode ? (
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          onClick={async () => {
+                            if (!confirm("Bạn có chắc muốn deactivate phiên bản này?")) return;
+                            setDeactivateError("");
+                            setDeactivateBusy(true);
+                            try {
+                              await props.onDeactivate();
+                            } catch (err: unknown) {
+                              setDeactivateError(
+                                err instanceof Error ? err.message : "Lỗi khi deactivate",
+                              );
+                            } finally {
+                              setDeactivateBusy(false);
+                            }
+                          }}
+                          disabled={deactivateBusy}
+                          className="ml-2 bg-red-600 text-white hover:bg-red-700"
+                        >
+                          <Power className="mr-1.5 h-3.5 w-3.5" />
+                          Deactivate phiên bản
+                        </Button>
+                      ) : null}
+                      {deactivateError ? (
+                        <div className="mt-2 text-sm text-red-600">{deactivateError}</div>
+                      ) : null}
                     </div>
                   </div>
                 </div>
@@ -3733,184 +3860,315 @@ export default function VersionTab(props: VersionTabProps) {
             ) : null}
 
             {!wizardLoading && wizardStep === 99 ? (
-              <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.1fr_0.9fr]">
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-base">Linked formulas</CardTitle>
-                  </CardHeader>
-                  <CardContent className="max-h-[48vh] overflow-auto">
-                    {linkedFormulas.length === 0 ? (
-                      <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 p-4 text-sm text-gray-500">
-                        Draft này chưa liên kết formula nào.
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.1fr_0.9fr]">
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-base">
+                        Linked formulas
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="max-h-[48vh] overflow-auto">
+                      {linkedFormulas.length === 0 ? (
+                        <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 p-4 text-sm text-gray-500">
+                          Draft này chưa liên kết formula nào.
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          {linkedFormulas.map((formula) => {
+                            const formulaId = asNumber(formula.formulaId);
+                            const isSelected = formulaId === selectedFormulaId;
+                            const affectedMappings = fieldMappings.filter(
+                              (mapping) =>
+                                asNumber(mapping.formulaId) === formulaId,
+                            ).length;
+                            const affectedRows = rowDefinitions.filter(
+                              (row) => asNumber(row.formulaId) === formulaId,
+                            ).length;
+                            return (
+                              <button
+                                key={String(formula.formulaId)}
+                                type="button"
+                                onClick={() => setSelectedFormulaId(formulaId)}
+                                className={`w-full cursor-pointer rounded-lg border p-3 text-left transition ${
+                                  isSelected
+                                    ? "border-[#23C4C1] bg-[#23C4C1]/5"
+                                    : "border-gray-200 hover:border-[#23C4C1]/30"
+                                }`}
+                              >
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className="font-mono text-xs text-gray-700">
+                                    {asString(formula.code)}
+                                  </span>
+                                  <Badge
+                                    variant="outline"
+                                    className="text-[10px]"
+                                  >
+                                    #{formulaId}
+                                  </Badge>
+                                </div>
+                                <p className="mt-1 text-sm text-gray-900">
+                                  {asString(formula.name) ||
+                                    "Không có tên formula"}
+                                </p>
+                                <p className="mt-1 text-xs text-gray-500">
+                                  Mapping dùng: {affectedMappings} · Rows dùng:{" "}
+                                  {affectedRows}
+                                </p>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-base">
+                        Sửa formula được chọn
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      <div className="space-y-1">
+                        <label className="block text-xs font-medium text-gray-600">
+                          Formula code
+                        </label>
+                        <input
+                          value={formulaDraft.code}
+                          readOnly
+                          className="w-full rounded-lg border bg-gray-50 px-3 py-2 font-mono text-xs"
+                        />
                       </div>
-                    ) : (
-                      <div className="space-y-2">
-                        {linkedFormulas.map((formula) => {
-                          const formulaId = asNumber(formula.formulaId);
-                          const isSelected = formulaId === selectedFormulaId;
-                          const affectedMappings = fieldMappings.filter(
-                            (mapping) =>
-                              asNumber(mapping.formulaId) === formulaId,
-                          ).length;
-                          const affectedRows = rowDefinitions.filter(
-                            (row) => asNumber(row.formulaId) === formulaId,
-                          ).length;
-                          return (
-                            <button
-                              key={String(formula.formulaId)}
-                              type="button"
-                              onClick={() => setSelectedFormulaId(formulaId)}
-                              className={`w-full cursor-pointer rounded-lg border p-3 text-left transition ${
-                                isSelected
-                                  ? "border-[#23C4C1] bg-[#23C4C1]/5"
-                                  : "border-gray-200 hover:border-[#23C4C1]/30"
-                              }`}
-                            >
-                              <div className="flex items-center justify-between gap-2">
-                                <span className="font-mono text-xs text-gray-700">
-                                  {asString(formula.code)}
-                                </span>
-                                <Badge
-                                  variant="outline"
-                                  className="text-[10px]"
-                                >
-                                  #{formulaId}
-                                </Badge>
-                              </div>
-                              <p className="mt-1 text-sm text-gray-900">
-                                {asString(formula.name) ||
-                                  "Không có tên formula"}
-                              </p>
-                              <p className="mt-1 text-xs text-gray-500">
-                                Mapping dùng: {affectedMappings} · Rows dùng:{" "}
-                                {affectedRows}
-                              </p>
-                            </button>
-                          );
-                        })}
+                      <div className="space-y-1">
+                        <label className="block text-xs font-medium text-gray-600">
+                          Formula name
+                        </label>
+                        <input
+                          value={formulaDraft.name}
+                          onChange={(e) =>
+                            setFormulaDraft((prev) => ({
+                              ...prev,
+                              name: e.target.value,
+                            }))
+                          }
+                          className="w-full rounded-lg border px-3 py-2 text-sm"
+                        />
                       </div>
-                    )}
-                  </CardContent>
-                </Card>
+                      <div className="space-y-1">
+                        <label className="block text-xs font-medium text-gray-600">
+                          Description
+                        </label>
+                        <input
+                          value={formulaDraft.description}
+                          onChange={(e) =>
+                            setFormulaDraft((prev) => ({
+                              ...prev,
+                              description: e.target.value,
+                            }))
+                          }
+                          className="w-full rounded-lg border px-3 py-2 text-sm"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="block text-xs font-medium text-gray-600">
+                          Formula type
+                        </label>
+                        <input
+                          value={formulaDraft.formulaType}
+                          onChange={(e) =>
+                            setFormulaDraft((prev) => ({
+                              ...prev,
+                              formulaType: e.target.value,
+                            }))
+                          }
+                          className="w-full rounded-lg border px-3 py-2 text-sm"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="block text-xs font-medium text-gray-600">
+                          Trạng thái
+                        </label>
+                        <select
+                          value={formulaDraft.isActive}
+                          onChange={(e) =>
+                            setFormulaDraft((prev) => ({
+                              ...prev,
+                              isActive: e.target.value,
+                            }))
+                          }
+                          className="w-full rounded-lg border px-3 py-2 text-sm"
+                        >
+                          <option value="true">Active</option>
+                          <option value="false">Inactive</option>
+                        </select>
+                      </div>
+                      <div className="space-y-1">
+                        <label className="block text-xs font-medium text-gray-600">
+                          Expression JSON
+                        </label>
+                        <textarea
+                          value={formulaDraft.expressionJson}
+                          onChange={(e) =>
+                            setFormulaDraft((prev) => ({
+                              ...prev,
+                              expressionJson: e.target.value,
+                            }))
+                          }
+                          rows={8}
+                          className="w-full rounded-lg border px-3 py-2 font-mono text-xs"
+                        />
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          className={PRIMARY}
+                          onClick={() => void handleSaveFormula()}
+                          disabled={wizardBusy || !formulaDraft.formulaId}
+                        >
+                          <Save className="mr-1.5 h-3.5 w-3.5" />
+                          Lưu formula
+                        </Button>
+                        <Button
+                          variant="outline"
+                          onClick={() => void handleCloneFormulaForDraft()}
+                          disabled={wizardBusy || !formulaDraft.formulaId}
+                        >
+                          <Copy className="mr-1.5 h-3.5 w-3.5" />
+                          Clone formula cho draft
+                        </Button>
+                      </div>
+                      <p className="text-xs text-gray-500">
+                        Nếu formula này đang được active version dùng chung, hãy
+                        clone rồi thay thế vào draft trước khi sửa sâu.
+                      </p>
+                    </CardContent>
+                  </Card>
+                </div>
 
                 <Card>
                   <CardHeader>
-                    <CardTitle className="text-base">
-                      Sửa formula được chọn
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <Activity className="h-4 w-4 text-[#23C4C1]" />
+                      Trace formula
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-3">
-                    <div className="space-y-1">
-                      <label className="block text-xs font-medium text-gray-600">
-                        Formula code
-                      </label>
-                      <input
-                        value={formulaDraft.code}
-                        readOnly
-                        className="w-full rounded-lg border bg-gray-50 px-3 py-2 font-mono text-xs"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="block text-xs font-medium text-gray-600">
-                        Formula name
-                      </label>
-                      <input
-                        value={formulaDraft.name}
-                        onChange={(e) =>
-                          setFormulaDraft((prev) => ({
-                            ...prev,
-                            name: e.target.value,
-                          }))
-                        }
-                        className="w-full rounded-lg border px-3 py-2 text-sm"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="block text-xs font-medium text-gray-600">
-                        Description
-                      </label>
-                      <input
-                        value={formulaDraft.description}
-                        onChange={(e) =>
-                          setFormulaDraft((prev) => ({
-                            ...prev,
-                            description: e.target.value,
-                          }))
-                        }
-                        className="w-full rounded-lg border px-3 py-2 text-sm"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="block text-xs font-medium text-gray-600">
-                        Formula type
-                      </label>
-                      <input
-                        value={formulaDraft.formulaType}
-                        onChange={(e) =>
-                          setFormulaDraft((prev) => ({
-                            ...prev,
-                            formulaType: e.target.value,
-                          }))
-                        }
-                        className="w-full rounded-lg border px-3 py-2 text-sm"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="block text-xs font-medium text-gray-600">
-                        Trạng thái
-                      </label>
-                      <select
-                        value={formulaDraft.isActive}
-                        onChange={(e) =>
-                          setFormulaDraft((prev) => ({
-                            ...prev,
-                            isActive: e.target.value,
-                          }))
-                        }
-                        className="w-full rounded-lg border px-3 py-2 text-sm"
-                      >
-                        <option value="true">Active</option>
-                        <option value="false">Inactive</option>
-                      </select>
-                    </div>
-                    <div className="space-y-1">
-                      <label className="block text-xs font-medium text-gray-600">
-                        Expression JSON
-                      </label>
-                      <textarea
-                        value={formulaDraft.expressionJson}
-                        onChange={(e) =>
-                          setFormulaDraft((prev) => ({
-                            ...prev,
-                            expressionJson: e.target.value,
-                          }))
-                        }
-                        rows={8}
-                        className="w-full rounded-lg border px-3 py-2 font-mono text-xs"
-                      />
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      <Button
-                        className={PRIMARY}
-                        onClick={() => void handleSaveFormula()}
-                        disabled={wizardBusy || !formulaDraft.formulaId}
-                      >
-                        <Save className="mr-1.5 h-3.5 w-3.5" />
-                        Lưu formula
-                      </Button>
-                      <Button
-                        variant="outline"
-                        onClick={() => void handleCloneFormulaForDraft()}
-                        disabled={wizardBusy || !formulaDraft.formulaId}
-                      >
-                        <Copy className="mr-1.5 h-3.5 w-3.5" />
-                        Clone formula cho draft
-                      </Button>
-                    </div>
-                    <p className="text-xs text-gray-500">
-                      Nếu formula này đang được active version dùng chung, hãy
-                      clone rồi thay thế vào draft trước khi sửa sâu.
-                    </p>
+                    {!selectedFormulaId ? (
+                      <p className="text-sm text-gray-400 italic">
+                        Chọn một formula ở trên để chạy trace.
+                      </p>
+                    ) : (
+                      <>
+                        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                          <div className="space-y-1">
+                            <label className="block text-xs font-medium text-gray-600">
+                              Formula ID
+                            </label>
+                            <input
+                              value={selectedFormulaId}
+                              readOnly
+                              className="w-full rounded-lg border bg-gray-50 px-3 py-2 font-mono text-xs"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="block text-xs font-medium text-gray-600">
+                              Location ID
+                            </label>
+                            <input
+                              value={traceLocationId}
+                              onChange={(e) =>
+                                setTraceLocationId(e.target.value)
+                              }
+                              className="w-full rounded-lg border px-3 py-2 text-sm"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="block text-xs font-medium text-gray-600">
+                              Period ID
+                            </label>
+                            <input
+                              value={tracePeriodId}
+                              onChange={(e) => setTracePeriodId(e.target.value)}
+                              placeholder="ví dụ: 3"
+                              className="w-full rounded-lg border px-3 py-2 text-sm"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="block text-xs font-medium text-gray-600">
+                              Ruleset ID
+                            </label>
+                            <input
+                              value={traceRulesetId}
+                              onChange={(e) =>
+                                setTraceRulesetId(e.target.value)
+                              }
+                              className="w-full rounded-lg border px-3 py-2 text-sm"
+                            />
+                          </div>
+                        </div>
+                        <div className="space-y-1">
+                          <label className="block text-xs font-medium text-gray-600">
+                            Business Type IDs (phân cách bởi dấu phẩy)
+                          </label>
+                          <input
+                            value={traceBusinessTypeIds}
+                            onChange={(e) =>
+                              setTraceBusinessTypeIds(e.target.value)
+                            }
+                            placeholder="ví dụ: retail,wholesale (để trống = tất cả)"
+                            className="w-full rounded-lg border px-3 py-2 text-sm"
+                          />
+                        </div>
+                        <Button
+                          className={PRIMARY}
+                          onClick={() => void handleRunTrace()}
+                          disabled={traceBusy}
+                        >
+                          <Activity className="mr-1.5 h-3.5 w-3.5" />
+                          {traceBusy ? "Đang chạy..." : "Chạy trace"}
+                        </Button>
+                        {traceError ? (
+                          <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                            {traceError}
+                          </div>
+                        ) : null}
+                        {traceResult ? (
+                          <div className="space-y-2">
+                            <div className="flex items-center gap-3 rounded-lg border border-[#23C4C1]/30 bg-[#23C4C1]/5 px-3 py-2">
+                              <span className="font-mono text-xs text-gray-600">
+                                {String(traceResult.formulaCode ?? "")}
+                              </span>
+                              <span className="text-sm text-gray-700">
+                                {String(traceResult.formulaName ?? "")}
+                              </span>
+                              <span className="ml-auto font-mono font-bold text-[#23C4C1]">
+                                ={" "}
+                                {typeof traceResult.finalValue === "number"
+                                  ? traceResult.finalValue.toLocaleString(
+                                      "vi-VN",
+                                    )
+                                  : String(traceResult.finalValue ?? "—")}
+                              </span>
+                            </div>
+                            <div className="rounded-lg border bg-white p-2 max-h-96 overflow-auto">
+                              {(traceResult.trace as TraceNode[] | null)?.map(
+                                (node) => (
+                                  <TraceNodeRow
+                                    key={node.step}
+                                    node={node}
+                                    depth={0}
+                                  />
+                                ),
+                              ) ?? (
+                                <p className="text-xs text-gray-400 italic p-2">
+                                  Không có trace data.
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        ) : null}
+                      </>
+                    )}
                   </CardContent>
                 </Card>
               </div>
@@ -4290,7 +4548,7 @@ export default function VersionTab(props: VersionTabProps) {
                       </div>
                     )}
 
-                    {!isS2aTemplate ? (
+                    {/* {!isS2aTemplate ? (
                       <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
                         <div className="rounded-lg border bg-gray-50 p-3">
                           <p className="text-xs font-semibold uppercase tracking-wide text-gray-600">
@@ -4338,7 +4596,7 @@ export default function VersionTab(props: VersionTabProps) {
                           </div>
                         </div>
                       </div>
-                    ) : null}
+                    ) : null} */}
                   </CardContent>
                 </Card>
 

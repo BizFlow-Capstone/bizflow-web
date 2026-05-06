@@ -138,6 +138,62 @@ interface RowTaxRateHint {
   description: string;
 }
 
+type TraceNode = {
+  step: number;
+  nodeType: string;
+  description: string;
+  resolvedValue: number | null;
+  source: string;
+  debug: string | null;
+  children: TraceNode[] | null;
+};
+
+function TraceNodeRow({ node, depth }: { node: TraceNode; depth: number }) {
+  const nodeTypeStyle: Record<string, string> = {
+    op: "bg-blue-50 text-blue-700 border-blue-200",
+    fn: "bg-purple-50 text-purple-700 border-purple-200",
+    ref: "bg-amber-50 text-amber-700 border-amber-200",
+    literal: "bg-green-50 text-green-700 border-green-200",
+  };
+  const sourceLabel: Record<string, string> = {
+    computed: "tính toán",
+    constant: "hằng số",
+    formula_cache: "cache formula",
+  };
+  const badgeClass =
+    nodeTypeStyle[node.nodeType] ?? "bg-gray-50 text-gray-600 border-gray-200";
+
+  return (
+    <>
+      <div
+        className="flex items-start gap-2 rounded px-2 py-1 text-xs hover:bg-slate-50"
+        style={{ marginLeft: depth * 20 }}
+      >
+        <span className="shrink-0 font-mono text-gray-400">#{node.step}</span>
+        <span
+          className={`shrink-0 rounded border px-1.5 py-0.5 font-mono text-[10px] ${badgeClass}`}
+        >
+          {node.nodeType}
+        </span>
+        <span className="flex-1 font-mono text-gray-800">
+          {node.description}
+        </span>
+        <span className="shrink-0 text-right font-mono font-semibold text-slate-700">
+          {node.resolvedValue == null
+            ? "—"
+            : node.resolvedValue.toLocaleString("vi-VN")}
+        </span>
+        <span className="shrink-0 text-[10px] text-gray-400 italic">
+          ({sourceLabel[node.source] ?? node.source})
+        </span>
+      </div>
+      {node.children?.map((child) => (
+        <TraceNodeRow key={child.step} node={child} depth={depth + 1} />
+      ))}
+    </>
+  );
+}
+
 interface BusinessTypeMetadataForm {
   name: string;
   description: string;
@@ -1069,31 +1125,15 @@ export default function AdminAccountingClient({
 
   const traceOverview = useMemo(() => {
     const root = asRecord(traceResult);
-    const traceItems = asArray(root?.trace).map((item) => {
-      const rawDebug = item.debug;
-      const debugText =
-        rawDebug == null
-          ? "-"
-          : typeof rawDebug === "string"
-            ? rawDebug
-            : JSON.stringify(rawDebug);
-
-      return {
-        step: Number(item.step ?? 0),
-        nodeType: String(item.nodeType ?? ""),
-        description: String(item.description ?? ""),
-        resolvedValue: item.resolvedValue,
-        source: String(item.source ?? ""),
-        debug: debugText,
-        childrenCount: Array.isArray(item.children) ? item.children.length : 0,
-      };
-    });
+    const traceNodes = Array.isArray(root?.trace)
+      ? (root.trace as TraceNode[])
+      : [];
 
     return {
       formulaCode: String(root?.formulaCode ?? ""),
       formulaName: String(root?.formulaName ?? ""),
       finalValue: root?.finalValue,
-      traceItems,
+      traceNodes,
     };
   }, [traceResult]);
 
@@ -5631,78 +5671,16 @@ export default function AdminAccountingClient({
                   </table>
                 </div>
 
-                <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
-                  <table className="w-full min-w-275 border-collapse text-sm">
-                    <thead>
-                      <tr className="bg-[#ecfbfa] text-gray-700">
-                        <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
-                          Bước
-                        </th>
-                        <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
-                          Số hiệu
-                        </th>
-                        <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
-                          Mô tả
-                        </th>
-                        <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
-                          Giá trị
-                        </th>
-                        <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
-                          Nguồn
-                        </th>
-                        <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
-                          Debug
-                        </th>
-                        <th className="border border-gray-200 px-3 py-2 text-left font-semibold">
-                          Node con
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {traceOverview.traceItems.length === 0 ? (
-                        <tr>
-                          <td
-                            className="border border-gray-200 px-3 py-4 text-center text-gray-500"
-                            colSpan={7}
-                          >
-                            Không có trace steps.
-                          </td>
-                        </tr>
-                      ) : (
-                        traceOverview.traceItems.map((item, index) => (
-                          <tr
-                            key={`${item.step || index}-${item.nodeType || "node"}`}
-                          >
-                            <td className="border border-gray-200 px-3 py-2">
-                              {item.step || index + 1}
-                            </td>
-                            <td className="border border-gray-200 px-3 py-2">
-                              {item.nodeType || "-"}
-                            </td>
-                            <td className="border border-gray-200 px-3 py-2">
-                              {item.description || "-"}
-                            </td>
-                            <td className="border border-gray-200 px-3 py-2">
-                              {item.resolvedValue == null
-                                ? "-"
-                                : typeof item.resolvedValue === "number"
-                                  ? item.resolvedValue.toLocaleString("vi-VN")
-                                  : String(item.resolvedValue)}
-                            </td>
-                            <td className="border border-gray-200 px-3 py-2">
-                              {item.source || "-"}
-                            </td>
-                            <td className="border border-gray-200 px-3 py-2 text-xs text-gray-600">
-                              {item.debug}
-                            </td>
-                            <td className="border border-gray-200 px-3 py-2">
-                              {item.childrenCount}
-                            </td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
+                <div className="rounded-xl border border-gray-200 bg-white p-2 max-h-96 overflow-auto">
+                  {traceOverview.traceNodes.length === 0 ? (
+                    <p className="px-3 py-2 text-center text-sm text-gray-500">
+                      Không có trace data.
+                    </p>
+                  ) : (
+                    traceOverview.traceNodes.map((node) => (
+                      <TraceNodeRow key={node.step} node={node} depth={0} />
+                    ))
+                  )}
                 </div>
               </div>
             )}
