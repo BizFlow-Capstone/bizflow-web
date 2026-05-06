@@ -348,6 +348,12 @@ export async function deleteTemplateVersion(
   );
 }
 
+export async function deleteFormula(formulaId: number): Promise<void> {
+  await request<unknown>(`/api/admin/accounting/formulas/${formulaId}`, {
+    method: "DELETE",
+  });
+}
+
 export async function getFormulaDetail(
   formulaId: number,
 ): Promise<Record<string, unknown>> {
@@ -476,6 +482,15 @@ export async function updateBusinessTypeMetadata(
   return request<Record<string, unknown>>(
     `/api/admin/accounting/business-types/${businessTypeId}`,
     { method: "PATCH", body: JSON.stringify(payload) },
+  );
+}
+
+export async function deleteBusinessType(
+  businessTypeId: string,
+): Promise<void> {
+  await request<unknown>(
+    `/api/admin/accounting/business-types/${businessTypeId}`,
+    { method: "DELETE" },
   );
 }
 

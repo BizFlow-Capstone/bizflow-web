@@ -555,6 +555,16 @@ function renderS1aTemplate(context: TemplateRenderContext): ReactElement {
   const { normalizedColumns, rows, totalValue, templateName, versionLabel } =
     context;
 
+  const totalRowDef =
+    context.rowDefinitions.find(
+      (rowDef) =>
+        ["grand_total", "subtotal", "tax_line"].includes(rowDef.rowType) &&
+        rowDef.position === "start_of_book",
+    ) ||
+    context.rowDefinitions.find((rowDef) =>
+      ["grand_total", "subtotal", "tax_line"].includes(rowDef.rowType),
+    );
+
   const summaryAnchorRow = [...rows]
     .reverse()
     .find((row) =>
@@ -564,6 +574,9 @@ function renderS1aTemplate(context: TemplateRenderContext): ReactElement {
     );
 
   const summaryLabelFieldCode =
+    (totalRowDef?.visibleFieldCodes ?? []).find((fieldCode) =>
+      normalizedColumns.some((column) => column.fieldCode === fieldCode),
+    ) ||
     parseVisibleFieldCodes(summaryAnchorRow?.visibleFieldCodes).find(
       (fieldCode) =>
         normalizedColumns.some((column) => column.fieldCode === fieldCode),
@@ -602,20 +615,28 @@ function renderS1aTemplate(context: TemplateRenderContext): ReactElement {
     ),
   }));
 
-  displayRows.push({
-    id: "s1a-total",
-    isEmphasis: true,
-    cells: Object.fromEntries(
-      displayColumns.map((column) => {
-        if (column.key === summaryLabelFieldCode)
-          return [column.key, "Tổng cộng"];
-        if (column.key === summaryValueFieldCode) {
-          return [column.key, totalValue.toLocaleString("vi-VN")];
-        }
-        return [column.key, ""];
-      }),
-    ),
-  });
+  if (totalRowDef) {
+    const totalRow: DisplayRow = {
+      id: "s1a-total",
+      isEmphasis: true,
+      cells: Object.fromEntries(
+        displayColumns.map((column) => {
+          if (column.key === summaryLabelFieldCode)
+            return [column.key, normalizeHumanLabel(totalRowDef.rowLabel)];
+          if (column.key === summaryValueFieldCode) {
+            return [column.key, totalValue.toLocaleString("vi-VN")];
+          }
+          return [column.key, ""];
+        }),
+      ),
+    };
+
+    if (totalRowDef.position === "start_of_book") {
+      displayRows.unshift(totalRow);
+    } else {
+      displayRows.push(totalRow);
+    }
+  }
 
   return (
     <div className="bg-white p-8 font-serif text-slate-900 border shadow-2xl space-y-8 transition-all hover:shadow-cyan-100/50">
@@ -792,57 +813,13 @@ function appendDefinitionTotals(
     rows.map((row) => normalizeCompareText(row.cells.dien_giai || "")),
   );
 
-  const defaultTotals = [
-    {
-      taxType: "VAT",
-      label: "Tổng số thuế GTGT phải nộp",
-      value: getTaxTotalAmount(
-        context.rows,
-        context.summaryMeta,
-        amountFieldCode,
-        "VAT",
-      ),
-    },
-    {
-      taxType: "PIT",
-      label: "Tổng số thuế TNCN phải nộp",
-      value: getTaxTotalAmount(
-        context.rows,
-        context.summaryMeta,
-        amountFieldCode,
-        "PIT",
-      ),
-    },
-  ].filter((item) => includePIT || item.taxType === "VAT");
-
-  if (endRows.length === 0) {
-    defaultTotals.forEach((line, index) => {
-      const normalized = normalizeCompareText(line.label);
-      if (existingDescriptions.has(normalized)) return;
-      rows.push({
-        id: `default-total-${line.taxType}-${index}`,
-        isEmphasis: true,
-        cells: {
-          stt: "",
-          so_hieu: "",
-          ngay_thang: "",
-          dien_giai: line.label,
-          so_tien: line.value == null ? "" : line.value.toLocaleString("vi-VN"),
-        },
-      });
-    });
-    return;
-  }
-
   endRows.forEach((rowDef, index) => {
-    const taxType = rowDef.taxType || (index === 0 ? "VAT" : "PIT");
+    const taxType = rowDef.taxType ? rowDef.taxType.toUpperCase() : "";
+    if (!taxType) return;
     if (!includePIT && taxType === "PIT") return;
 
-    const fallbackLabel =
-      taxType === "PIT"
-        ? "Tổng số thuế TNCN phải nộp"
-        : "Tổng số thuế GTGT phải nộp";
-    const label = normalizeHumanLabel(rowDef.rowLabel) || fallbackLabel;
+    const label = normalizeHumanLabel(rowDef.rowLabel);
+    if (!label) return;
     const normalized = normalizeCompareText(label);
     if (existingDescriptions.has(normalized)) return;
 
@@ -1229,38 +1206,11 @@ function renderS2cTemplate(context: TemplateRenderContext): ReactElement {
 
   appendS2cDefinitionRows(rows, context);
 
-  const metrics = [
-    { code: "tong_dt", label: "Tổng doanh thu" },
-    { code: "tong_cp", label: "Tổng chi phí hợp lý" },
-    { code: "chenh_lech", label: "Chênh lệch (DT - CP)" },
-    { code: "thue_tncn", label: "Thuế TNCN phải nộp" },
-  ];
-
   return (
     <div className="bg-white p-8 font-serif text-slate-900 border shadow-2xl space-y-8">
       {renderFormHeader("S2c-HKD", context.templateName, context.versionLabel)}
       {renderBookTitle("SỔ CHI TIẾT DOANH THU, CHI PHÍ")}
       {renderLedgerTable(columns, rows)}
-
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-        {metrics.map((metric) => {
-          const value =
-            getLatestFieldValue(context.rows, metric.code) ??
-            context.summaryMeta?.[metric.code] ??
-            null;
-          return (
-            <div
-              key={metric.code}
-              className="rounded-lg border border-slate-300 bg-slate-50 px-3 py-2"
-            >
-              <div className="text-xs text-slate-600">{metric.label}</div>
-              <div className="text-sm font-semibold text-slate-900">
-                {formatValue(value) || "-"}
-              </div>
-            </div>
-          );
-        })}
-      </div>
 
       {renderSignatureBlock()}
     </div>
@@ -1419,71 +1369,11 @@ function renderS2eTemplate(context: TemplateRenderContext): ReactElement {
 
   appendS2eDefinitionRows(rows, context);
 
-  const cashMetrics = [
-    { code: "cash_opening", label: "Tiền mặt đầu kỳ" },
-    { code: "cash_in", label: "Tổng thu tiền mặt" },
-    { code: "cash_out", label: "Tổng chi tiền mặt" },
-    { code: "cash_closing", label: "Tiền mặt tồn cuối kỳ" },
-  ];
-
-  const bankMetrics = [
-    { code: "bank_opening", label: "Tiền gửi đầu kỳ" },
-    { code: "bank_in", label: "Tổng gửi vào" },
-    { code: "bank_out", label: "Tổng rút ra" },
-    { code: "bank_closing", label: "Dư tiền gửi cuối kỳ" },
-  ];
-
   return (
     <div className="bg-white p-8 font-serif text-slate-900 border shadow-2xl space-y-8">
       {renderFormHeader("S2e-HKD", context.templateName, context.versionLabel)}
       {renderBookTitle("SỔ CHI TIẾT TIỀN")}
       {renderLedgerTable(columns, rows)}
-
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <div className="rounded-lg border border-slate-300 bg-slate-50 p-3">
-          <h3 className="mb-2 text-sm font-semibold text-slate-800">
-            I. Tiền mặt
-          </h3>
-          <div className="space-y-1 text-sm">
-            {cashMetrics.map((metric) => (
-              <div
-                key={metric.code}
-                className="flex items-center justify-between gap-2"
-              >
-                <span>{metric.label}</span>
-                <span className="font-semibold">
-                  {formatValue(
-                    getLatestFieldValue(context.rows, metric.code) ??
-                      context.summaryMeta?.[metric.code],
-                  ) || "-"}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="rounded-lg border border-slate-300 bg-slate-50 p-3">
-          <h3 className="mb-2 text-sm font-semibold text-slate-800">
-            II. Tiền gửi ngân hàng
-          </h3>
-          <div className="space-y-1 text-sm">
-            {bankMetrics.map((metric) => (
-              <div
-                key={metric.code}
-                className="flex items-center justify-between gap-2"
-              >
-                <span>{metric.label}</span>
-                <span className="font-semibold">
-                  {formatValue(
-                    getLatestFieldValue(context.rows, metric.code) ??
-                      context.summaryMeta?.[metric.code],
-                  ) || "-"}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
 
       {renderSignatureBlock()}
     </div>
@@ -1491,14 +1381,8 @@ function renderS2eTemplate(context: TemplateRenderContext): ReactElement {
 }
 
 function renderFallbackTemplate(context: TemplateRenderContext): ReactElement {
-  const {
-    templateCode,
-    templateName,
-    versionLabel,
-    normalizedColumns,
-    rows,
-    totalValue,
-  } = context;
+  const { templateCode, templateName, versionLabel, normalizedColumns, rows } =
+    context;
   const fallbackFormCode = templateCode
     ? `${templateCode.toUpperCase()}-HKD`
     : "CHUA-XAC-DINH";
@@ -1524,30 +1408,6 @@ function renderFallbackTemplate(context: TemplateRenderContext): ReactElement {
       ]),
     ),
   }));
-
-  const descriptionColumn = findColumn(normalizedColumns, [
-    "dien_giai",
-    "description",
-  ]);
-  const amountColumn = findAmountColumn(normalizedColumns);
-
-  if (descriptionColumn && amountColumn) {
-    displayRows.push({
-      id: "fallback-total",
-      isEmphasis: true,
-      cells: Object.fromEntries(
-        displayColumns.map((column) => {
-          if (column.key === descriptionColumn.fieldCode) {
-            return [column.key, "Tổng cộng"];
-          }
-          if (column.key === amountColumn.fieldCode) {
-            return [column.key, totalValue.toLocaleString("vi-VN")];
-          }
-          return [column.key, ""];
-        }),
-      ),
-    });
-  }
 
   return (
     <div className="bg-white p-8 font-serif text-slate-900 border shadow-2xl space-y-8">

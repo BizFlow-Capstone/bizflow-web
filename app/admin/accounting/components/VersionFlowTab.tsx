@@ -50,6 +50,7 @@ import type {
   CreateTemplateVersionRequest,
 } from "@/lib/admin-accounting-api";
 import {
+  getAccountingPeriods,
   getAccountingBooks,
   getBookRows,
   getBookSummary,
@@ -57,6 +58,7 @@ import {
 } from "@/services/accountingService";
 import BookTemplatePreview from "../../../../components/accounting/BookTemplatePreview";
 import type { VersionOption } from "./types";
+import type { AccountingBook, AccountingPeriod } from "@/lib/types/accounting";
 
 interface VersionTabProps {
   mode?: "admin" | "consultant";
@@ -219,16 +221,27 @@ type BookSectionsMeta = {
     sectionType?: string;
     businessTypeId?: string;
     businessTypeName?: string;
+    groupIndex?: number;
     rows?: BookSectionRow[];
   }>;
   footerRows?: BookSectionRow[];
 };
 
 const PREVIEW_LOCATION_ID = 6;
-const PREVIEW_PERIOD_ID = 2;
-const PREVIEW_GROUP_NUMBER = 1;
-const PREVIEW_TAX_METHOD = "method_1";
+const PREVIEW_DEFAULT_PERIOD_ID = 2;
 const PREVIEW_BATCH_SIZE = 1000;
+
+function formatAccountingPeriodLabel(period: AccountingPeriod): string {
+  if (period.periodType === "quarter" && period.quarter) {
+    return `Q${period.quarter}/${period.year} (${period.startDate} - ${period.endDate})`;
+  }
+
+  if (period.periodType === "year") {
+    return `Nam ${period.year} (${period.startDate} - ${period.endDate})`;
+  }
+
+  return `Ky #${period.periodId} (${period.startDate} - ${period.endDate})`;
+}
 
 function parseVisibleFieldCodes(raw: string): string[] {
   if (!raw.trim()) return [];
@@ -353,95 +366,189 @@ function normalizeKey(value: string): string {
   return value.trim().toLowerCase();
 }
 
-function toSectionDisplayRow(sectionRow: BookSectionRow): PreviewBookRow {
-  const values = { ...(sectionRow.values ?? {}) };
+function isSectionDrivenTemplate(templateCode: string): boolean {
+  const normalized = normalizeKey(templateCode);
+  return ["s2a", "s2b", "s2c", "s2d", "s2e"].includes(normalized);
+}
+
+// Templates that should ONLY use sections data for preview (never raw rows from getBookRows).
+function isSectionsOnlyTemplate(templateCode: string): boolean {
+  return normalizeKey(templateCode) === "s2c";
+}
+
+function mapSectionRowToStructure(
+  sectionRow: BookSectionRow,
+  fieldCodes: string[],
+  sectionMeta?: {
+    sectionType?: string;
+    businessTypeId?: string;
+    businessTypeName?: string;
+    groupIndex?: number;
+  },
+): PreviewBookRow {
+  const values = sectionRow.values ?? {};
   const row: PreviewBookRow = {
-    ...values,
-    lineType: values.lineType ?? sectionRow.lineType,
-    rowType: values.rowType ?? sectionRow.lineType,
+    lineType: asString(values.lineType) || sectionRow.lineType,
+    rowType: asString(values.rowType) || sectionRow.lineType,
+    rowLabel:
+      asString(values.rowLabel) ||
+      asString(values.dien_giai) ||
+      asString(values.description),
+    visibleFieldCodes: values.visibleFieldCodes,
+    taxType:
+      asString(values.taxType) || asString(sectionRow.taxMetadata?.taxType),
+    section:
+      sectionRow.dataFilter?.section ||
+      asString(sectionMeta?.sectionType) ||
+      undefined,
+    businessTypeId:
+      sectionRow.dataFilter?.businessTypeId || sectionMeta?.businessTypeId,
+    businessTypeName: sectionMeta?.businessTypeName,
+    groupIndex: sectionMeta?.groupIndex,
   };
 
-  if (!row.rowLabel) {
-    row.rowLabel = row.dien_giai ?? row.description ?? "";
-  }
-
-  if (!row.taxType && sectionRow.taxMetadata?.taxType) {
-    row.taxType = sectionRow.taxMetadata.taxType;
-  }
+  fieldCodes.forEach((fieldCode) => {
+    if (Object.prototype.hasOwnProperty.call(values, fieldCode)) {
+      row[fieldCode] = values[fieldCode];
+    }
+  });
 
   return row;
 }
 
-function resolveBusinessTypeId(row: PreviewBookRow): string {
-  return asString(row.businessTypeId) || asString(row.BusinessTypeId);
-}
-
-function assembleRowsFromSections(
-  dataRows: PreviewBookRow[],
+function mapSectionRowsToStructure(
+  columns: Array<{ fieldCode: string }>,
   sectionsMeta: BookSectionsMeta | null,
+  dataRows: PreviewBookRow[],
 ): PreviewBookRow[] {
   if (!sectionsMeta?.sections || sectionsMeta.sections.length === 0) {
     return dataRows;
   }
 
-  const groupedDataRows = new Map<string, PreviewBookRow[]>();
-  let ungroupedRows: PreviewBookRow[] = [];
+  const fieldCodes = columns.map((column) => column.fieldCode).filter(Boolean);
+  const mappedRows: PreviewBookRow[] = [];
+  const consumedDataRowIndexes = new Set<number>();
 
-  dataRows.forEach((row) => {
-    const businessTypeId = normalizeKey(resolveBusinessTypeId(row));
-    if (!businessTypeId) {
-      ungroupedRows.push(row);
-      return;
-    }
-    const group = groupedDataRows.get(businessTypeId) ?? [];
-    group.push(row);
-    groupedDataRows.set(businessTypeId, group);
-  });
+  const getRowBusinessTypeId = (row: PreviewBookRow): string => {
+    const nestedDataFilter = asRecord(row.dataFilter);
+    const nestedBusinessType = asRecord(row.businessType);
+    const nestedBusinessTypeMeta = asRecord(row.businessTypeMeta);
+    const nestedIndustry = asRecord(row.industryGroup);
 
-  const assembledRows: PreviewBookRow[] = [];
-  const consumedBusinessTypes = new Set<string>();
+    const candidates = [
+      asString(row.businessTypeId),
+      asString(row.BusinessTypeId),
+      asString(row.business_type_id),
+      asString(row.businessTypeCode),
+      asString(row.business_type_code),
+      asString(row.loai_hinh_kinh_doanh_id),
+      asString(row.LoaiHinhKinhDoanhId),
+      asString(nestedDataFilter?.businessTypeId),
+      asString(nestedDataFilter?.BusinessTypeId),
+      asString(nestedBusinessType?.id),
+      asString(nestedBusinessType?.businessTypeId),
+      asString(nestedBusinessTypeMeta?.id),
+      asString(nestedBusinessTypeMeta?.businessTypeId),
+      asString(nestedIndustry?.id),
+      asString(nestedIndustry?.businessTypeId),
+    ];
+    return candidates.find((item) => item.trim().length > 0) ?? "";
+  };
+
+  const getRowProductId = (row: PreviewBookRow): string => {
+    const nestedProduct = asRecord(row.product);
+    const nestedItem = asRecord(row.item);
+    const candidates = [
+      asString(row.productId),
+      asString(row.ProductId),
+      asString(row.product_id),
+      asString(row.itemId),
+      asString(row.ItemId),
+      asString(row.inventoryItemId),
+      asString(row.InventoryItemId),
+      asString(nestedProduct?.id),
+      asString(nestedProduct?.productId),
+      asString(nestedItem?.id),
+      asString(nestedItem?.itemId),
+    ];
+    return candidates.find((item) => item.trim().length > 0) ?? "";
+  };
+
+  const getRowSection = (row: PreviewBookRow): string => {
+    const nestedDataFilter = asRecord(row.dataFilter);
+    const candidates = [
+      asString(row.section),
+      asString(row.Section),
+      asString(row.sectionType),
+      asString(row.SectionType),
+      asString(row.loai_phan),
+      asString(nestedDataFilter?.section),
+      asString(nestedDataFilter?.Section),
+    ];
+    return candidates.find((item) => item.trim().length > 0) ?? "";
+  };
 
   sectionsMeta.sections.forEach((section) => {
-    (section.rows ?? []).forEach((layoutRow) => {
-      if (layoutRow.lineType !== "data_placeholder") {
-        assembledRows.push(toSectionDisplayRow(layoutRow));
+    (section.rows ?? []).forEach((sectionRow) => {
+      const rowType = normalizeKey(asString(sectionRow.lineType));
+      if (rowType === "data_placeholder") {
+        const sectionType = normalizeKey(asString(section.sectionType));
+        const filterBusinessTypeId = asString(
+          sectionRow.dataFilter?.businessTypeId || section.businessTypeId,
+        ).trim();
+        const filterSection = asString(sectionRow.dataFilter?.section).trim();
+
+        const injectedRows: PreviewBookRow[] = [];
+        dataRows.forEach((dataRow, index) => {
+          if (consumedDataRowIndexes.has(index)) return;
+
+          const rowBusinessTypeId = getRowBusinessTypeId(dataRow);
+          const rowSection = getRowSection(dataRow);
+          const rowProductId = getRowProductId(dataRow);
+
+          const businessTypeMatched = filterBusinessTypeId
+            ? sectionType === "per_product"
+              ? normalizeKey(rowProductId) ===
+                normalizeKey(filterBusinessTypeId)
+              : normalizeKey(rowBusinessTypeId) ===
+                normalizeKey(filterBusinessTypeId)
+            : true;
+          const sectionMatched = filterSection
+            ? normalizeKey(rowSection) === normalizeKey(filterSection)
+            : true;
+
+          if (businessTypeMatched && sectionMatched) {
+            consumedDataRowIndexes.add(index);
+            injectedRows.push(dataRow);
+          }
+        });
+
+        mappedRows.push(...injectedRows);
         return;
       }
 
-      const placeholderBusinessType = normalizeKey(
-        layoutRow.dataFilter?.businessTypeId ?? section.businessTypeId ?? "",
+      mappedRows.push(
+        mapSectionRowToStructure(sectionRow, fieldCodes, {
+          sectionType: section.sectionType,
+          businessTypeId: section.businessTypeId,
+          businessTypeName: section.businessTypeName,
+          groupIndex: section.groupIndex,
+        }),
       );
-
-      if (placeholderBusinessType) {
-        const matchedRows = groupedDataRows.get(placeholderBusinessType) ?? [];
-        if (matchedRows.length > 0) {
-          assembledRows.push(...matchedRows);
-          consumedBusinessTypes.add(placeholderBusinessType);
-        }
-        return;
-      }
-
-      if (ungroupedRows.length > 0) {
-        assembledRows.push(...ungroupedRows);
-        ungroupedRows = [];
-      }
     });
   });
 
-  groupedDataRows.forEach((groupRows, businessTypeId) => {
-    if (consumedBusinessTypes.has(businessTypeId)) return;
-    assembledRows.push(...groupRows);
+  dataRows.forEach((dataRow, index) => {
+    if (!consumedDataRowIndexes.has(index)) {
+      mappedRows.push(dataRow);
+    }
   });
-
-  if (ungroupedRows.length > 0) {
-    assembledRows.push(...ungroupedRows);
-  }
 
   (sectionsMeta.footerRows ?? []).forEach((footerRow) => {
-    assembledRows.push(toSectionDisplayRow(footerRow));
+    mappedRows.push(mapSectionRowToStructure(footerRow, fieldCodes));
   });
 
-  return assembledRows.length > 0 ? assembledRows : dataRows;
+  return mappedRows;
 }
 
 function asBoolean(value: unknown): boolean | null {
@@ -733,6 +840,15 @@ export default function VersionTab(props: VersionTabProps) {
   const [renderPreviewHasMore, setRenderPreviewHasMore] = useState(false);
   const [renderPreviewError, setRenderPreviewError] = useState("");
   const [previewBookId, setPreviewBookId] = useState<number | null>(null);
+  const [previewPeriodId, setPreviewPeriodId] = useState<number | null>(
+    PREVIEW_DEFAULT_PERIOD_ID,
+  );
+  const [previewPeriods, setPreviewPeriods] = useState<AccountingPeriod[]>([]);
+  const [previewPeriodsBusy, setPreviewPeriodsBusy] = useState(false);
+  const [previewPeriodsError, setPreviewPeriodsError] = useState("");
+  const [previewBooks, setPreviewBooks] = useState<AccountingBook[]>([]);
+  const [previewBooksBusy, setPreviewBooksBusy] = useState(false);
+  const [previewBooksError, setPreviewBooksError] = useState("");
   const [bookSectionsMeta, setBookSectionsMeta] =
     useState<BookSectionsMeta | null>(null);
   const [bookSectionsBusy, setBookSectionsBusy] = useState(false);
@@ -773,10 +889,20 @@ export default function VersionTab(props: VersionTabProps) {
     }));
   }, [renderPreviewResult]);
 
-  const renderPreviewRowsWithSections = useMemo(
-    () => assembleRowsFromSections(renderPreviewRows, bookSectionsMeta),
-    [renderPreviewRows, bookSectionsMeta],
+  const renderPreviewSectionRows = useMemo(
+    () =>
+      mapSectionRowsToStructure(
+        sampleBookColumns,
+        bookSectionsMeta,
+        // S2c: only show section structure (headers, subtotals, formula rows).
+        // Raw data rows must not be injected into data_placeholder slots.
+        isSectionsOnlyTemplate(templateCode) ? [] : renderPreviewRows,
+      ),
+    [sampleBookColumns, bookSectionsMeta, renderPreviewRows, templateCode],
   );
+
+  const hasSectionRows = renderPreviewSectionRows.length > 0;
+  const shouldPrioritizeSectionRows = isSectionDrivenTemplate(templateCode);
 
   const renderPreviewFormulaValues = useMemo(() => {
     const summary = renderPreviewSummaryMeta;
@@ -1584,13 +1710,144 @@ export default function VersionTab(props: VersionTabProps) {
 
   useEffect(() => {
     const versionId = toNullableNumber(selectedVersionId);
-    const normalizedTemplateCode = normalizeKey(templateCode);
+    if (!versionId) {
+      setPreviewPeriods([]);
+      setPreviewPeriodId(PREVIEW_DEFAULT_PERIOD_ID);
+      setPreviewPeriodsError("");
+      setPreviewPeriodsBusy(false);
+      return;
+    }
 
-    if (!versionId || !normalizedTemplateCode) {
+    let disposed = false;
+
+    async function loadPreviewPeriods() {
+      setPreviewPeriodsBusy(true);
+      setPreviewPeriodsError("");
+      try {
+        const periodsResponse = await getAccountingPeriods(PREVIEW_LOCATION_ID);
+        const periods = periodsResponse.data ?? [];
+        const sortedPeriods = [...periods].sort(
+          (a, b) => b.periodId - a.periodId,
+        );
+        if (!disposed) {
+          setPreviewPeriods(sortedPeriods);
+          setPreviewPeriodId((current) => {
+            if (
+              current &&
+              sortedPeriods.some((item) => item.periodId === current)
+            ) {
+              return current;
+            }
+            if (
+              sortedPeriods.some(
+                (item) => item.periodId === PREVIEW_DEFAULT_PERIOD_ID,
+              )
+            ) {
+              return PREVIEW_DEFAULT_PERIOD_ID;
+            }
+            return sortedPeriods[0]?.periodId ?? null;
+          });
+        }
+      } catch (error) {
+        if (!disposed) {
+          setPreviewPeriods([]);
+          setPreviewPeriodsError(
+            error instanceof Error
+              ? error.message
+              : "Khong tai duoc danh sach ky ke toan.",
+          );
+        }
+      } finally {
+        if (!disposed) {
+          setPreviewPeriodsBusy(false);
+        }
+      }
+    }
+
+    void loadPreviewPeriods();
+
+    return () => {
+      disposed = true;
+    };
+  }, [selectedVersionId]);
+
+  useEffect(() => {
+    const versionId = toNullableNumber(selectedVersionId);
+    const normalizedTemplateCode = normalizeKey(templateCode);
+    const resolvedPeriodId = previewPeriodId;
+
+    if (!versionId || !normalizedTemplateCode || !resolvedPeriodId) {
+      setPreviewBooks([]);
+      setPreviewBooksBusy(false);
+      setPreviewBooksError("");
+      setPreviewBookId(null);
+      return;
+    }
+
+    let disposed = false;
+
+    async function loadBooksByPeriod() {
+      setPreviewBooksBusy(true);
+      setPreviewBooksError("");
+
+      try {
+        const booksResponse = await getAccountingBooks(
+          PREVIEW_LOCATION_ID,
+          Number(resolvedPeriodId),
+        );
+
+        const booksInPeriod = booksResponse.data ?? [];
+        const matchingTemplateBooks = booksInPeriod.filter((book) => {
+          const bookTemplateCode = normalizeKey(
+            String(book.templateCode ?? ""),
+          );
+          return bookTemplateCode === normalizedTemplateCode;
+        });
+
+        if (!disposed) {
+          setPreviewBooks(matchingTemplateBooks);
+          setPreviewBookId((currentBookId) => {
+            if (
+              currentBookId &&
+              matchingTemplateBooks.some(
+                (book) => book.bookId === currentBookId,
+              )
+            ) {
+              return currentBookId;
+            }
+            return matchingTemplateBooks[0]?.bookId ?? null;
+          });
+        }
+      } catch (error) {
+        if (!disposed) {
+          setPreviewBooks([]);
+          setPreviewBookId(null);
+          setPreviewBooksError(
+            error instanceof Error
+              ? error.message
+              : "Khong tai duoc danh sach so theo ky da chon.",
+          );
+        }
+      } finally {
+        if (!disposed) {
+          setPreviewBooksBusy(false);
+        }
+      }
+    }
+
+    void loadBooksByPeriod();
+
+    return () => {
+      disposed = true;
+    };
+  }, [selectedVersionId, templateCode, previewPeriodId]);
+
+  useEffect(() => {
+    const resolvedBookId = previewBookId;
+    if (!resolvedBookId) {
       setBookSectionsMeta(null);
       setBookSectionsError("");
       setBookSectionsBusy(false);
-      setPreviewBookId(null);
       return;
     }
 
@@ -1601,42 +1858,9 @@ export default function VersionTab(props: VersionTabProps) {
       setBookSectionsError("");
 
       try {
-        const booksResponse = await getAccountingBooks(
-          PREVIEW_LOCATION_ID,
-          PREVIEW_PERIOD_ID,
-        );
-
-        const matchingBooks = (booksResponse.data ?? []).filter((book) => {
-          const bookTemplateCode = normalizeKey(
-            String(book.templateCode ?? ""),
-          );
-          return bookTemplateCode === normalizedTemplateCode;
-        });
-
-        const preferredBook =
-          matchingBooks.find((book) => {
-            const taxMethod = normalizeKey(String(book.taxMethod ?? ""));
-            return (
-              book.groupNumber === PREVIEW_GROUP_NUMBER &&
-              (!taxMethod || taxMethod === normalizeKey(PREVIEW_TAX_METHOD))
-            );
-          }) ?? matchingBooks[0];
-
-        if (!preferredBook?.bookId) {
-          if (!disposed) {
-            setBookSectionsMeta(null);
-            setPreviewBookId(null);
-          }
-          return;
-        }
-
-        if (!disposed) {
-          setPreviewBookId(preferredBook.bookId);
-        }
-
         const sectionsResponse = await getBookSections(
           PREVIEW_LOCATION_ID,
-          preferredBook.bookId,
+          Number(resolvedBookId),
         );
 
         if (!disposed) {
@@ -1647,11 +1871,10 @@ export default function VersionTab(props: VersionTabProps) {
       } catch (error) {
         if (!disposed) {
           setBookSectionsMeta(null);
-          setPreviewBookId(null);
           setBookSectionsError(
             error instanceof Error
               ? error.message
-              : "Không tải được cấu trúc sections của sổ mẫu.",
+              : "Khong tai duoc cau truc sections cua so mau.",
           );
         }
       } finally {
@@ -1666,7 +1889,7 @@ export default function VersionTab(props: VersionTabProps) {
     return () => {
       disposed = true;
     };
-  }, [selectedVersionId, templateCode]);
+  }, [previewBookId]);
 
   useEffect(() => {
     if (!wizardOpen || wizardStep !== 3 || !selectedVersionId) return;
@@ -2683,6 +2906,75 @@ export default function VersionTab(props: VersionTabProps) {
                 </div>
               ) : (
                 <div className="space-y-3">
+                  <div className="grid grid-cols-1 gap-3 rounded-lg border border-gray-200 bg-gray-50 p-3 md:grid-cols-2">
+                    <div className="space-y-1">
+                      <label className="block text-xs font-medium text-gray-600">
+                        Ky ke toan (Location 6)
+                      </label>
+                      <select
+                        value={previewPeriodId ?? ""}
+                        onChange={(event) => {
+                          const nextPeriodId = Number(event.target.value);
+                          setPreviewPeriodId(
+                            Number.isFinite(nextPeriodId) && nextPeriodId > 0
+                              ? nextPeriodId
+                              : null,
+                          );
+                        }}
+                        className="w-full rounded-lg border px-3 py-2 text-sm"
+                        disabled={
+                          previewPeriodsBusy || previewPeriods.length === 0
+                        }
+                      >
+                        {previewPeriods.length === 0 ? (
+                          <option value="">Khong co ky ke toan</option>
+                        ) : null}
+                        {previewPeriods.map((period) => (
+                          <option key={period.periodId} value={period.periodId}>
+                            {formatAccountingPeriodLabel(period)}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="block text-xs font-medium text-gray-600">
+                        So de preview
+                      </label>
+                      <select
+                        value={previewBookId ?? ""}
+                        onChange={(event) => {
+                          const nextBookId = Number(event.target.value);
+                          setPreviewBookId(
+                            Number.isFinite(nextBookId) && nextBookId > 0
+                              ? nextBookId
+                              : null,
+                          );
+                        }}
+                        className="w-full rounded-lg border px-3 py-2 text-sm"
+                        disabled={previewBooksBusy || previewBooks.length === 0}
+                      >
+                        {previewBooks.length === 0 ? (
+                          <option value="">Khong co so trong ky da chon</option>
+                        ) : null}
+                        {previewBooks.map((book) => (
+                          <option key={book.bookId} value={book.bookId}>
+                            #{book.bookId} - {book.templateCode} - Group{" "}
+                            {book.groupNumber}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                  {previewPeriodsError ? (
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-700">
+                      {previewPeriodsError}
+                    </div>
+                  ) : null}
+                  {previewBooksError ? (
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-700">
+                      {previewBooksError}
+                    </div>
+                  ) : null}
                   {bookSectionsBusy ? (
                     <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 px-4 py-6 text-sm text-gray-500">
                       Đang tải cấu trúc sections...
@@ -2709,9 +3001,17 @@ export default function VersionTab(props: VersionTabProps) {
                     versionLabel={versionLabel}
                     columns={sampleBookColumns}
                     rows={
-                      renderPreviewRowsWithSections.length > 0
-                        ? renderPreviewRowsWithSections
-                        : sampleBookRows
+                      isSectionsOnlyTemplate(templateCode)
+                        ? hasSectionRows
+                          ? renderPreviewSectionRows
+                          : sampleBookRows
+                        : shouldPrioritizeSectionRows && hasSectionRows
+                          ? renderPreviewSectionRows
+                          : renderPreviewRows.length > 0
+                            ? renderPreviewRows
+                            : hasSectionRows
+                              ? renderPreviewSectionRows
+                              : sampleBookRows
                     }
                     rowDefinitions={rowDefinitions}
                     referenceData={previewReferenceData}
@@ -3821,6 +4121,84 @@ export default function VersionTab(props: VersionTabProps) {
                       </div>
                     ) : (
                       <div className="space-y-3 rounded-lg border border-gray-300 bg-white p-4 text-gray-900">
+                        <div className="grid grid-cols-1 gap-3 rounded-lg border border-gray-200 bg-gray-50 p-3 md:grid-cols-2">
+                          <div className="space-y-1">
+                            <label className="block text-xs font-medium text-gray-600">
+                              Ky ke toan (Location 6)
+                            </label>
+                            <select
+                              value={previewPeriodId ?? ""}
+                              onChange={(event) => {
+                                const nextPeriodId = Number(event.target.value);
+                                setPreviewPeriodId(
+                                  Number.isFinite(nextPeriodId) &&
+                                    nextPeriodId > 0
+                                    ? nextPeriodId
+                                    : null,
+                                );
+                              }}
+                              className="w-full rounded-lg border px-3 py-2 text-sm"
+                              disabled={
+                                previewPeriodsBusy ||
+                                previewPeriods.length === 0
+                              }
+                            >
+                              {previewPeriods.length === 0 ? (
+                                <option value="">Khong co ky ke toan</option>
+                              ) : null}
+                              {previewPeriods.map((period) => (
+                                <option
+                                  key={period.periodId}
+                                  value={period.periodId}
+                                >
+                                  {formatAccountingPeriodLabel(period)}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="space-y-1">
+                            <label className="block text-xs font-medium text-gray-600">
+                              So de preview
+                            </label>
+                            <select
+                              value={previewBookId ?? ""}
+                              onChange={(event) => {
+                                const nextBookId = Number(event.target.value);
+                                setPreviewBookId(
+                                  Number.isFinite(nextBookId) && nextBookId > 0
+                                    ? nextBookId
+                                    : null,
+                                );
+                              }}
+                              className="w-full rounded-lg border px-3 py-2 text-sm"
+                              disabled={
+                                previewBooksBusy || previewBooks.length === 0
+                              }
+                            >
+                              {previewBooks.length === 0 ? (
+                                <option value="">
+                                  Khong co so trong ky da chon
+                                </option>
+                              ) : null}
+                              {previewBooks.map((book) => (
+                                <option key={book.bookId} value={book.bookId}>
+                                  #{book.bookId} - {book.templateCode} - Group{" "}
+                                  {book.groupNumber}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+                        {previewPeriodsError ? (
+                          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-700">
+                            {previewPeriodsError}
+                          </div>
+                        ) : null}
+                        {previewBooksError ? (
+                          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-700">
+                            {previewBooksError}
+                          </div>
+                        ) : null}
                         {bookSectionsBusy ? (
                           <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 px-4 py-4 text-sm text-gray-500">
                             Đang tải cấu trúc sections...
@@ -3848,9 +4226,13 @@ export default function VersionTab(props: VersionTabProps) {
                           versionLabel={props.tvLabel || versionLabel}
                           columns={sampleBookColumns}
                           rows={
-                            renderPreviewRowsWithSections.length > 0
-                              ? renderPreviewRowsWithSections
-                              : sampleBookRows
+                            shouldPrioritizeSectionRows && hasSectionRows
+                              ? renderPreviewSectionRows
+                              : renderPreviewRows.length > 0
+                                ? renderPreviewRows
+                                : hasSectionRows
+                                  ? renderPreviewSectionRows
+                                  : sampleBookRows
                           }
                           rowDefinitions={rowDefinitions}
                           referenceData={previewReferenceData}
