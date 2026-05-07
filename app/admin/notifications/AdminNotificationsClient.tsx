@@ -713,7 +713,9 @@ export default function AdminNotificationsClient({
             : normalizedActionType,
         targetScreen: campaignForm.targetScreen?.trim() || undefined,
         actionPayloadJson: campaignForm.actionPayloadJson?.trim() || undefined,
-        scheduledAt: campaignForm.scheduledAt?.trim() || undefined,
+        scheduledAt: campaignForm.scheduledAt?.trim()
+          ? new Date(campaignForm.scheduledAt.trim()).toISOString()
+          : undefined,
         sendToAllUsers: normalizedRecipientMode === DEFAULT_RECIPIENT_MODE,
         recipientGroupType:
           normalizedRecipientMode === DEFAULT_RECIPIENT_MODE
@@ -896,7 +898,7 @@ export default function AdminNotificationsClient({
           {!isConsultantMode && (
             <TabsTrigger value="delivery-logs" className="gap-1.5">
               <AlertTriangle className="w-4 h-4" />
-              Nhật Ký Gửi
+              Xử Lý Lỗi
             </TabsTrigger>
           )}
           {!isConsultantMode && (
@@ -2043,7 +2045,7 @@ export default function AdminNotificationsClient({
                 ) : (
                   <Zap className="w-3.5 h-3.5" />
                 )}
-                Process Due Dispatches
+                Xử lý thông báo đến hạn
               </Button>
             </div>
           </div>
@@ -2056,7 +2058,7 @@ export default function AdminNotificationsClient({
                     <TableHead className="w-16">ID</TableHead>
                     <TableHead>Tiêu đề</TableHead>
                     <TableHead>Loại</TableHead>
-                    <TableHead>Priority</TableHead>
+                    <TableHead>Ưu tiên</TableHead>
                     <TableHead>Lỗi</TableHead>
                     <TableHead>Ngày tạo</TableHead>
                     <TableHead className="text-right">Trạng thái</TableHead>
@@ -2070,9 +2072,7 @@ export default function AdminNotificationsClient({
                         className="text-center py-12 text-gray-400"
                       >
                         <CheckCircle2 className="w-8 h-8 mx-auto mb-2 text-emerald-300" />
-                        <p className="text-sm">
-                          Không có dispatch nào bị lỗi 🎉
-                        </p>
+                        <p className="text-sm">Không có thông báo nào bị lỗi</p>
                       </TableCell>
                     </TableRow>
                   ) : (

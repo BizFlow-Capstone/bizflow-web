@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Bell, BookOpen, LogOut } from "lucide-react";
+import { ArrowLeftRight, Bell, BookOpen, LogOut } from "lucide-react";
 
 const menuItems = [
   {
@@ -66,6 +66,17 @@ export default function ConsultantSidebar() {
           })}
         </ul>
       </nav>
+
+      <div className="px-3 pb-2">
+        <Link
+          href="/dashboard"
+          prefetch={false}
+          className="flex items-center gap-3 border border-dashed border-gray-200 rounded-lg px-3 py-2.5 text-sm font-medium text-gray-600 transition-all duration-150 hover:bg-gray-50 hover:text-gray-900"
+        >
+          <ArrowLeftRight className="h-4 w-4 text-gray-400" />
+          <span>Xem Dashboard Người Dùng</span>
+        </Link>
+      </div>
 
       <div className="border-t border-gray-100 px-3 py-4">
         <ul className="space-y-1">

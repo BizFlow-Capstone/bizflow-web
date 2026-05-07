@@ -21,11 +21,7 @@ export default function DashboardLayout({
       try {
         const token = await getValidAccessToken();
         const role = getRoleFromToken(token);
-        if (role === "consultant") {
-          router.replace("/consultant/accounting");
-          return;
-        }
-        if (role !== "admin" && role !== "user") {
+        if (role !== "admin" && role !== "user" && role !== "consultant") {
           router.replace("/auth/login");
           return;
         }

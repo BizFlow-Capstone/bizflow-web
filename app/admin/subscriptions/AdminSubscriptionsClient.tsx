@@ -1051,21 +1051,35 @@ export default function AdminSubscriptionsClient() {
                       </TableCell>
 
                       <TableCell>
-                        <div className="flex items-baseline gap-1.5">
-                          <span className="text-sm font-semibold text-gray-800">
-                            {formatVND(
-                              plan.isDiscountActive &&
+                        <div className="flex flex-col gap-0.5">
+                          <div className="flex items-baseline gap-1.5">
+                            <span className="text-sm font-semibold text-gray-800">
+                              {formatVND(
                                 plan.discountedPrice != null
-                                ? plan.discountedPrice
-                                : (plan.basePrice ?? 0),
-                            )}
-                          </span>
-                          {plan.isDiscountActive &&
-                            plan.discountedPrice != null && (
+                                  ? plan.discountedPrice
+                                  : (plan.basePrice ?? 0),
+                              )}
+                            </span>
+                            {plan.discountedPrice != null && (
                               <span className="text-xs text-gray-400 line-through">
                                 {formatVND(plan.basePrice ?? 0)}
                               </span>
                             )}
+                          </div>
+                          {plan.discountedPrice != null && (
+                            <div className="text-[10px] text-gray-400 flex flex-col leading-tight mt-0.5">
+                              {plan.discountStart && (
+                                <span>
+                                  Từ: {new Date(plan.discountStart).toLocaleDateString("vi-VN")}
+                                </span>
+                              )}
+                              {plan.discountEnd && (
+                                <span>
+                                  Đến: {new Date(plan.discountEnd).toLocaleDateString("vi-VN")}
+                                </span>
+                              )}
+                            </div>
+                          )}
                         </div>
                       </TableCell>
 

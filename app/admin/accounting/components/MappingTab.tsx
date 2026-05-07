@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import type { MappingFormState } from "./types";
 
 interface MappingTabProps {
+  mode?: "admin" | "consultant";
   fldVer: string;
   versionOptions: Array<{ value: string; label: string }>;
   fieldMappings: Array<Record<string, unknown>>;
@@ -144,7 +145,7 @@ export default function MappingTab(props: MappingTabProps) {
                             >
                               <MoreVertical className="h-4 w-4" />
                             </button>
-                            {mappingActionMenuId === mappingId ? (
+                            {mappingActionMenuId === mappingId && props.mode !== "consultant" ? (
                               <div className="absolute right-0 top-9 z-10 w-28 rounded-md border border-gray-200 bg-white p-1 shadow-lg">
                                 <button
                                   type="button"

@@ -38,6 +38,8 @@ export interface SubscriptionPlan {
   durationDays: number;
   basePrice: number | null;
   discountedPrice: number | null;
+  discountStart: string | null;
+  discountEnd: string | null;
   isDiscountActive: boolean;
   currency: string;
   createdAt: string;

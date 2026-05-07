@@ -142,6 +142,7 @@ function formulaTypeToVariableDataType(formulaType: string): string {
 }
 
 interface FormulaTabProps {
+  mode?: "admin" | "consultant";
   fmId: string;
   fmCode: string;
   fmType: string;
@@ -4434,7 +4435,7 @@ export default function FormulaTab(props: FormulaTabProps) {
                     Kích hoạt
                   </Button>
                 )}
-                {!isCreateMode && !isActiveFormula ? (
+                {!isCreateMode && !isActiveFormula && props.mode !== "consultant" ? (
                   <Button
                     size="sm"
                     variant="destructive"
