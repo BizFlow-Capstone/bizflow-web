@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -21,6 +21,13 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
@@ -345,11 +352,6 @@ const TAX_TYPE_ALIASES: Record<string, string> = {
   PIT_MEHTHOD_1: "PIT_METHOD_1",
   PIT_MEHTOD_1: "PIT_METHOD_1",
   PIT_METHOD_01: "PIT_METHOD_1",
-  PIT_M2: "PIT_METHOD_2",
-  PIT_METHOD2: "PIT_METHOD_2",
-  PIT_MEHTHOD_2: "PIT_METHOD_2",
-  PIT_MEHTOD_2: "PIT_METHOD_2",
-  PIT_METHOD_02: "PIT_METHOD_2",
 };
 
 function normalizeTaxTypeKey(value: string): string {
@@ -857,7 +859,7 @@ export default function AdminAccountingClient({
   const [schemas, setSchemas] = useState<Array<Record<string, unknown>>>([]);
 
   const [cmpLoc, setCmpLoc] = useState("6");
-  const [cmpPer, setCmpPer] = useState("1");
+  const [cmpPer, setCmpPer] = useState("2");
   const [cmpDraft, setCmpDraft] = useState("");
   const [cmpActive, setCmpActive] = useState("");
   const [cmpGrp, setCmpGrp] = useState("2");
@@ -1970,6 +1972,7 @@ export default function AdminAccountingClient({
     if (!id) return;
     await runSafe(async () => {
       const payload: Record<string, unknown> = {};
+      if (fmCode.trim()) payload.code = fmCode;
       if (fmName.trim()) payload.name = fmName;
       if (fmDesc.trim()) payload.description = fmDesc;
       if (fmFType.trim()) payload.formulaType = fmFType;
@@ -3592,14 +3595,16 @@ export default function AdminAccountingClient({
                     >
                       Lưu
                     </Button>
-                    <Button
-                      size="sm"
-                      variant="destructive"
-                      onClick={() => setBtDeleteConfirmOpen(true)}
-                      disabled={!selectedBusinessTypeWithRates}
-                    >
-                      Xóa
-                    </Button>
+                    {!isConsultantMode && (
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        onClick={() => setBtDeleteConfirmOpen(true)}
+                        disabled={!selectedBusinessTypeWithRates}
+                      >
+                        Xóa
+                      </Button>
+                    )}
                   </div>
                 </div>
 
@@ -3733,6 +3738,7 @@ export default function AdminAccountingClient({
 
       {activeTab === "formulas" ? (
         <FormulaTab
+          mode={mode}
           fmId={fmId}
           fmCode={fmCode}
           fmType={fmType}
@@ -3774,6 +3780,7 @@ export default function AdminAccountingClient({
 
       {activeTab === "mappings" ? (
         <MappingTab
+          mode={mode}
           fldVer={effectiveFldVer}
           versionOptions={versionOptions}
           fieldMappings={fieldMappings}
@@ -3892,7 +3899,7 @@ export default function AdminAccountingClient({
                               <MoreVertical className="h-4 w-4" />
                             </button>
                             {rowActionMenuId ===
-                            String(r.rowDefId ?? `row-${index}`) ? (
+                            String(r.rowDefId ?? `row-${index}`) && !isConsultantMode ? (
                               <div className="absolute right-0 top-9 z-10 w-28 rounded-md border border-gray-200 bg-white p-1 shadow-lg">
                                 <button
                                   type="button"
@@ -4269,27 +4276,27 @@ export default function AdminAccountingClient({
                                 </Badge>
                               </td>
                               <td className="px-3 py-2 text-right">
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  variant="ghost"
-                                  className="h-7 px-2 text-red-600 hover:bg-red-50 hover:text-red-700"
-                                  disabled={isActive}
-                                  title={
-                                    isActive
-                                      ? "Chỉ xóa được entity Inactive"
-                                      : "Xóa entity"
-                                  }
-                                  onClick={(event) => {
-                                    event.stopPropagation();
-                                    openEntityDeleteConfirm(
-                                      entityId,
-                                      entityCode,
-                                    );
-                                  }}
-                                >
-                                  <Trash2 className="mr-1 h-3.5 w-3.5" />
-                                </Button>
+                                {!isConsultantMode && (
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-7 w-7 text-red-600 hover:bg-red-50 hover:text-red-700"
+                                    title={
+                                      isActive
+                                        ? "Chỉ xóa được entity Inactive"
+                                        : "Xóa entity"
+                                    }
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      openEntityDeleteConfirm(
+                                        entityId,
+                                        entityCode,
+                                      );
+                                    }}
+                                  >
+                                    <Trash2 className="mr-1 h-3.5 w-3.5" />
+                                  </Button>
+                                )}
                               </td>
                             </tr>
                           );
@@ -4688,42 +4695,80 @@ export default function AdminAccountingClient({
                 placeholder="Period ID"
                 className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
               />
-              <input
-                value={cmpDraft}
-                onChange={(e) => setCmpDraft(e.target.value)}
-                placeholder="Draft Version ID"
-                className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-              />
-              <input
-                value={cmpActive}
-                onChange={(e) => setCmpActive(e.target.value)}
-                placeholder="Active Version ID"
-                className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-              />
+              <div className="flex flex-col gap-1.5">
+                <Select value={cmpDraft} onValueChange={setCmpDraft}>
+                  <SelectTrigger className="w-full bg-white">
+                    <SelectValue placeholder="Draft Version ID" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {overview?.templates.flatMap(t => t.versions).map(v => (
+                      <SelectItem key={v.templateVersionId} value={String(v.templateVersionId)}>
+                        {v.templateVersionId} - {v.versionLabel}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Select value={cmpActive} onValueChange={setCmpActive}>
+                  <SelectTrigger className="w-full bg-white">
+                    <SelectValue placeholder="Active Version ID" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {overview?.templates.flatMap(t => t.versions).map(v => (
+                      <SelectItem key={v.templateVersionId} value={String(v.templateVersionId)}>
+                        {v.templateVersionId} - {v.versionLabel}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
               <input
                 value={cmpGrp}
                 onChange={(e) => setCmpGrp(e.target.value)}
                 placeholder="Group"
                 className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
               />
-              <input
-                value={cmpMeth}
-                onChange={(e) => setCmpMeth(e.target.value)}
-                placeholder="Tax Method"
-                className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-              />
-              <input
-                value={cmpRule}
-                onChange={(e) => setCmpRule(e.target.value)}
-                placeholder="Ruleset ID"
-                className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-              />
-              <input
-                value={cmpBatch}
-                onChange={(e) => setCmpBatch(e.target.value)}
-                placeholder="Batch Size"
-                className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-              />
+              <div className="flex flex-col gap-1.5">
+                <Select value={cmpMeth} onValueChange={setCmpMeth}>
+                  <SelectTrigger className="w-full bg-white">
+                    <SelectValue placeholder="Tax Method" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="method_1">method_1</SelectItem>
+                    <SelectItem value="method_2">method_2</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Select value={cmpRule} onValueChange={setCmpRule}>
+                  <SelectTrigger className="w-full bg-white">
+                    <SelectValue placeholder="Ruleset ID" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {overview?.taxRulesets.map(r => (
+                      <SelectItem key={r.rulesetId} value={String(r.rulesetId)}>
+                        {r.rulesetId} - {r.code}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Select value={cmpBatch} onValueChange={setCmpBatch}>
+                  <SelectTrigger className="w-full bg-white">
+                    <SelectValue placeholder="Batch Size" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="10">10</SelectItem>
+                    <SelectItem value="20">20</SelectItem>
+                    <SelectItem value="50">50</SelectItem>
+                    <SelectItem value="100">100</SelectItem>
+                    <SelectItem value="200">200</SelectItem>
+                    <SelectItem value="500">500</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
             <input
               value={cmpBiz}

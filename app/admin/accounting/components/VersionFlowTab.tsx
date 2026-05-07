@@ -2240,6 +2240,7 @@ export default function VersionTab(props: VersionTabProps) {
     setWizardError("");
     try {
       await updateFormulaTesting(formulaId, {
+        code: formulaDraft.code.trim() || undefined,
         name: formulaDraft.name.trim() || undefined,
         description: formulaDraft.description.trim() || undefined,
         formulaType: formulaDraft.formulaType.trim() || undefined,
@@ -2937,21 +2938,28 @@ export default function VersionTab(props: VersionTabProps) {
                         disabled={wizardBusy}
                       >
                         <Sparkles className="mr-1.5 h-3.5 w-3.5" />
-                        Clone và mở flow chỉnh sửa
+                        Tạo bản sao
                       </Button>
                       {!isConsultantMode ? (
                         <Button
                           size="sm"
                           variant="destructive"
                           onClick={async () => {
-                            if (!confirm("Bạn có chắc muốn deactivate phiên bản này?")) return;
+                            if (
+                              !confirm(
+                                "Bạn có chắc muốn vô hiệu hóa phiên bản này?",
+                              )
+                            )
+                              return;
                             setDeactivateError("");
                             setDeactivateBusy(true);
                             try {
                               await props.onDeactivate();
                             } catch (err: unknown) {
                               setDeactivateError(
-                                err instanceof Error ? err.message : "Lỗi khi deactivate",
+                                err instanceof Error
+                                  ? err.message
+                                  : "Lỗi khi deactivate",
                               );
                             } finally {
                               setDeactivateBusy(false);
@@ -2961,11 +2969,13 @@ export default function VersionTab(props: VersionTabProps) {
                           className="ml-2 bg-red-600 text-white hover:bg-red-700"
                         >
                           <Power className="mr-1.5 h-3.5 w-3.5" />
-                          Deactivate phiên bản
+                          Vô hiệu hóa phiên bản
                         </Button>
                       ) : null}
                       {deactivateError ? (
-                        <div className="mt-2 text-sm text-red-600">{deactivateError}</div>
+                        <div className="mt-2 text-sm text-red-600">
+                          {deactivateError}
+                        </div>
                       ) : null}
                     </div>
                   </div>
@@ -3936,8 +3946,13 @@ export default function VersionTab(props: VersionTabProps) {
                         </label>
                         <input
                           value={formulaDraft.code}
-                          readOnly
-                          className="w-full rounded-lg border bg-gray-50 px-3 py-2 font-mono text-xs"
+                          onChange={(e) =>
+                            setFormulaDraft((prev) => ({
+                              ...prev,
+                              code: e.target.value,
+                            }))
+                          }
+                          className="w-full rounded-lg border px-3 py-2 font-mono text-xs"
                         />
                       </div>
                       <div className="space-y-1">

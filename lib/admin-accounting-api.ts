@@ -69,6 +69,7 @@ export interface CreateTemplateVersionRequest {
 }
 
 export interface FormulaPatchRequest {
+  code?: string;
   name?: string;
   description?: string;
   formulaType?: string;

@@ -27,11 +27,14 @@ export default function DashboardSidebar() {
   const pathname = usePathname();
   const { isOwner } = useLocationRole();
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isConsultant, setIsConsultant] = useState(false);
 
   useEffect(() => {
     getValidAccessToken()
       .then((token) => {
-        setIsAdmin(getRoleFromToken(token) === "admin");
+        const role = getRoleFromToken(token);
+        setIsAdmin(role === "admin");
+        setIsConsultant(role === "consultant");
       })
       .catch(() => {});
   }, []);
@@ -167,15 +170,15 @@ export default function DashboardSidebar() {
         </ul>
       </div>
 
-      {isAdmin && (
+      {(isAdmin || isConsultant) && (
         <div className="px-4 pb-4">
           <Separator className="mb-3" />
           <Link
-            href="/admin"
+            href={isAdmin ? "/admin" : "/consultant/accounting"}
             className="flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50 hover:text-gray-900 transition-colors border border-dashed border-gray-200"
           >
             <ArrowLeftRight className="w-5 h-5 text-gray-400" />
-            <span>Trang Quản Trị</span>
+            <span>{isAdmin ? "Trang Quản Trị" : "Trang Consultant"}</span>
           </Link>
         </div>
       )}
