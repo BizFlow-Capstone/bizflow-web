@@ -155,6 +155,47 @@ export interface TraceRequest {
   businessTypeIds: string[];
 }
 
+export interface TestingPreviewRequest {
+  businessLocationId: number;
+  periodId: number;
+  templateVersionId: number;
+  rulesetId: number;
+  batchSize: number;
+  cursor?: string;
+}
+
+export interface TestingPreviewSectionRow {
+  lineType: string;
+  dien_giai?: string;
+  so_tien?: number;
+  explanation?: string;
+  dataFilter?: { businessTypeId?: string; section?: string };
+  taxMetadata?: { taxType?: string; rate?: number; source?: string };
+  [key: string]: unknown;
+}
+
+export interface TestingPreviewSection {
+  sectionType: string;
+  groupKey: string;
+  groupName: string;
+  groupIndex: number;
+  rows: TestingPreviewSectionRow[];
+}
+
+export interface TestingPreviewResponse {
+  summary: Record<string, unknown>;
+  rows: {
+    items: Record<string, unknown>[];
+    hasMore: boolean;
+    nextCursor: string | null;
+    loadedCount: number;
+    totalEstimated: number;
+  };
+  columns?: Array<{ fieldCode: string; label: string; fieldType: string; exportColumn?: string }>;
+  sections?: TestingPreviewSection[];
+  footerRows?: TestingPreviewSectionRow[];
+}
+
 export interface CompareRequest {
   businessLocationId: number;
   periodId: number;
@@ -636,6 +677,15 @@ export async function createBusinessType(
 ): Promise<Record<string, unknown>> {
   return request<Record<string, unknown>>(
     "/api/admin/accounting/business-types",
+    { method: "POST", body: JSON.stringify(payload) },
+  );
+}
+
+export async function previewTemplateVersion(
+  payload: TestingPreviewRequest,
+): Promise<TestingPreviewResponse> {
+  return request<TestingPreviewResponse>(
+    "/api/admin/accounting/testing/preview",
     { method: "POST", body: JSON.stringify(payload) },
   );
 }

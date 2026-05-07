@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -6,14 +6,17 @@ import {
   BookOpen,
   Boxes,
   Database,
+  Edit,
   FileJson,
   FunctionSquare,
   GitBranch,
   MoreVertical,
   Play,
+  Plus,
   Plug,
   Rows,
   Scale,
+  Settings,
   Trash2,
   TreePine,
 } from "lucide-react";
@@ -846,6 +849,8 @@ export default function AdminAccountingClient({
   const [entityDeleteTarget, setEntityDeleteTarget] =
     useState<EntityDeleteTarget | null>(null);
   const [entityDeleteBusy, setEntityDeleteBusy] = useState(false);
+  const [showEntityModal, setShowEntityModal] = useState(false);
+  const [showFieldModal, setShowFieldModal] = useState(false);
   const [efEditId, setEfEditId] = useState("");
   const [efEntId, setEfEntId] = useState("");
   const [efCode, setEfCode] = useState("");
@@ -3008,7 +3013,7 @@ export default function AdminAccountingClient({
 
           <Card className="rounded-xl border border-gray-200 bg-white shadow-sm">
             <CardHeader className="flex-row items-center justify-between">
-              <CardTitle>Loại Hình Kinh Doanh</CardTitle>
+              <CardTitle>Nhóm Ngành Kinh Doanh</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
@@ -3386,24 +3391,33 @@ export default function AdminAccountingClient({
 
           <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
             <Card className="xl:col-span-2 rounded-xl border border-gray-200 bg-white shadow-sm">
-              <CardHeader>
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <CardTitle>Các Loại Hình Kinh Doanh</CardTitle>
+              <CardHeader className="border-b border-gray-100 bg-gradient-to-r from-gray-50 to-white">
+                <div className="flex flex-col gap-4">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#23C4C1]/10">
+                      <Settings className="h-5 w-5 text-[#23C4C1]" />
+                    </div>
+                    <CardTitle className="text-lg">
+                      Các Loại Hình Kinh Doanh
+                    </CardTitle>
+                  </div>
                   <div className="flex flex-wrap gap-2">
                     <Button
                       type="button"
                       size="sm"
-                      variant="outline"
+                      className="bg-[#23C4C1]/10 text-[#23C4C1] border border-[#23C4C1]/20 hover:bg-[#23C4C1]/20 hover:border-[#23C4C1]/40"
                       onClick={() => setShowCreateRulesetModal(true)}
                     >
+                      <Plus className="mr-1.5 h-4 w-4" />
                       Tạo Ruleset Mới
                     </Button>
                     <Button
                       type="button"
                       size="sm"
-                      variant="outline"
+                      className="bg-[#23C4C1] text-white hover:bg-[#1ea8a6]"
                       onClick={() => setShowCreateBtModal(true)}
                     >
+                      <Plus className="mr-1.5 h-4 w-4" />
                       Tạo Loại Hình Kinh Doanh Mới
                     </Button>
                   </div>
@@ -3465,18 +3479,21 @@ export default function AdminAccountingClient({
 
                 <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
                   <table className="w-full text-sm">
-                    <thead className="sticky top-0 bg-gray-50 text-left text-xs uppercase text-gray-500">
+                    <thead className="sticky top-0 bg-gradient-to-r from-gray-50 to-gray-100/50 text-left text-xs font-semibold uppercase text-gray-600 border-b border-gray-200">
                       <tr>
-                        <th className="px-3 py-2">Mã</th>
-                        <th className="px-3 py-2">Tên</th>
-                        <th className="px-3 py-2">Trạng Thái</th>
-                        <th className="px-3 py-2">Tỷ Lệ Thuế</th>
+                        <th className="px-4 py-3 font-semibold">Mã</th>
+                        <th className="px-4 py-3 font-semibold">Tên</th>
+                        <th className="px-4 py-3 font-semibold">Trạng Thái</th>
+                        <th className="px-4 py-3 font-semibold">Tỷ Lệ Thuế</th>
                       </tr>
                     </thead>
                     <tbody>
                       {businessTypesWithRates.length === 0 ? (
                         <tr>
-                          <td className="px-3 py-3 text-gray-500" colSpan={4}>
+                          <td
+                            className="px-4 py-8 text-center text-gray-400 italic"
+                            colSpan={4}
+                          >
                             Chưa có dữ liệu business type theo ruleset này.
                           </td>
                         </tr>
@@ -3487,32 +3504,35 @@ export default function AdminAccountingClient({
                           return (
                             <tr
                               key={item.businessTypeId}
-                              className={`cursor-pointer border-t transition-colors ${
+                              className={`cursor-pointer border-l-4 transition-all duration-200 ${
                                 isSelected
-                                  ? "bg-[#23C4C1]/15 text-teal-900 shadow-[inset_4px_0_0_0_#23C4C1]"
-                                  : "hover:bg-gray-50/70"
+                                  ? "border-l-[#23C4C1] bg-[#23C4C1]/8 hover:bg-[#23C4C1]/12"
+                                  : "border-l-transparent hover:bg-gray-50/60"
                               }`}
                               onClick={() =>
                                 handleBtSelect(item.businessTypeId)
                               }
                             >
-                              <td className="px-3 py-2 font-mono text-xs">
+                              <td className="px-4 py-3 font-mono font-medium text-xs text-gray-700">
                                 {item.code}
                               </td>
-                              <td className="px-3 py-2">{item.name}</td>
-                              <td className="px-3 py-2">
+                              <td
+                                className={`px-4 py-3 font-medium ${isSelected ? "text-gray-900" : "text-gray-800"}`}
+                              >
+                                {item.name}
+                              </td>
+                              <td className="px-4 py-3">
                                 <Badge
-                                  variant="secondary"
                                   className={
                                     item.status?.toLowerCase() === "active"
-                                      ? "bg-emerald-50 text-emerald-700"
-                                      : "bg-red-50 text-red-700"
+                                      ? "bg-emerald-100 text-emerald-700 font-medium"
+                                      : "bg-red-100 text-red-700 font-medium"
                                   }
                                 >
                                   {item.status || "unknown"}
                                 </Badge>
                               </td>
-                              <td className="px-3 py-2 text-xs text-gray-600">
+                              <td className="px-4 py-3 text-xs text-gray-600 max-w-xs truncate">
                                 {(item.taxRates ?? [])
                                   .map(
                                     (rate) =>
@@ -3539,155 +3559,203 @@ export default function AdminAccountingClient({
                   <div className="font-medium text-gray-700">
                     {selectedBusinessTypeWithRates
                       ? `${selectedBusinessTypeWithRates.code} - ${selectedBusinessTypeWithRates.businessTypeId}`
-                      : "Chọn business type để chỉnh sửa"}
+                      : "Chọn business type từ bảng để chỉnh sửa"}
                   </div>
                 </div>
 
-                <div className="space-y-2 rounded-xl border border-gray-100 bg-gray-50/60 p-3">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                    Mô Tả
+                <div className="space-y-3 rounded-xl border border-gray-200 bg-gradient-to-br from-gray-50 to-white p-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-600">
+                    Thông Tin Cơ Bản
                   </p>
-                  <input
-                    value={btMetadataForm.name}
-                    onChange={(e) =>
-                      setBtMetadataForm((prev) => ({
-                        ...prev,
-                        name: e.target.value,
-                      }))
-                    }
-                    placeholder="Name"
-                    className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-                    disabled={!selectedBusinessTypeWithRates}
-                  />
-                  <textarea
-                    value={btMetadataForm.description}
-                    onChange={(e) =>
-                      setBtMetadataForm((prev) => ({
-                        ...prev,
-                        description: e.target.value,
-                      }))
-                    }
-                    placeholder="Description"
-                    rows={2}
-                    className="w-full resize-y rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-                    disabled={!selectedBusinessTypeWithRates}
-                  />
-                  <select
-                    value={btMetadataForm.status}
-                    onChange={(e) =>
-                      setBtMetadataForm((prev) => ({
-                        ...prev,
-                        status: e.target.value,
-                      }))
-                    }
-                    className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-                    disabled={!selectedBusinessTypeWithRates}
-                  >
-                    <option value="active">Kích hoạt</option>
-                    <option value="inactive">Vô hiệu hóa</option>
-                  </select>
-                  <div className="flex items-center gap-2">
+                  <div className="space-y-2.5">
+                    <div>
+                      <label className="mb-1.5 block text-xs font-medium text-gray-700">
+                        Tên Loại Hình <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        value={btMetadataForm.name}
+                        onChange={(e) =>
+                          setBtMetadataForm((prev) => ({
+                            ...prev,
+                            name: e.target.value,
+                          }))
+                        }
+                        placeholder="Nhập tên loại hình kinh doanh"
+                        className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm transition-colors focus:border-[#23C4C1] focus:ring-1 focus:ring-[#23C4C1]/30 outline-none disabled:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
+                        disabled={!selectedBusinessTypeWithRates}
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1.5 block text-xs font-medium text-gray-700">
+                        Mô Tả
+                      </label>
+                      <textarea
+                        value={btMetadataForm.description}
+                        onChange={(e) =>
+                          setBtMetadataForm((prev) => ({
+                            ...prev,
+                            description: e.target.value,
+                          }))
+                        }
+                        placeholder="Nhập mô tả chi tiết"
+                        rows={3}
+                        className="w-full resize-none rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm transition-colors focus:border-[#23C4C1] focus:ring-1 focus:ring-[#23C4C1]/30 outline-none disabled:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
+                        disabled={!selectedBusinessTypeWithRates}
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1.5 block text-xs font-medium text-gray-700">
+                        Trạng Thái <span className="text-red-500">*</span>
+                      </label>
+                      <select
+                        value={btMetadataForm.status}
+                        onChange={(e) =>
+                          setBtMetadataForm((prev) => ({
+                            ...prev,
+                            status: e.target.value,
+                          }))
+                        }
+                        className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm transition-colors focus:border-[#23C4C1] focus:ring-1 focus:ring-[#23C4C1]/30 outline-none disabled:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
+                        disabled={!selectedBusinessTypeWithRates}
+                      >
+                        <option value="active">Kích hoạt</option>
+                        <option value="inactive">Vô hiệu hóa</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 pt-2 border-t border-gray-200">
                     <Button
                       size="sm"
-                      variant="secondary"
+                      className="bg-[#23C4C1] text-white hover:bg-[#1ea8a6] font-medium"
                       onClick={() => void btUpdateMetadata()}
                       disabled={!selectedBusinessTypeWithRates}
                     >
-                      Lưu
+                      Lưu Thay Đổi
                     </Button>
                     {!isConsultantMode && (
                       <Button
                         size="sm"
-                        variant="destructive"
+                        variant="ghost"
+                        className="text-red-600 hover:bg-red-50 hover:text-red-700 font-medium"
                         onClick={() => setBtDeleteConfirmOpen(true)}
                         disabled={!selectedBusinessTypeWithRates}
                       >
+                        <Trash2 className="mr-1.5 h-4 w-4" />
                         Xóa
                       </Button>
                     )}
                   </div>
                 </div>
 
-                <div className="space-y-2 rounded-xl border border-gray-100 bg-gray-50/60 p-3">
+                <div className="space-y-3 rounded-xl border border-gray-200 bg-gradient-to-br from-gray-50 to-white p-4">
                   <div className="flex items-center justify-between gap-2">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-gray-600">
                       Tỷ Lệ Thuế Áp Dụng
                     </p>
                     <Button
                       size="sm"
-                      variant="outline"
+                      className="bg-[#23C4C1]/10 text-[#23C4C1] border border-[#23C4C1]/20 hover:bg-[#23C4C1]/20 hover:border-[#23C4C1]/40"
                       onClick={addBtRate}
                       disabled={!selectedBusinessTypeWithRates}
                     >
-                      Thêm Tỷ Lệ Thuế
+                      <Plus className="mr-1.5 h-3.5 w-3.5" />
+                      Thêm Tỷ Lệ
                     </Button>
                   </div>
-                  <div className="max-h-72 space-y-2 overflow-auto">
+                  <div className="max-h-64 space-y-2.5 overflow-y-auto pr-2">
                     {btRatesForm.length === 0 ? (
-                      <div className="rounded-md border border-dashed border-gray-300 px-3 py-2 text-xs text-gray-500">
-                        Chưa có tax rate. Bấm Add Rate để thêm mới.
+                      <div className="rounded-lg border-2 border-dashed border-gray-300 bg-gray-50/50 px-4 py-6 text-center">
+                        <p className="text-xs text-gray-500 font-medium">
+                          Chưa có tỷ lệ thuế
+                        </p>
+                        <p className="text-xs text-gray-400 mt-1">
+                          Nhấp "Thêm Tỷ Lệ" để tạo mới
+                        </p>
                       </div>
                     ) : (
                       btRatesForm.map((rate, index) => (
                         <div
                           key={index}
-                          className="space-y-2 rounded-lg border border-gray-200 bg-white p-2"
+                          className="space-y-2 rounded-lg border border-gray-200 bg-white p-3 transition-all hover:border-gray-300 hover:shadow-sm"
                         >
-                          <select
-                            value={rate.taxType}
-                            onChange={(e) =>
-                              updateBtRateField(
-                                index,
-                                "taxType",
-                                e.target.value,
-                              )
-                            }
-                            className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-                            disabled={!selectedBusinessTypeWithRates}
-                          >
-                            <option value="">Chọn tax type</option>
-                            {businessTypeTaxTypeOptions.map((option) => (
-                              <option key={option.value} value={option.value}>
-                                {option.label}
-                              </option>
-                            ))}
-                          </select>
-                          <input
-                            value={rate.taxRate}
-                            onChange={(e) =>
-                              updateBtRateField(
-                                index,
-                                "taxRate",
-                                e.target.value,
-                              )
-                            }
-                            placeholder="Tax Rate (e.g. 0.05)"
-                            className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-                            disabled={!selectedBusinessTypeWithRates}
-                          />
-                          <input
-                            value={rate.description}
-                            onChange={(e) =>
-                              updateBtRateField(
-                                index,
-                                "description",
-                                e.target.value,
-                              )
-                            }
-                            placeholder="Description"
-                            className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-                            disabled={!selectedBusinessTypeWithRates}
-                          />
-                          <div className="text-right">
+                          <div className="flex items-center justify-between gap-2 mb-2">
+                            <span className="inline-flex items-center justify-center h-6 w-6 rounded-full bg-[#23C4C1]/10 text-[#23C4C1] font-semibold text-xs">
+                              {index + 1}
+                            </span>
                             <Button
                               size="sm"
                               variant="ghost"
-                              className="text-red-600 hover:text-red-700"
+                              className="h-6 px-2 text-red-600 hover:bg-red-50 hover:text-red-700"
                               onClick={() => removeBtRate(index)}
                               disabled={!selectedBusinessTypeWithRates}
                             >
-                              Remove
+                              <Trash2 className="h-3.5 w-3.5" />
                             </Button>
+                          </div>
+                          <div>
+                            <label className="mb-1 block text-xs font-medium text-gray-700">
+                              Loại Thuế <span className="text-red-500">*</span>
+                            </label>
+                            <select
+                              value={rate.taxType}
+                              onChange={(e) =>
+                                updateBtRateField(
+                                  index,
+                                  "taxType",
+                                  e.target.value,
+                                )
+                              }
+                              className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm transition-colors focus:border-[#23C4C1] focus:ring-1 focus:ring-[#23C4C1]/30 outline-none disabled:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
+                              disabled={!selectedBusinessTypeWithRates}
+                            >
+                              <option value="">Chọn loại thuế</option>
+                              {businessTypeTaxTypeOptions.map((option) => (
+                                <option key={option.value} value={option.value}>
+                                  {option.label}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <label className="mb-1 block text-xs font-medium text-gray-700">
+                                Tỷ Lệ (%)
+                              </label>
+                              <input
+                                value={rate.taxRate}
+                                onChange={(e) =>
+                                  updateBtRateField(
+                                    index,
+                                    "taxRate",
+                                    e.target.value,
+                                  )
+                                }
+                                placeholder="ví dụ: 0.05"
+                                type="number"
+                                step="0.001"
+                                min="0"
+                                className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm transition-colors focus:border-[#23C4C1] focus:ring-1 focus:ring-[#23C4C1]/30 outline-none disabled:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
+                                disabled={!selectedBusinessTypeWithRates}
+                              />
+                            </div>
+                            <div>
+                              <label className="mb-1 block text-xs font-medium text-gray-700">
+                                Ghi Chú
+                              </label>
+                              <input
+                                value={rate.description}
+                                onChange={(e) =>
+                                  updateBtRateField(
+                                    index,
+                                    "description",
+                                    e.target.value,
+                                  )
+                                }
+                                placeholder="ghi chú ngắn"
+                                className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm transition-colors focus:border-[#23C4C1] focus:ring-1 focus:ring-[#23C4C1]/30 outline-none disabled:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
+                                disabled={!selectedBusinessTypeWithRates}
+                              />
+                            </div>
                           </div>
                         </div>
                       ))
@@ -3695,11 +3763,13 @@ export default function AdminAccountingClient({
                   </div>
                   <Button
                     size="sm"
-                    className="w-full bg-[#23C4C1] text-white hover:bg-[#1ea8a6]"
+                    className="w-full bg-[#23C4C1] text-white hover:bg-[#1ea8a6] font-medium"
                     onClick={() => void btReplaceRates()}
-                    disabled={!selectedBusinessTypeWithRates}
+                    disabled={
+                      !selectedBusinessTypeWithRates || btRatesForm.length === 0
+                    }
                   >
-                    Áp Dụng
+                    Áp Dụng Tỷ Lệ Thuế
                   </Button>
                 </div>
               </CardContent>
@@ -3899,7 +3969,8 @@ export default function AdminAccountingClient({
                               <MoreVertical className="h-4 w-4" />
                             </button>
                             {rowActionMenuId ===
-                            String(r.rowDefId ?? `row-${index}`) && !isConsultantMode ? (
+                              String(r.rowDefId ?? `row-${index}`) &&
+                            !isConsultantMode ? (
                               <div className="absolute right-0 top-9 z-10 w-28 rounded-md border border-gray-200 bg-white p-1 shadow-lg">
                                 <button
                                   type="button"
@@ -4002,10 +4073,15 @@ export default function AdminAccountingClient({
                   </label>
                   <select
                     value={rowForm.position}
+                    disabled={rowEditorMode === "update"}
                     onChange={(e) =>
                       setRowForm((p) => ({ ...p, position: e.target.value }))
                     }
-                    className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                    className={`w-full rounded-lg border px-3 py-2 text-sm ${
+                      rowEditorMode === "update"
+                        ? "border-gray-200 bg-gray-50 text-gray-500 cursor-not-allowed opacity-60"
+                        : "border-gray-200 bg-white"
+                    }`}
                   >
                     {rowPositionOptions.map((option) => (
                       <option key={option.value} value={option.value}>
@@ -4206,8 +4282,23 @@ export default function AdminAccountingClient({
         <div className="space-y-6">
           <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
             <Card className="rounded-xl border border-gray-200 bg-white shadow-sm">
-              <CardHeader>
+              <CardHeader className="flex flex-row items-center justify-between">
                 <CardTitle>Entities</CardTitle>
+                <Button
+                  size="sm"
+                  className="bg-[#23C4C1] text-white hover:bg-[#1ea8a6]"
+                  onClick={() => {
+                    setEntEditId("");
+                    setEntCode("");
+                    setEntName("");
+                    setEntCat("revenue");
+                    setEntDesc("");
+                    setEntIsActive("true");
+                    setShowEntityModal(true);
+                  }}
+                >
+                  + Tạo mới
+                </Button>
               </CardHeader>
               <CardContent>
                 <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
@@ -4309,8 +4400,26 @@ export default function AdminAccountingClient({
             </Card>
 
             <Card className="rounded-xl border border-gray-200 bg-white shadow-sm">
-              <CardHeader>
+              <CardHeader className="flex flex-row items-center justify-between">
                 <CardTitle>Fields của {selectedEntityName}</CardTitle>
+                <Button
+                  size="sm"
+                  className="bg-[#23C4C1] text-white hover:bg-[#1ea8a6]"
+                  onClick={() => {
+                    setEfEditId("");
+                    setEfEntId(currentFieldEntityId);
+                    setEfCode("");
+                    setEfName("");
+                    setEfDtype("decimal");
+                    setEfAggs('["sum","none"]');
+                    setEfDesc("");
+                    setEfIsActive("true");
+                    setShowFieldModal(true);
+                  }}
+                  disabled={!currentFieldEntityId}
+                >
+                  + Tạo mới
+                </Button>
               </CardHeader>
               <CardContent>
                 <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
@@ -4397,284 +4506,245 @@ export default function AdminAccountingClient({
             </Card>
           </div>
 
-          <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-            <Card className="rounded-xl border border-gray-200 bg-white shadow-sm">
-              <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                <div className="space-y-1">
-                  <CardTitle>Chỉnh sửa</CardTitle>
-                  <p className="text-xs text-gray-500">
-                    {hasSelectedEntity
-                      ? `Đang chỉnh sửa entity #${entEditId}`
-                      : "Tạo mới entity"}
-                  </p>
-                </div>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => {
-                    setEntEditId("");
-                    setEntCode("");
-                    setEntName("");
-                    setEntCat("revenue");
-                    setEntDesc("");
-                    setEntIsActive("true");
-                  }}
-                >
-                  Tạo mới Entity
-                </Button>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="space-y-3 rounded-xl border border-gray-100 bg-gray-50/60 p-3">
-                  <div className="space-y-1">
-                    <label className="block text-xs font-medium text-gray-600">
-                      Entity ID
-                    </label>
-                    <input
-                      value={entEditId}
-                      readOnly
-                      placeholder="(auto)"
-                      className="w-full rounded-lg border border-gray-200 bg-gray-100 px-3 py-2 text-sm"
-                    />
-                  </div>
-                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                    <div className="space-y-1">
-                      <label className="block text-xs font-medium text-gray-600">
-                        Entity Code
-                      </label>
-                      <input
-                        value={entCode}
-                        onChange={(e) => setEntCode(e.target.value)}
-                        placeholder="orders"
-                        className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="block text-xs font-medium text-gray-600">
-                        Tên Entity
-                      </label>
-                      <input
-                        value={entName}
-                        onChange={(e) => setEntName(e.target.value)}
-                        placeholder="Đơn hàng"
-                        className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-                      />
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                    <div className="space-y-1">
-                      <label className="block text-xs font-medium text-gray-600">
-                        Danh mục
-                      </label>
-                      <select
-                        value={entCat}
-                        onChange={(e) => setEntCat(e.target.value)}
-                        className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-                      >
-                        <option>revenue - Doanh thu</option>
-                        <option>cost - Chi phí</option>
-                        <option>tax - Thuế</option>
-                        <option>asset - Tài sản</option>
-                      </select>
-                    </div>
-                    <div className="space-y-1">
-                      <label className="block text-xs font-medium text-gray-600">
-                        Trạng thái
-                      </label>
-                      <select
-                        value={entIsActive}
-                        onChange={(e) => setEntIsActive(e.target.value)}
-                        className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-                      >
-                        <option value="true">Hiệu lực</option>
-                        <option value="false">Vô hiệu</option>
-                      </select>
-                    </div>
-                  </div>
-                  <div className="space-y-1">
-                    <label className="block text-xs font-medium text-gray-600">
-                      Mô tả
-                    </label>
-                    <textarea
-                      value={entDesc}
-                      onChange={(e) => setEntDesc(e.target.value)}
-                      placeholder="Mô tả ngắn cho entity"
-                      rows={2}
-                      className="w-full resize-y rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-                    />
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <Button
-                    size="sm"
-                    className="bg-[#23C4C1] text-white hover:bg-[#1ea8a6]"
-                    onClick={() => void entCreate()}
-                    disabled={!entCode.trim() || !entName.trim()}
-                  >
-                    Tạo Entity
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    onClick={() => void entUpdate()}
-                    disabled={!hasSelectedEntity}
-                  >
-                    Cập nhật Entity
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="rounded-xl border border-gray-200 bg-white shadow-sm">
-              <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                <div className="space-y-1">
-                  <CardTitle>Chỉnh sửa</CardTitle>
-                  <p className="text-xs text-gray-500">
-                    {hasSelectedField
-                      ? `Đang chỉnh sửa field #${efEditId}`
-                      : "Tạo mới field cho entity đang chọn"}
-                  </p>
-                </div>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => {
-                    setEfEditId("");
-                    setEfEntId(currentFieldEntityId);
-                    setEfCode("");
-                    setEfName("");
-                    setEfDtype("decimal");
-                    setEfAggs('["sum","none"]');
-                    setEfDesc("");
-                    setEfIsActive("true");
-                  }}
-                  disabled={!currentFieldEntityId}
-                >
-                  Tạo Field
-                </Button>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="space-y-3 rounded-xl border border-gray-100 bg-gray-50/60 p-3">
-                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                    <div className="space-y-1">
-                      <label className="block text-xs font-medium text-gray-600">
-                        Field ID
-                      </label>
-                      <input
-                        value={efEditId}
-                        readOnly
-                        placeholder="(auto)"
-                        className="w-full rounded-lg border border-gray-200 bg-gray-100 px-3 py-2 text-sm"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="block text-xs font-medium text-gray-600">
-                        Entity ID
-                      </label>
-                      <input
-                        value={currentFieldEntityId}
-                        readOnly
-                        placeholder="Chọn entity trước"
-                        className="w-full rounded-lg border border-gray-200 bg-gray-100 px-3 py-2 text-sm"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                    <div className="space-y-1">
-                      <label className="block text-xs font-medium text-gray-600">
-                        Field Code
-                      </label>
-                      <input
-                        value={efCode}
-                        onChange={(e) => setEfCode(e.target.value)}
-                        placeholder="ABC"
-                        className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="block text-xs font-medium text-gray-600">
-                        Tên hiển thị
-                      </label>
-                      <input
-                        value={efName}
-                        onChange={(e) => setEfName(e.target.value)}
-                        placeholder="ABC Field"
-                        className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                    <div className="space-y-1">
-                      <label className="block text-xs font-medium text-gray-600">
-                        Loại dữ liệu
-                      </label>
-                      <select
-                        value={efDtype}
-                        onChange={(e) => setEfDtype(e.target.value)}
-                        className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-                      >
-                        <option>decimal - Số thập phân</option>
-                        <option>string - Chuỗi</option>
-                        <option>text - Văn bản</option>
-                        <option>date - Ngày tháng</option>
-                        <option>long - Số nguyên lớn</option>
-                        <option>guid - ID duy nhất</option>
-                      </select>
-                    </div>
-                    <div className="space-y-1">
-                      <label className="block text-xs font-medium text-gray-600">
-                        Trạng thái
-                      </label>
-                      <select
-                        value={efIsActive}
-                        onChange={(e) => setEfIsActive(e.target.value)}
-                        className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-                      >
-                        <option value="true">Hiệu lực</option>
-                        <option value="false">Vô hiệu</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="block text-xs font-medium text-gray-600">
-                      Description
-                    </label>
-                    <textarea
-                      value={efDesc}
-                      onChange={(e) => setEfDesc(e.target.value)}
-                      placeholder="Mô tả ngắn cho field"
-                      rows={2}
-                      className="w-full resize-y rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-                    />
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <Button
-                    size="sm"
-                    className="bg-[#23C4C1] text-white hover:bg-[#1ea8a6]"
-                    onClick={() => void efCreate()}
-                    disabled={
-                      !currentFieldEntityId || !efCode.trim() || !efName.trim()
-                    }
-                  >
-                    Tạo mới Field
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    onClick={() => void efUpdate()}
-                    disabled={!hasSelectedField || !currentFieldEntityId}
-                  >
-                    Cập nhật Field
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
+          {/* Entity & Field forms moved to modals - removed form cards here */}
         </div>
       ) : null}
+
+      {/* Entity Create Modal */}
+      <Dialog open={showEntityModal} onOpenChange={setShowEntityModal}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Tạo mới Entity</DialogTitle>
+            <DialogDescription>
+              Tạo entity mới và định nghĩa các trường dữ liệu cho nó
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-3 rounded-xl border border-gray-100 bg-gray-50/60 p-4">
+              <div className="space-y-1">
+                <label className="block text-xs font-medium text-gray-600">
+                  Entity ID
+                </label>
+                <input
+                  value={entEditId}
+                  readOnly
+                  placeholder="(auto)"
+                  className="w-full rounded-lg border border-gray-200 bg-gray-100 px-3 py-2 text-sm"
+                />
+              </div>
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                <div className="space-y-1">
+                  <label className="block text-xs font-medium text-gray-600">
+                    Entity Code
+                  </label>
+                  <input
+                    value={entCode}
+                    onChange={(e) => setEntCode(e.target.value)}
+                    placeholder="orders"
+                    className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="block text-xs font-medium text-gray-600">
+                    Tên Entity
+                  </label>
+                  <input
+                    value={entName}
+                    onChange={(e) => setEntName(e.target.value)}
+                    placeholder="Đơn hàng"
+                    className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                <div className="space-y-1">
+                  <label className="block text-xs font-medium text-gray-600">
+                    Danh mục
+                  </label>
+                  <select
+                    value={entCat}
+                    onChange={(e) => setEntCat(e.target.value)}
+                    className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                  >
+                    <option>revenue - Doanh thu</option>
+                    <option>cost - Chi phí</option>
+                    <option>tax - Thuế</option>
+                    <option>asset - Tài sản</option>
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="block text-xs font-medium text-gray-600">
+                    Trạng thái
+                  </label>
+                  <select
+                    value={entIsActive}
+                    onChange={(e) => setEntIsActive(e.target.value)}
+                    className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                  >
+                    <option value="true">Hiệu lực</option>
+                    <option value="false">Vô hiệu</option>
+                  </select>
+                </div>
+              </div>
+              <div className="space-y-1">
+                <label className="block text-xs font-medium text-gray-600">
+                  Mô tả
+                </label>
+                <textarea
+                  value={entDesc}
+                  onChange={(e) => setEntDesc(e.target.value)}
+                  placeholder="Mô tả ngắn cho entity"
+                  rows={2}
+                  className="w-full resize-y rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                />
+              </div>
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setShowEntityModal(false)}>
+              Hủy
+            </Button>
+            <Button
+              className="bg-[#23C4C1] text-white hover:bg-[#1ea8a6]"
+              onClick={() => {
+                void entCreate();
+                setShowEntityModal(false);
+              }}
+              disabled={!entCode.trim() || !entName.trim()}
+            >
+              Tạo Entity
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Field Create Modal */}
+      <Dialog open={showFieldModal} onOpenChange={setShowFieldModal}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Tạo mới Field</DialogTitle>
+            <DialogDescription>
+              Định nghĩa trường dữ liệu cho entity đang chọn
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-3 rounded-xl border border-gray-100 bg-gray-50/60 p-4">
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                <div className="space-y-1">
+                  <label className="block text-xs font-medium text-gray-600">
+                    Field ID
+                  </label>
+                  <input
+                    value={efEditId}
+                    readOnly
+                    placeholder="(auto)"
+                    className="w-full rounded-lg border border-gray-200 bg-gray-100 px-3 py-2 text-sm"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="block text-xs font-medium text-gray-600">
+                    Entity ID
+                  </label>
+                  <input
+                    value={currentFieldEntityId}
+                    readOnly
+                    placeholder="Chọn entity trước"
+                    className="w-full rounded-lg border border-gray-200 bg-gray-100 px-3 py-2 text-sm"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                <div className="space-y-1">
+                  <label className="block text-xs font-medium text-gray-600">
+                    Field Code
+                  </label>
+                  <input
+                    value={efCode}
+                    onChange={(e) => setEfCode(e.target.value)}
+                    placeholder="ABC"
+                    className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="block text-xs font-medium text-gray-600">
+                    Tên hiển thị
+                  </label>
+                  <input
+                    value={efName}
+                    onChange={(e) => setEfName(e.target.value)}
+                    placeholder="ABC Field"
+                    className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                <div className="space-y-1">
+                  <label className="block text-xs font-medium text-gray-600">
+                    Loại dữ liệu
+                  </label>
+                  <select
+                    value={efDtype}
+                    onChange={(e) => setEfDtype(e.target.value)}
+                    className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                  >
+                    <option>decimal - Số thập phân</option>
+                    <option>string - Chuỗi</option>
+                    <option>text - Văn bản</option>
+                    <option>date - Ngày tháng</option>
+                    <option>long - Số nguyên lớn</option>
+                    <option>guid - ID duy nhất</option>
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="block text-xs font-medium text-gray-600">
+                    Trạng thái
+                  </label>
+                  <select
+                    value={efIsActive}
+                    onChange={(e) => setEfIsActive(e.target.value)}
+                    className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                  >
+                    <option value="true">Hiệu lực</option>
+                    <option value="false">Vô hiệu</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="block text-xs font-medium text-gray-600">
+                  Description
+                </label>
+                <textarea
+                  value={efDesc}
+                  onChange={(e) => setEfDesc(e.target.value)}
+                  placeholder="Mô tả ngắn cho field"
+                  rows={2}
+                  className="w-full resize-y rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                />
+              </div>
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setShowFieldModal(false)}>
+              Hủy
+            </Button>
+            <Button
+              className="bg-[#23C4C1] text-white hover:bg-[#1ea8a6]"
+              onClick={() => {
+                void efCreate();
+                setShowFieldModal(false);
+              }}
+              disabled={
+                !currentFieldEntityId || !efCode.trim() || !efName.trim()
+              }
+            >
+              Tạo mới Field
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {activeTab === "compare" ? (
         <Card className="rounded-xl border border-gray-200 bg-white shadow-sm">
@@ -4701,11 +4771,16 @@ export default function AdminAccountingClient({
                     <SelectValue placeholder="Draft Version ID" />
                   </SelectTrigger>
                   <SelectContent>
-                    {overview?.templates.flatMap(t => t.versions).map(v => (
-                      <SelectItem key={v.templateVersionId} value={String(v.templateVersionId)}>
-                        {v.templateVersionId} - {v.versionLabel}
-                      </SelectItem>
-                    ))}
+                    {overview?.templates
+                      .flatMap((t) => t.versions)
+                      .map((v) => (
+                        <SelectItem
+                          key={v.templateVersionId}
+                          value={String(v.templateVersionId)}
+                        >
+                          {v.templateVersionId} - {v.versionLabel}
+                        </SelectItem>
+                      ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -4715,11 +4790,16 @@ export default function AdminAccountingClient({
                     <SelectValue placeholder="Active Version ID" />
                   </SelectTrigger>
                   <SelectContent>
-                    {overview?.templates.flatMap(t => t.versions).map(v => (
-                      <SelectItem key={v.templateVersionId} value={String(v.templateVersionId)}>
-                        {v.templateVersionId} - {v.versionLabel}
-                      </SelectItem>
-                    ))}
+                    {overview?.templates
+                      .flatMap((t) => t.versions)
+                      .map((v) => (
+                        <SelectItem
+                          key={v.templateVersionId}
+                          value={String(v.templateVersionId)}
+                        >
+                          {v.templateVersionId} - {v.versionLabel}
+                        </SelectItem>
+                      ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -4746,7 +4826,7 @@ export default function AdminAccountingClient({
                     <SelectValue placeholder="Ruleset ID" />
                   </SelectTrigger>
                   <SelectContent>
-                    {overview?.taxRulesets.map(r => (
+                    {overview?.taxRulesets.map((r) => (
                       <SelectItem key={r.rulesetId} value={String(r.rulesetId)}>
                         {r.rulesetId} - {r.code}
                       </SelectItem>

@@ -40,6 +40,7 @@ import {
   getMappableEntities,
   getMappableEntityDetail,
   getTemplateVersionFormulas,
+  previewTemplateVersion,
   runAccountingTrace,
   updateFieldMappingForTesting,
   updateFormulaTesting,
@@ -50,16 +51,12 @@ import type {
   CreateTemplateRequest,
   CreateTemplateVersionRequest,
 } from "@/lib/admin-accounting-api";
-import {
-  getAccountingPeriods,
-  getAccountingBooks,
-  getBookRows,
-  getBookSummary,
-  getBookSections,
-} from "@/services/accountingService";
+import { getAccountingPeriods } from "@/services/accountingService";
+import { getLocations } from "@/services/locationService";
 import BookTemplatePreview from "../../../../components/accounting/BookTemplatePreview";
 import type { VersionOption } from "./types";
-import type { AccountingBook, AccountingPeriod } from "@/lib/types/accounting";
+import type { AccountingPeriod } from "@/lib/types/accounting";
+import type { Location } from "@/lib/types/location";
 
 interface VersionTabProps {
   mode?: "admin" | "consultant";
@@ -214,6 +211,7 @@ type BookSectionRow = {
   };
   taxMetadata?: {
     taxType?: string;
+    rate?: number;
   };
 };
 
@@ -228,8 +226,9 @@ type BookSectionsMeta = {
   footerRows?: BookSectionRow[];
 };
 
-const PREVIEW_LOCATION_ID = 6;
+const PREVIEW_DEFAULT_LOCATION_ID = 6;
 const PREVIEW_DEFAULT_PERIOD_ID = 2;
+const PREVIEW_DEFAULT_RULESET_ID = 1;
 const PREVIEW_BATCH_SIZE = 1000;
 
 function formatAccountingPeriodLabel(period: AccountingPeriod): string {
@@ -278,22 +277,6 @@ function asStringArray(value: unknown): string[] {
   return value
     .map((item) => (typeof item === "string" ? item.trim() : ""))
     .filter(Boolean);
-}
-
-function parsePreviewRowsPage(data: unknown): {
-  rows: PreviewBookRow[];
-  nextCursor?: string;
-  hasMore: boolean;
-} {
-  const responseData = asRecord(data);
-  const rows = asArray(responseData?.rows);
-  const nextCursor = asString(responseData?.nextCursor).trim();
-  const hasMoreRaw = Boolean(responseData?.hasMore);
-  return {
-    rows,
-    nextCursor: nextCursor || undefined,
-    hasMore: hasMoreRaw && !!nextCursor,
-  };
 }
 
 function buildPreviewRowDedupKey(row: PreviewBookRow): string {
@@ -387,7 +370,8 @@ function mapSectionRowToStructure(
     groupIndex?: number;
   },
 ): PreviewBookRow {
-  const values = sectionRow.values ?? {};
+  const directValues = sectionRow as unknown as Record<string, unknown>;
+  const values = sectionRow.values ?? directValues;
   const row: PreviewBookRow = {
     lineType: asString(values.lineType) || sectionRow.lineType,
     rowType: asString(values.rowType) || sectionRow.lineType,
@@ -395,9 +379,12 @@ function mapSectionRowToStructure(
       asString(values.rowLabel) ||
       asString(values.dien_giai) ||
       asString(values.description),
+    explanation:
+      asString(values.explanation) || asString(directValues.explanation),
     visibleFieldCodes: values.visibleFieldCodes,
     taxType:
       asString(values.taxType) || asString(sectionRow.taxMetadata?.taxType),
+    taxRate: sectionRow.taxMetadata?.rate,
     section:
       sectionRow.dataFilter?.section ||
       asString(sectionMeta?.sectionType) ||
@@ -411,6 +398,8 @@ function mapSectionRowToStructure(
   fieldCodes.forEach((fieldCode) => {
     if (Object.prototype.hasOwnProperty.call(values, fieldCode)) {
       row[fieldCode] = values[fieldCode];
+    } else if (Object.prototype.hasOwnProperty.call(directValues, fieldCode)) {
+      row[fieldCode] = directValues[fieldCode];
     }
   });
 
@@ -858,7 +847,24 @@ export default function VersionTab(props: VersionTabProps) {
   const isDraft = isLoaded && isActive === false;
   const isActiveVersion = isLoaded && isActive === true;
 
+  const [renderPreviewResult, setRenderPreviewResult] = useState<Record<
+    string,
+    unknown
+  > | null>(null);
+
   const sampleBookColumns = useMemo(() => {
+    const root = asRecord(renderPreviewResult);
+    const apiColumns = asArray(root?.columns);
+    if (apiColumns.length > 0) {
+      return apiColumns
+        .map((col) => ({
+          fieldCode: asString(col.fieldCode),
+          label: asString(col.label) || asString(col.fieldCode),
+          fieldType: asString(col.fieldType) || "text",
+          exportColumn: asString(col.exportColumn),
+        }))
+        .filter((col) => col.fieldCode);
+    }
     return [...fieldMappings]
       .sort((a, b) => {
         const aSort = asNumber(a.sortOrder) ?? Number.MAX_SAFE_INTEGER;
@@ -872,7 +878,7 @@ export default function VersionTab(props: VersionTabProps) {
         exportColumn: asString(mapping.exportColumn),
       }))
       .filter((column) => column.fieldCode);
-  }, [fieldMappings]);
+  }, [renderPreviewResult, fieldMappings]);
 
   const sampleBookRows = useMemo(() => {
     return [...rowDefinitions]
@@ -890,10 +896,6 @@ export default function VersionTab(props: VersionTabProps) {
       }));
   }, [rowDefinitions]);
 
-  const [renderPreviewResult, setRenderPreviewResult] = useState<Record<
-    string,
-    unknown
-  > | null>(null);
   const [renderPreviewBusy, setRenderPreviewBusy] = useState(false);
   const [renderPreviewLoadingMore, setRenderPreviewLoadingMore] =
     useState(false);
@@ -904,20 +906,18 @@ export default function VersionTab(props: VersionTabProps) {
   const [renderPreviewError, setRenderPreviewError] = useState("");
   const [deactivateBusy, setDeactivateBusy] = useState(false);
   const [deactivateError, setDeactivateError] = useState("");
-  const [previewBookId, setPreviewBookId] = useState<number | null>(null);
+  const [previewLocationId, setPreviewLocationId] = useState<number>(
+    PREVIEW_DEFAULT_LOCATION_ID,
+  );
+  const [previewLocations, setPreviewLocations] = useState<Location[]>([]);
+  const [previewLocationsBusy, setPreviewLocationsBusy] = useState(false);
+  const [previewLocationsError, setPreviewLocationsError] = useState("");
   const [previewPeriodId, setPreviewPeriodId] = useState<number | null>(
     PREVIEW_DEFAULT_PERIOD_ID,
   );
   const [previewPeriods, setPreviewPeriods] = useState<AccountingPeriod[]>([]);
   const [previewPeriodsBusy, setPreviewPeriodsBusy] = useState(false);
   const [previewPeriodsError, setPreviewPeriodsError] = useState("");
-  const [previewBooks, setPreviewBooks] = useState<AccountingBook[]>([]);
-  const [previewBooksBusy, setPreviewBooksBusy] = useState(false);
-  const [previewBooksError, setPreviewBooksError] = useState("");
-  const [bookSectionsMeta, setBookSectionsMeta] =
-    useState<BookSectionsMeta | null>(null);
-  const [bookSectionsBusy, setBookSectionsBusy] = useState(false);
-  const [bookSectionsError, setBookSectionsError] = useState("");
   const [templateVersionFormulas, setTemplateVersionFormulas] = useState<
     Array<Record<string, unknown>>
   >([]);
@@ -945,6 +945,27 @@ export default function VersionTab(props: VersionTabProps) {
     return asRecord(root?.summary);
   }, [renderPreviewResult]);
 
+  const renderPreviewSectionsMeta = useMemo((): BookSectionsMeta | null => {
+    const root = asRecord(renderPreviewResult);
+    const rawSections = asArray(root?.sections);
+    if (rawSections.length === 0) return null;
+    return {
+      sections: rawSections.map((section) => ({
+        sectionType: asString(section.sectionType),
+        businessTypeId: asString(section.groupKey || section.businessTypeId),
+        businessTypeName: asString(
+          section.groupName || section.businessTypeName,
+        ),
+        groupIndex:
+          typeof section.groupIndex === "number"
+            ? section.groupIndex
+            : undefined,
+        rows: asArray(section.rows) as unknown as BookSectionRow[],
+      })),
+      footerRows: asArray(root?.footerRows) as unknown as BookSectionRow[],
+    };
+  }, [renderPreviewResult]);
+
   const renderPreviewRows = useMemo(() => {
     const root = asRecord(renderPreviewResult);
     const rows = asRecord(root?.rows);
@@ -958,12 +979,15 @@ export default function VersionTab(props: VersionTabProps) {
     () =>
       mapSectionRowsToStructure(
         sampleBookColumns,
-        bookSectionsMeta,
-        // S2c: only show section structure (headers, subtotals, formula rows).
-        // Raw data rows must not be injected into data_placeholder slots.
+        renderPreviewSectionsMeta,
         isSectionsOnlyTemplate(templateCode) ? [] : renderPreviewRows,
       ),
-    [sampleBookColumns, bookSectionsMeta, renderPreviewRows, templateCode],
+    [
+      sampleBookColumns,
+      renderPreviewRows,
+      templateCode,
+      renderPreviewSectionsMeta,
+    ],
   );
 
   const hasSectionRows = renderPreviewSectionRows.length > 0;
@@ -978,6 +1002,16 @@ export default function VersionTab(props: VersionTabProps) {
       value,
     }));
   }, [renderPreviewSummaryMeta]);
+
+  const enrichedRowDefinitions = useMemo(() => {
+    const formulaValues =
+      asRecord(renderPreviewSummaryMeta?.formulaValues) ?? {};
+    return rowDefinitions.map((row) => {
+      const formulaCode = asString(row.formulaCode).trim();
+      if (!formulaCode || !(formulaCode in formulaValues)) return row;
+      return { ...row, formulaValue: formulaValues[formulaCode] };
+    });
+  }, [rowDefinitions, renderPreviewSummaryMeta]);
 
   const linkedFormulaIds = useMemo(() => {
     const ids = new Set<number>();
@@ -1590,32 +1624,8 @@ export default function VersionTab(props: VersionTabProps) {
   }
 
   useEffect(() => {
-    if (!selectedVersionId || previewLoadedForVersionId === selectedVersionId) {
-      return;
-    }
-
-    let disposed = false;
-
-    async function loadMainPreviewStructure() {
-      try {
-        await loadFullStructure(selectedVersionId);
-        if (!disposed) {
-          setPreviewLoadedForVersionId(selectedVersionId);
-        }
-      } catch {
-        // Keep currently loaded detail data if full structure call fails.
-      }
-    }
-
-    void loadMainPreviewStructure();
-
-    return () => {
-      disposed = true;
-    };
-  }, [loadFullStructure, previewLoadedForVersionId, selectedVersionId]);
-
-  useEffect(() => {
-    if (!previewBookId) {
+    const versionId = toNullableNumber(selectedVersionId);
+    if (!versionId || !previewPeriodId) {
       setRenderPreviewResult(null);
       setRenderPreviewError("");
       setRenderPreviewBusy(false);
@@ -1624,7 +1634,6 @@ export default function VersionTab(props: VersionTabProps) {
       setRenderPreviewHasMore(false);
       return;
     }
-    const resolvedBookId = previewBookId;
 
     let disposed = false;
 
@@ -1636,24 +1645,26 @@ export default function VersionTab(props: VersionTabProps) {
       setRenderPreviewHasMore(false);
       renderPreviewCanAutoLoadRef.current = true;
       try {
-        const [summaryResponse, rowsResponse] = await Promise.all([
-          getBookSummary(PREVIEW_LOCATION_ID, resolvedBookId),
-          getBookRows(PREVIEW_LOCATION_ID, resolvedBookId, PREVIEW_BATCH_SIZE),
-        ]);
-
-        const firstPage = parsePreviewRowsPage(rowsResponse.data);
+        const response = await previewTemplateVersion({
+          businessLocationId: previewLocationId,
+          periodId: previewPeriodId!,
+          templateVersionId: versionId!,
+          rulesetId: PREVIEW_DEFAULT_RULESET_ID,
+          batchSize: PREVIEW_BATCH_SIZE,
+        });
 
         if (!disposed) {
-          const preview = {
-            summary: summaryResponse.data ?? {},
-            rows: {
-              items: firstPage.rows,
-            },
-          } as Record<string, unknown>;
-
-          setRenderPreviewResult(preview);
-          setRenderPreviewCursor(firstPage.nextCursor ?? null);
-          setRenderPreviewHasMore(firstPage.hasMore);
+          setRenderPreviewResult({
+            summary: response.summary,
+            rows: { items: response.rows.items },
+            columns: response.columns,
+            sections: response.sections,
+            footerRows: response.footerRows,
+          } as Record<string, unknown>);
+          setRenderPreviewCursor(response.rows.nextCursor ?? null);
+          setRenderPreviewHasMore(
+            response.rows.hasMore && !!response.rows.nextCursor,
+          );
         }
       } catch (error) {
         if (!disposed) {
@@ -1663,7 +1674,7 @@ export default function VersionTab(props: VersionTabProps) {
           setRenderPreviewError(
             error instanceof Error
               ? error.message
-              : "Không tải được dữ liệu sổ mẫu (summary/rows).",
+              : "Không tải được dữ liệu preview.",
           );
         }
       } finally {
@@ -1676,22 +1687,31 @@ export default function VersionTab(props: VersionTabProps) {
     return () => {
       disposed = true;
     };
-  }, [previewBookId]);
+  }, [previewLocationId, previewPeriodId, selectedVersionId]);
 
   const loadMoreRenderPreviewRows = useCallback(async () => {
-    if (!previewBookId || !renderPreviewHasMore || !renderPreviewCursor) return;
+    const versionId = toNullableNumber(selectedVersionId);
+    if (
+      !versionId ||
+      !previewPeriodId ||
+      !renderPreviewHasMore ||
+      !renderPreviewCursor
+    )
+      return;
     if (renderPreviewBusy || renderPreviewLoadingMore) return;
 
     setRenderPreviewLoadingMore(true);
     try {
-      const rowsResponse = await getBookRows(
-        PREVIEW_LOCATION_ID,
-        previewBookId,
-        PREVIEW_BATCH_SIZE,
-        renderPreviewCursor,
-      );
+      const response = await previewTemplateVersion({
+        businessLocationId: previewLocationId,
+        periodId: previewPeriodId,
+        templateVersionId: versionId,
+        rulesetId: PREVIEW_DEFAULT_RULESET_ID,
+        batchSize: PREVIEW_BATCH_SIZE,
+        cursor: renderPreviewCursor,
+      });
 
-      const nextPage = parsePreviewRowsPage(rowsResponse.data);
+      const nextRows = response.rows;
 
       setRenderPreviewResult((prev) => {
         const root = asRecord(prev) ?? {};
@@ -1700,7 +1720,7 @@ export default function VersionTab(props: VersionTabProps) {
         const seen = new Set(
           currentItems.map((row) => buildPreviewRowDedupKey(row)),
         );
-        const uniqueIncoming = nextPage.rows.filter((row) => {
+        const uniqueIncoming = nextRows.items.filter((row) => {
           const key = buildPreviewRowDedupKey(row);
           if (seen.has(key)) return false;
           seen.add(key);
@@ -1717,19 +1737,19 @@ export default function VersionTab(props: VersionTabProps) {
       });
 
       const cursorLoop =
-        !!nextPage.nextCursor && nextPage.nextCursor === renderPreviewCursor;
-      if (!nextPage.hasMore || cursorLoop || !nextPage.nextCursor) {
+        !!nextRows.nextCursor && nextRows.nextCursor === renderPreviewCursor;
+      if (!nextRows.hasMore || cursorLoop || !nextRows.nextCursor) {
         setRenderPreviewCursor(null);
         setRenderPreviewHasMore(false);
       } else {
-        setRenderPreviewCursor(nextPage.nextCursor);
+        setRenderPreviewCursor(nextRows.nextCursor);
         setRenderPreviewHasMore(true);
       }
     } catch (error) {
       setRenderPreviewError(
         error instanceof Error
           ? error.message
-          : "Không tải thêm được dữ liệu sổ mẫu.",
+          : "Không tải thêm được dữ liệu preview.",
       );
       setRenderPreviewHasMore(false);
       setRenderPreviewCursor(null);
@@ -1737,7 +1757,9 @@ export default function VersionTab(props: VersionTabProps) {
       setRenderPreviewLoadingMore(false);
     }
   }, [
-    previewBookId,
+    previewLocationId,
+    previewPeriodId,
+    selectedVersionId,
     renderPreviewHasMore,
     renderPreviewCursor,
     renderPreviewBusy,
@@ -1784,6 +1806,38 @@ export default function VersionTab(props: VersionTabProps) {
   ]);
 
   useEffect(() => {
+    let disposed = false;
+
+    async function loadPreviewLocations() {
+      setPreviewLocationsBusy(true);
+      setPreviewLocationsError("");
+      try {
+        const locationsResponse = await getLocations();
+        const locations = locationsResponse.data ?? [];
+        if (!disposed) {
+          setPreviewLocations(locations);
+        }
+      } catch (error) {
+        if (!disposed) {
+          setPreviewLocationsError(
+            error instanceof Error
+              ? error.message
+              : "Không tải được danh sách chi nhánh.",
+          );
+        }
+      } finally {
+        if (!disposed) setPreviewLocationsBusy(false);
+      }
+    }
+
+    void loadPreviewLocations();
+
+    return () => {
+      disposed = true;
+    };
+  }, []);
+
+  useEffect(() => {
     const versionId = toNullableNumber(selectedVersionId);
     if (!versionId) {
       setPreviewPeriods([]);
@@ -1799,7 +1853,7 @@ export default function VersionTab(props: VersionTabProps) {
       setPreviewPeriodsBusy(true);
       setPreviewPeriodsError("");
       try {
-        const periodsResponse = await getAccountingPeriods(PREVIEW_LOCATION_ID);
+        const periodsResponse = await getAccountingPeriods(previewLocationId);
         const periods = periodsResponse.data ?? [];
         const sortedPeriods = [...periods].sort(
           (a, b) => b.periodId - a.periodId,
@@ -1829,13 +1883,11 @@ export default function VersionTab(props: VersionTabProps) {
           setPreviewPeriodsError(
             error instanceof Error
               ? error.message
-              : "Khong tai duoc danh sach ky ke toan.",
+              : "Không tải được danh sách kỳ kế toán.",
           );
         }
       } finally {
-        if (!disposed) {
-          setPreviewPeriodsBusy(false);
-        }
+        if (!disposed) setPreviewPeriodsBusy(false);
       }
     }
 
@@ -1844,127 +1896,7 @@ export default function VersionTab(props: VersionTabProps) {
     return () => {
       disposed = true;
     };
-  }, [selectedVersionId]);
-
-  useEffect(() => {
-    const versionId = toNullableNumber(selectedVersionId);
-    const normalizedTemplateCode = normalizeKey(templateCode);
-    const resolvedPeriodId = previewPeriodId;
-
-    if (!versionId || !normalizedTemplateCode || !resolvedPeriodId) {
-      setPreviewBooks([]);
-      setPreviewBooksBusy(false);
-      setPreviewBooksError("");
-      setPreviewBookId(null);
-      return;
-    }
-
-    let disposed = false;
-
-    async function loadBooksByPeriod() {
-      setPreviewBooksBusy(true);
-      setPreviewBooksError("");
-
-      try {
-        const booksResponse = await getAccountingBooks(
-          PREVIEW_LOCATION_ID,
-          Number(resolvedPeriodId),
-        );
-
-        const booksInPeriod = booksResponse.data ?? [];
-        const matchingTemplateBooks = booksInPeriod.filter((book) => {
-          const bookTemplateCode = normalizeKey(
-            String(book.templateCode ?? ""),
-          );
-          return bookTemplateCode === normalizedTemplateCode;
-        });
-
-        if (!disposed) {
-          setPreviewBooks(matchingTemplateBooks);
-          setPreviewBookId((currentBookId) => {
-            if (
-              currentBookId &&
-              matchingTemplateBooks.some(
-                (book) => book.bookId === currentBookId,
-              )
-            ) {
-              return currentBookId;
-            }
-            return matchingTemplateBooks[0]?.bookId ?? null;
-          });
-        }
-      } catch (error) {
-        if (!disposed) {
-          setPreviewBooks([]);
-          setPreviewBookId(null);
-          setPreviewBooksError(
-            error instanceof Error
-              ? error.message
-              : "Khong tai duoc danh sach so theo ky da chon.",
-          );
-        }
-      } finally {
-        if (!disposed) {
-          setPreviewBooksBusy(false);
-        }
-      }
-    }
-
-    void loadBooksByPeriod();
-
-    return () => {
-      disposed = true;
-    };
-  }, [selectedVersionId, templateCode, previewPeriodId]);
-
-  useEffect(() => {
-    const resolvedBookId = previewBookId;
-    if (!resolvedBookId) {
-      setBookSectionsMeta(null);
-      setBookSectionsError("");
-      setBookSectionsBusy(false);
-      return;
-    }
-
-    let disposed = false;
-
-    async function loadBookSections() {
-      setBookSectionsBusy(true);
-      setBookSectionsError("");
-
-      try {
-        const sectionsResponse = await getBookSections(
-          PREVIEW_LOCATION_ID,
-          Number(resolvedBookId),
-        );
-
-        if (!disposed) {
-          setBookSectionsMeta(
-            (sectionsResponse.data as BookSectionsMeta) ?? null,
-          );
-        }
-      } catch (error) {
-        if (!disposed) {
-          setBookSectionsMeta(null);
-          setBookSectionsError(
-            error instanceof Error
-              ? error.message
-              : "Khong tai duoc cau truc sections cua so mau.",
-          );
-        }
-      } finally {
-        if (!disposed) {
-          setBookSectionsBusy(false);
-        }
-      }
-    }
-
-    void loadBookSections();
-
-    return () => {
-      disposed = true;
-    };
-  }, [previewBookId]);
+  }, [selectedVersionId, previewLocationId]);
 
   useEffect(() => {
     if (!wizardOpen || wizardStep !== 3 || !selectedVersionId) return;
@@ -3039,14 +2971,41 @@ export default function VersionTab(props: VersionTabProps) {
             <CardContent>
               {sampleBookColumns.length === 0 ? (
                 <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 px-4 py-6 text-sm text-gray-500">
-                  Chưa có dữ liệu full structure để dựng sổ mẫu.
+                  Chưa có dữ liệu cột để dựng sổ mẫu.
                 </div>
               ) : (
                 <div className="space-y-3">
                   <div className="grid grid-cols-1 gap-3 rounded-lg border border-gray-200 bg-gray-50 p-3 md:grid-cols-2">
                     <div className="space-y-1">
                       <label className="block text-xs font-medium text-gray-600">
-                        Ky ke toan (Location 6)
+                        Chi nhánh
+                      </label>
+                      <select
+                        value={previewLocationId}
+                        onChange={(event) => {
+                          const next = Number(event.target.value);
+                          if (Number.isFinite(next) && next > 0) {
+                            setPreviewLocationId(next);
+                          }
+                        }}
+                        className="w-full rounded-lg border px-3 py-2 text-sm"
+                        disabled={previewLocationsBusy}
+                      >
+                        {previewLocations.length === 0 ? (
+                          <option value={previewLocationId}>
+                            #{previewLocationId}
+                          </option>
+                        ) : null}
+                        {previewLocations.map((loc) => (
+                          <option key={loc.id} value={loc.id}>
+                            #{loc.id} - {loc.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="block text-xs font-medium text-gray-600">
+                        Kỳ kế toán
                       </label>
                       <select
                         value={previewPeriodId ?? ""}
@@ -3064,7 +3023,7 @@ export default function VersionTab(props: VersionTabProps) {
                         }
                       >
                         {previewPeriods.length === 0 ? (
-                          <option value="">Khong co ky ke toan</option>
+                          <option value="">Không có kỳ kế toán</option>
                         ) : null}
                         {previewPeriods.map((period) => (
                           <option key={period.periodId} value={period.periodId}>
@@ -3073,53 +3032,15 @@ export default function VersionTab(props: VersionTabProps) {
                         ))}
                       </select>
                     </div>
-                    <div className="space-y-1">
-                      <label className="block text-xs font-medium text-gray-600">
-                        So de preview
-                      </label>
-                      <select
-                        value={previewBookId ?? ""}
-                        onChange={(event) => {
-                          const nextBookId = Number(event.target.value);
-                          setPreviewBookId(
-                            Number.isFinite(nextBookId) && nextBookId > 0
-                              ? nextBookId
-                              : null,
-                          );
-                        }}
-                        className="w-full rounded-lg border px-3 py-2 text-sm"
-                        disabled={previewBooksBusy || previewBooks.length === 0}
-                      >
-                        {previewBooks.length === 0 ? (
-                          <option value="">Khong co so trong ky da chon</option>
-                        ) : null}
-                        {previewBooks.map((book) => (
-                          <option key={book.bookId} value={book.bookId}>
-                            #{book.bookId} - {book.templateCode} - Group{" "}
-                            {book.groupNumber}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
                   </div>
+                  {previewLocationsError ? (
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-700">
+                      {previewLocationsError}
+                    </div>
+                  ) : null}
                   {previewPeriodsError ? (
                     <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-700">
                       {previewPeriodsError}
-                    </div>
-                  ) : null}
-                  {previewBooksError ? (
-                    <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-700">
-                      {previewBooksError}
-                    </div>
-                  ) : null}
-                  {bookSectionsBusy ? (
-                    <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 px-4 py-6 text-sm text-gray-500">
-                      Đang tải cấu trúc sections...
-                    </div>
-                  ) : null}
-                  {bookSectionsError ? (
-                    <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-700">
-                      {bookSectionsError}
                     </div>
                   ) : null}
                   {renderPreviewBusy ? (
@@ -3150,7 +3071,7 @@ export default function VersionTab(props: VersionTabProps) {
                               ? renderPreviewSectionRows
                               : sampleBookRows
                     }
-                    rowDefinitions={rowDefinitions}
+                    rowDefinitions={enrichedRowDefinitions}
                     referenceData={previewReferenceData}
                     summaryMeta={
                       renderPreviewSummaryMeta ?? asRecord(result?.summary)
@@ -3177,27 +3098,39 @@ export default function VersionTab(props: VersionTabProps) {
       <Dialog open={wizardOpen} onOpenChange={setWizardOpen}>
         <DialogContent className="max-h-[92vh] overflow-hidden p-0 sm:max-w-6xl">
           <DialogHeader className="border-b px-6 py-5">
-            <DialogTitle>Template Draft Flow</DialogTitle>
+            <DialogTitle>Chỉnh sửa nhanh</DialogTitle>
           </DialogHeader>
 
           <div className="border-b px-6 py-4">
-            <div className="flex flex-wrap gap-2">
-              {wizardSteps.map((step, index) => (
-                <button
-                  key={step}
-                  type="button"
-                  onClick={() => setWizardStep(index)}
-                  className={`rounded-full px-3 py-1.5 text-xs font-medium transition ${
-                    wizardStep === index
-                      ? "bg-[#23C4C1] text-white"
-                      : index < wizardStep
-                        ? "bg-[#23C4C1]/10 text-[#15918f]"
-                        : "bg-gray-100 text-gray-500"
-                  }`}
-                >
-                  {index + 1}. {step}
-                </button>
-              ))}
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div className="flex flex-wrap gap-2">
+                {wizardSteps.map((step, index) => (
+                  <button
+                    key={step}
+                    type="button"
+                    onClick={() => setWizardStep(index)}
+                    className={`rounded-full px-3 py-1.5 text-xs font-medium transition ${
+                      wizardStep === index
+                        ? "bg-[#23C4C1] text-white"
+                        : index < wizardStep
+                          ? "bg-[#23C4C1]/10 text-[#15918f]"
+                          : "bg-gray-100 text-gray-500"
+                    }`}
+                  >
+                    {index + 1}. {step}
+                  </button>
+                ))}
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                className="border-gray-300 text-gray-700 hover:bg-gray-50 whitespace-nowrap"
+                onClick={() => void handleActivateDraft()}
+                disabled={wizardBusy}
+              >
+                <Sparkles className="mr-1.5 h-4 w-4" />
+                Kích hoạt
+              </Button>
             </div>
           </div>
 
@@ -3218,7 +3151,7 @@ export default function VersionTab(props: VersionTabProps) {
               <div className="space-y-4">
                 <div className="rounded-xl border bg-linear-to-r from-cyan-50 to-white p-4">
                   <p className="text-xs uppercase tracking-wide text-gray-500">
-                    Draft metadata
+                    Thông tin mẫu sổ
                   </p>
                   <h3 className="mt-1 text-lg font-semibold text-gray-900">
                     {templateCode || "Template"} · {versionLabel || "Draft"}
@@ -3231,7 +3164,7 @@ export default function VersionTab(props: VersionTabProps) {
                 <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
                   <div>
                     <label className="mb-1 block text-xs font-medium text-gray-600">
-                      Label phiên bản
+                      Nhãn phiên bản
                     </label>
                     <input
                       value={props.tvLabel}
@@ -3281,7 +3214,7 @@ export default function VersionTab(props: VersionTabProps) {
                 <Card>
                   <CardHeader>
                     <CardTitle className="text-base">
-                      Field mappings của draft
+                      Field mappings của bản sửa
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="max-h-[48vh] overflow-auto">
@@ -3569,7 +3502,7 @@ export default function VersionTab(props: VersionTabProps) {
                 <Card>
                   <CardHeader>
                     <CardTitle className="text-base">
-                      Row definitions của draft
+                      Row definitions của bản sửa
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="max-h-[48vh] overflow-auto">
@@ -3665,18 +3598,13 @@ export default function VersionTab(props: VersionTabProps) {
                     <div className="grid grid-cols-2 gap-2">
                       <div className="space-y-1">
                         <ReferenceHelpLabel
-                          label="Position"
+                          label="Vị trí (Position)"
                           items={referenceHelpCatalog.positions}
                         />
                         <select
                           value={rowDraft.position}
-                          onChange={(e) =>
-                            setRowDraft((prev) => ({
-                              ...prev,
-                              position: e.target.value,
-                            }))
-                          }
-                          className="w-full rounded-lg border px-3 py-2 text-sm"
+                          disabled
+                          className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-500 cursor-not-allowed opacity-60"
                         >
                           {rowPositionOptions.map((option) => (
                             <option key={option.value} value={option.value}>
@@ -3813,7 +3741,7 @@ export default function VersionTab(props: VersionTabProps) {
                     ) : null}
                     <div className="space-y-1">
                       <label className="block text-xs font-medium text-gray-600">
-                        Visible field codes (quick pick)
+                        Hiển thị trong cột theo thứ tự:
                       </label>
                       <div className="max-h-28 overflow-auto rounded-lg border border-gray-200 bg-gray-50 p-2">
                         <div className="flex flex-wrap gap-1.5">
@@ -3843,7 +3771,7 @@ export default function VersionTab(props: VersionTabProps) {
                     </div>
                     <div className="space-y-1">
                       <label className="block text-xs font-medium text-gray-600">
-                        Visible field codes
+                        Hiển thị trong cột theo thứ tự:
                       </label>
                       <input
                         value={rowDraft.visibleFieldCodes}
@@ -3862,7 +3790,7 @@ export default function VersionTab(props: VersionTabProps) {
                       disabled={wizardBusy || !rowDraft.rowDefId}
                     >
                       <Save className="mr-1.5 h-3.5 w-3.5" />
-                      Lưu row definition
+                      Lưu định nghĩa dòng
                     </Button>
                   </CardContent>
                 </Card>
@@ -3987,7 +3915,7 @@ export default function VersionTab(props: VersionTabProps) {
                       </div>
                       <div className="space-y-1">
                         <label className="block text-xs font-medium text-gray-600">
-                          Formula type
+                          Loại công thức
                         </label>
                         <input
                           value={formulaDraft.formulaType}
@@ -4014,8 +3942,8 @@ export default function VersionTab(props: VersionTabProps) {
                           }
                           className="w-full rounded-lg border px-3 py-2 text-sm"
                         >
-                          <option value="true">Active</option>
-                          <option value="false">Inactive</option>
+                          <option value="true">Hiệu Lực</option>
+                          <option value="false">Không Hiệu Lực</option>
                         </select>
                       </div>
                       <div className="space-y-1">
@@ -4328,61 +4256,6 @@ export default function VersionTab(props: VersionTabProps) {
 
             {!wizardLoading && wizardStep === 3 ? (
               <div className="space-y-4">
-                <div className="rounded-xl border bg-linear-to-r from-cyan-50 to-white p-4">
-                  <h3 className="text-lg font-semibold text-gray-900">
-                    Review trước khi activate draft
-                  </h3>
-                  <p className="mt-1 text-sm text-gray-600">
-                    Kiểm tra lại draft và các phụ thuộc trước khi đưa phiên bản
-                    này lên active.
-                  </p>
-                </div>
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
-                  <MetricCard
-                    label="Template"
-                    value={templateCode || "—"}
-                    icon={FileText}
-                  />
-                  <MetricCard
-                    label="Version"
-                    value={props.tvLabel || versionLabel || "—"}
-                    icon={Layers}
-                  />
-                  <MetricCard
-                    label="Số Công Thức Đã Dùng"
-                    value={linkedFormulaIds.length}
-                    icon={Sparkles}
-                  />
-                  <MetricCard
-                    label="Số Entities Đã Dùng"
-                    value={linkedEntityIds.length}
-                    icon={Database}
-                  />
-                </div>
-                <div className="rounded-lg border bg-white p-4">
-                  <p className="text-xs text-gray-500">Checklist flow</p>
-                  <div className="mt-3 space-y-2 text-sm text-gray-700">
-                    <div className="flex items-start gap-2">
-                      <CheckCircle2 className="mt-0.5 h-4 w-4 text-emerald-600" />
-                      Metadata draft đã được rà soát
-                    </div>
-                    <div className="flex items-start gap-2">
-                      <CheckCircle2 className="mt-0.5 h-4 w-4 text-emerald-600" />
-                      Field mappings và row definitions đã được kiểm tra
-                    </div>
-                    <div className="flex items-start gap-2">
-                      <CheckCircle2 className="mt-0.5 h-4 w-4 text-emerald-600" />
-                      Formula liên quan đã được xác nhận ở tab Formulas (nếu có
-                      thay đổi)
-                    </div>
-                    <div className="flex items-start gap-2">
-                      <CheckCircle2 className="mt-0.5 h-4 w-4 text-emerald-600" />
-                      Nguồn dữ liệu (entities/fields) đã được xác nhận ở tab
-                      Entities
-                    </div>
-                  </div>
-                </div>
-
                 <Card>
                   <CardHeader>
                     <CardTitle className="text-base">Xem Lại Mẫu Sổ</CardTitle>
@@ -4390,14 +4263,41 @@ export default function VersionTab(props: VersionTabProps) {
                   <CardContent className="space-y-4">
                     {sampleBookColumns.length === 0 ? (
                       <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 px-4 py-6 text-sm text-gray-500">
-                        Chưa có dữ liệu full structure để dựng sổ mẫu.
+                        Chưa có dữ liệu cột để dựng sổ mẫu.
                       </div>
                     ) : (
                       <div className="space-y-3 rounded-lg border border-gray-300 bg-white p-4 text-gray-900">
                         <div className="grid grid-cols-1 gap-3 rounded-lg border border-gray-200 bg-gray-50 p-3 md:grid-cols-2">
                           <div className="space-y-1">
                             <label className="block text-xs font-medium text-gray-600">
-                              Ky ke toan (Location 6)
+                              Chi nhánh
+                            </label>
+                            <select
+                              value={previewLocationId}
+                              onChange={(event) => {
+                                const next = Number(event.target.value);
+                                if (Number.isFinite(next) && next > 0) {
+                                  setPreviewLocationId(next);
+                                }
+                              }}
+                              className="w-full rounded-lg border px-3 py-2 text-sm"
+                              disabled={previewLocationsBusy}
+                            >
+                              {previewLocations.length === 0 ? (
+                                <option value={previewLocationId}>
+                                  #{previewLocationId}
+                                </option>
+                              ) : null}
+                              {previewLocations.map((loc) => (
+                                <option key={loc.id} value={loc.id}>
+                                  #{loc.id} - {loc.name}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="space-y-1">
+                            <label className="block text-xs font-medium text-gray-600">
+                              Kỳ kế toán
                             </label>
                             <select
                               value={previewPeriodId ?? ""}
@@ -4417,7 +4317,7 @@ export default function VersionTab(props: VersionTabProps) {
                               }
                             >
                               {previewPeriods.length === 0 ? (
-                                <option value="">Khong co ky ke toan</option>
+                                <option value="">Không có kỳ kế toán</option>
                               ) : null}
                               {previewPeriods.map((period) => (
                                 <option
@@ -4429,57 +4329,15 @@ export default function VersionTab(props: VersionTabProps) {
                               ))}
                             </select>
                           </div>
-                          <div className="space-y-1">
-                            <label className="block text-xs font-medium text-gray-600">
-                              So de preview
-                            </label>
-                            <select
-                              value={previewBookId ?? ""}
-                              onChange={(event) => {
-                                const nextBookId = Number(event.target.value);
-                                setPreviewBookId(
-                                  Number.isFinite(nextBookId) && nextBookId > 0
-                                    ? nextBookId
-                                    : null,
-                                );
-                              }}
-                              className="w-full rounded-lg border px-3 py-2 text-sm"
-                              disabled={
-                                previewBooksBusy || previewBooks.length === 0
-                              }
-                            >
-                              {previewBooks.length === 0 ? (
-                                <option value="">
-                                  Khong co so trong ky da chon
-                                </option>
-                              ) : null}
-                              {previewBooks.map((book) => (
-                                <option key={book.bookId} value={book.bookId}>
-                                  #{book.bookId} - {book.templateCode} - Group{" "}
-                                  {book.groupNumber}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
                         </div>
+                        {previewLocationsError ? (
+                          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-700">
+                            {previewLocationsError}
+                          </div>
+                        ) : null}
                         {previewPeriodsError ? (
                           <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-700">
                             {previewPeriodsError}
-                          </div>
-                        ) : null}
-                        {previewBooksError ? (
-                          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-700">
-                            {previewBooksError}
-                          </div>
-                        ) : null}
-                        {bookSectionsBusy ? (
-                          <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 px-4 py-4 text-sm text-gray-500">
-                            Đang tải cấu trúc sections...
-                          </div>
-                        ) : null}
-                        {bookSectionsError ? (
-                          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-700">
-                            {bookSectionsError}
                           </div>
                         ) : null}
                         {renderPreviewBusy ? (
@@ -4507,7 +4365,7 @@ export default function VersionTab(props: VersionTabProps) {
                                   ? renderPreviewSectionRows
                                   : sampleBookRows
                           }
-                          rowDefinitions={rowDefinitions}
+                          rowDefinitions={enrichedRowDefinitions}
                           referenceData={previewReferenceData}
                           summaryMeta={
                             renderPreviewSummaryMeta ??
