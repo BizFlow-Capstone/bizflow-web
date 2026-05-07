@@ -369,7 +369,8 @@ function mapSectionRowToStructure(
     groupIndex?: number;
   },
 ): PreviewBookRow {
-  const values = sectionRow.values ?? {};
+  const directValues = sectionRow as unknown as Record<string, unknown>;
+  const values = sectionRow.values ?? directValues;
   const row: PreviewBookRow = {
     lineType: asString(values.lineType) || sectionRow.lineType,
     rowType: asString(values.rowType) || sectionRow.lineType,
@@ -377,9 +378,11 @@ function mapSectionRowToStructure(
       asString(values.rowLabel) ||
       asString(values.dien_giai) ||
       asString(values.description),
+    explanation: asString(values.explanation) || asString(directValues.explanation),
     visibleFieldCodes: values.visibleFieldCodes,
     taxType:
       asString(values.taxType) || asString(sectionRow.taxMetadata?.taxType),
+    taxRate: sectionRow.taxMetadata?.rate,
     section:
       sectionRow.dataFilter?.section ||
       asString(sectionMeta?.sectionType) ||
@@ -393,6 +396,8 @@ function mapSectionRowToStructure(
   fieldCodes.forEach((fieldCode) => {
     if (Object.prototype.hasOwnProperty.call(values, fieldCode)) {
       row[fieldCode] = values[fieldCode];
+    } else if (Object.prototype.hasOwnProperty.call(directValues, fieldCode)) {
+      row[fieldCode] = directValues[fieldCode];
     }
   });
 
@@ -925,6 +930,22 @@ export default function VersionTab(props: VersionTabProps) {
     return asRecord(root?.summary);
   }, [renderPreviewResult]);
 
+  const renderPreviewSectionsMeta = useMemo((): BookSectionsMeta | null => {
+    const root = asRecord(renderPreviewResult);
+    const rawSections = asArray(root?.sections);
+    if (rawSections.length === 0) return null;
+    return {
+      sections: rawSections.map((section) => ({
+        sectionType: asString(section.sectionType),
+        businessTypeId: asString(section.groupKey || section.businessTypeId),
+        businessTypeName: asString(section.groupName || section.businessTypeName),
+        groupIndex: typeof section.groupIndex === "number" ? section.groupIndex : undefined,
+        rows: asArray(section.rows) as unknown as BookSectionRow[],
+      })),
+      footerRows: asArray(root?.footerRows) as unknown as BookSectionRow[],
+    };
+  }, [renderPreviewResult]);
+
   const renderPreviewRows = useMemo(() => {
     const root = asRecord(renderPreviewResult);
     const rows = asRecord(root?.rows);
@@ -938,10 +959,10 @@ export default function VersionTab(props: VersionTabProps) {
     () =>
       mapSectionRowsToStructure(
         sampleBookColumns,
-        null,
+        renderPreviewSectionsMeta,
         isSectionsOnlyTemplate(templateCode) ? [] : renderPreviewRows,
       ),
-    [sampleBookColumns, renderPreviewRows, templateCode],
+    [sampleBookColumns, renderPreviewRows, templateCode, renderPreviewSectionsMeta],
   );
 
   const hasSectionRows = renderPreviewSectionRows.length > 0;
@@ -1636,6 +1657,8 @@ export default function VersionTab(props: VersionTabProps) {
           setRenderPreviewResult({
             summary: response.summary,
             rows: { items: response.rows.items },
+            sections: response.sections,
+            footerRows: response.footerRows,
           } as Record<string, unknown>);
           setRenderPreviewCursor(response.rows.nextCursor ?? null);
           setRenderPreviewHasMore(
@@ -3078,23 +3101,35 @@ export default function VersionTab(props: VersionTabProps) {
           </DialogHeader>
 
           <div className="border-b px-6 py-4">
-            <div className="flex flex-wrap gap-2">
-              {wizardSteps.map((step, index) => (
-                <button
-                  key={step}
-                  type="button"
-                  onClick={() => setWizardStep(index)}
-                  className={`rounded-full px-3 py-1.5 text-xs font-medium transition ${
-                    wizardStep === index
-                      ? "bg-[#23C4C1] text-white"
-                      : index < wizardStep
-                        ? "bg-[#23C4C1]/10 text-[#15918f]"
-                        : "bg-gray-100 text-gray-500"
-                  }`}
-                >
-                  {index + 1}. {step}
-                </button>
-              ))}
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div className="flex flex-wrap gap-2">
+                {wizardSteps.map((step, index) => (
+                  <button
+                    key={step}
+                    type="button"
+                    onClick={() => setWizardStep(index)}
+                    className={`rounded-full px-3 py-1.5 text-xs font-medium transition ${
+                      wizardStep === index
+                        ? "bg-[#23C4C1] text-white"
+                        : index < wizardStep
+                          ? "bg-[#23C4C1]/10 text-[#15918f]"
+                          : "bg-gray-100 text-gray-500"
+                    }`}
+                  >
+                    {index + 1}. {step}
+                  </button>
+                ))}
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                className="border-gray-300 text-gray-700 hover:bg-gray-50 whitespace-nowrap"
+                onClick={() => void handleActivateDraft()}
+                disabled={wizardBusy}
+              >
+                <Sparkles className="mr-1.5 h-4 w-4" />
+                Kích hoạt
+              </Button>
             </div>
           </div>
 
@@ -4220,61 +4255,6 @@ export default function VersionTab(props: VersionTabProps) {
 
             {!wizardLoading && wizardStep === 3 ? (
               <div className="space-y-4">
-                <div className="rounded-xl border bg-linear-to-r from-cyan-50 to-white p-4">
-                  <h3 className="text-lg font-semibold text-gray-900">
-                    Review trước khi activate draft
-                  </h3>
-                  <p className="mt-1 text-sm text-gray-600">
-                    Kiểm tra lại draft và các phụ thuộc trước khi đưa phiên bản
-                    này lên active.
-                  </p>
-                </div>
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
-                  <MetricCard
-                    label="Template"
-                    value={templateCode || "—"}
-                    icon={FileText}
-                  />
-                  <MetricCard
-                    label="Version"
-                    value={props.tvLabel || versionLabel || "—"}
-                    icon={Layers}
-                  />
-                  <MetricCard
-                    label="Số Công Thức Đã Dùng"
-                    value={linkedFormulaIds.length}
-                    icon={Sparkles}
-                  />
-                  <MetricCard
-                    label="Số Entities Đã Dùng"
-                    value={linkedEntityIds.length}
-                    icon={Database}
-                  />
-                </div>
-                <div className="rounded-lg border bg-white p-4">
-                  <p className="text-xs text-gray-500">Checklist flow</p>
-                  <div className="mt-3 space-y-2 text-sm text-gray-700">
-                    <div className="flex items-start gap-2">
-                      <CheckCircle2 className="mt-0.5 h-4 w-4 text-emerald-600" />
-                      Metadata draft đã được rà soát
-                    </div>
-                    <div className="flex items-start gap-2">
-                      <CheckCircle2 className="mt-0.5 h-4 w-4 text-emerald-600" />
-                      Field mappings và row definitions đã được kiểm tra
-                    </div>
-                    <div className="flex items-start gap-2">
-                      <CheckCircle2 className="mt-0.5 h-4 w-4 text-emerald-600" />
-                      Formula liên quan đã được xác nhận ở tab Formulas (nếu có
-                      thay đổi)
-                    </div>
-                    <div className="flex items-start gap-2">
-                      <CheckCircle2 className="mt-0.5 h-4 w-4 text-emerald-600" />
-                      Nguồn dữ liệu (entities/fields) đã được xác nhận ở tab
-                      Entities
-                    </div>
-                  </div>
-                </div>
-
                 <Card>
                   <CardHeader>
                     <CardTitle className="text-base">Xem Lại Mẫu Sổ</CardTitle>

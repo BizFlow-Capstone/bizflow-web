@@ -164,6 +164,24 @@ export interface TestingPreviewRequest {
   cursor?: string;
 }
 
+export interface TestingPreviewSectionRow {
+  lineType: string;
+  dien_giai?: string;
+  so_tien?: number;
+  explanation?: string;
+  dataFilter?: { businessTypeId?: string; section?: string };
+  taxMetadata?: { taxType?: string; rate?: number; source?: string };
+  [key: string]: unknown;
+}
+
+export interface TestingPreviewSection {
+  sectionType: string;
+  groupKey: string;
+  groupName: string;
+  groupIndex: number;
+  rows: TestingPreviewSectionRow[];
+}
+
 export interface TestingPreviewResponse {
   summary: Record<string, unknown>;
   rows: {
@@ -173,6 +191,9 @@ export interface TestingPreviewResponse {
     loadedCount: number;
     totalEstimated: number;
   };
+  columns?: Array<{ fieldCode: string; label: string; fieldType: string; exportColumn?: string }>;
+  sections?: TestingPreviewSection[];
+  footerRows?: TestingPreviewSectionRow[];
 }
 
 export interface CompareRequest {

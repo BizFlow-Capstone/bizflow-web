@@ -6,14 +6,17 @@ import {
   BookOpen,
   Boxes,
   Database,
+  Edit,
   FileJson,
   FunctionSquare,
   GitBranch,
   MoreVertical,
   Play,
+  Plus,
   Plug,
   Rows,
   Scale,
+  Settings,
   Trash2,
   TreePine,
 } from "lucide-react";
@@ -3386,24 +3389,33 @@ export default function AdminAccountingClient({
 
           <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
             <Card className="xl:col-span-2 rounded-xl border border-gray-200 bg-white shadow-sm">
-              <CardHeader>
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <CardTitle>Các Loại Hình Kinh Doanh</CardTitle>
+              <CardHeader className="border-b border-gray-100 bg-gradient-to-r from-gray-50 to-white">
+                <div className="flex flex-col gap-4">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#23C4C1]/10">
+                      <Settings className="h-5 w-5 text-[#23C4C1]" />
+                    </div>
+                    <CardTitle className="text-lg">
+                      Các Loại Hình Kinh Doanh
+                    </CardTitle>
+                  </div>
                   <div className="flex flex-wrap gap-2">
                     <Button
                       type="button"
                       size="sm"
-                      variant="outline"
+                      className="bg-[#23C4C1]/10 text-[#23C4C1] border border-[#23C4C1]/20 hover:bg-[#23C4C1]/20 hover:border-[#23C4C1]/40"
                       onClick={() => setShowCreateRulesetModal(true)}
                     >
+                      <Plus className="mr-1.5 h-4 w-4" />
                       Tạo Ruleset Mới
                     </Button>
                     <Button
                       type="button"
                       size="sm"
-                      variant="outline"
+                      className="bg-[#23C4C1] text-white hover:bg-[#1ea8a6]"
                       onClick={() => setShowCreateBtModal(true)}
                     >
+                      <Plus className="mr-1.5 h-4 w-4" />
                       Tạo Loại Hình Kinh Doanh Mới
                     </Button>
                   </div>
@@ -3465,18 +3477,21 @@ export default function AdminAccountingClient({
 
                 <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
                   <table className="w-full text-sm">
-                    <thead className="sticky top-0 bg-gray-50 text-left text-xs uppercase text-gray-500">
+                    <thead className="sticky top-0 bg-gradient-to-r from-gray-50 to-gray-100/50 text-left text-xs font-semibold uppercase text-gray-600 border-b border-gray-200">
                       <tr>
-                        <th className="px-3 py-2">Mã</th>
-                        <th className="px-3 py-2">Tên</th>
-                        <th className="px-3 py-2">Trạng Thái</th>
-                        <th className="px-3 py-2">Tỷ Lệ Thuế</th>
+                        <th className="px-4 py-3 font-semibold">Mã</th>
+                        <th className="px-4 py-3 font-semibold">Tên</th>
+                        <th className="px-4 py-3 font-semibold">Trạng Thái</th>
+                        <th className="px-4 py-3 font-semibold">Tỷ Lệ Thuế</th>
                       </tr>
                     </thead>
                     <tbody>
                       {businessTypesWithRates.length === 0 ? (
                         <tr>
-                          <td className="px-3 py-3 text-gray-500" colSpan={4}>
+                          <td
+                            className="px-4 py-8 text-center text-gray-400 italic"
+                            colSpan={4}
+                          >
                             Chưa có dữ liệu business type theo ruleset này.
                           </td>
                         </tr>
@@ -3487,32 +3502,35 @@ export default function AdminAccountingClient({
                           return (
                             <tr
                               key={item.businessTypeId}
-                              className={`cursor-pointer border-t transition-colors ${
+                              className={`cursor-pointer border-l-4 transition-all duration-200 ${
                                 isSelected
-                                  ? "bg-[#23C4C1]/15 text-teal-900 shadow-[inset_4px_0_0_0_#23C4C1]"
-                                  : "hover:bg-gray-50/70"
+                                  ? "border-l-[#23C4C1] bg-[#23C4C1]/8 hover:bg-[#23C4C1]/12"
+                                  : "border-l-transparent hover:bg-gray-50/60"
                               }`}
                               onClick={() =>
                                 handleBtSelect(item.businessTypeId)
                               }
                             >
-                              <td className="px-3 py-2 font-mono text-xs">
+                              <td className="px-4 py-3 font-mono font-medium text-xs text-gray-700">
                                 {item.code}
                               </td>
-                              <td className="px-3 py-2">{item.name}</td>
-                              <td className="px-3 py-2">
+                              <td
+                                className={`px-4 py-3 font-medium ${isSelected ? "text-gray-900" : "text-gray-800"}`}
+                              >
+                                {item.name}
+                              </td>
+                              <td className="px-4 py-3">
                                 <Badge
-                                  variant="secondary"
                                   className={
                                     item.status?.toLowerCase() === "active"
-                                      ? "bg-emerald-50 text-emerald-700"
-                                      : "bg-red-50 text-red-700"
+                                      ? "bg-emerald-100 text-emerald-700 font-medium"
+                                      : "bg-red-100 text-red-700 font-medium"
                                   }
                                 >
                                   {item.status || "unknown"}
                                 </Badge>
                               </td>
-                              <td className="px-3 py-2 text-xs text-gray-600">
+                              <td className="px-4 py-3 text-xs text-gray-600 max-w-xs truncate">
                                 {(item.taxRates ?? [])
                                   .map(
                                     (rate) =>
@@ -3539,155 +3557,203 @@ export default function AdminAccountingClient({
                   <div className="font-medium text-gray-700">
                     {selectedBusinessTypeWithRates
                       ? `${selectedBusinessTypeWithRates.code} - ${selectedBusinessTypeWithRates.businessTypeId}`
-                      : "Chọn business type để chỉnh sửa"}
+                      : "Chọn business type từ bảng để chỉnh sửa"}
                   </div>
                 </div>
 
-                <div className="space-y-2 rounded-xl border border-gray-100 bg-gray-50/60 p-3">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                    Mô Tả
+                <div className="space-y-3 rounded-xl border border-gray-200 bg-gradient-to-br from-gray-50 to-white p-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-600">
+                    Thông Tin Cơ Bản
                   </p>
-                  <input
-                    value={btMetadataForm.name}
-                    onChange={(e) =>
-                      setBtMetadataForm((prev) => ({
-                        ...prev,
-                        name: e.target.value,
-                      }))
-                    }
-                    placeholder="Name"
-                    className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-                    disabled={!selectedBusinessTypeWithRates}
-                  />
-                  <textarea
-                    value={btMetadataForm.description}
-                    onChange={(e) =>
-                      setBtMetadataForm((prev) => ({
-                        ...prev,
-                        description: e.target.value,
-                      }))
-                    }
-                    placeholder="Description"
-                    rows={2}
-                    className="w-full resize-y rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-                    disabled={!selectedBusinessTypeWithRates}
-                  />
-                  <select
-                    value={btMetadataForm.status}
-                    onChange={(e) =>
-                      setBtMetadataForm((prev) => ({
-                        ...prev,
-                        status: e.target.value,
-                      }))
-                    }
-                    className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-                    disabled={!selectedBusinessTypeWithRates}
-                  >
-                    <option value="active">Kích hoạt</option>
-                    <option value="inactive">Vô hiệu hóa</option>
-                  </select>
-                  <div className="flex items-center gap-2">
+                  <div className="space-y-2.5">
+                    <div>
+                      <label className="mb-1.5 block text-xs font-medium text-gray-700">
+                        Tên Loại Hình <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        value={btMetadataForm.name}
+                        onChange={(e) =>
+                          setBtMetadataForm((prev) => ({
+                            ...prev,
+                            name: e.target.value,
+                          }))
+                        }
+                        placeholder="Nhập tên loại hình kinh doanh"
+                        className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm transition-colors focus:border-[#23C4C1] focus:ring-1 focus:ring-[#23C4C1]/30 outline-none disabled:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
+                        disabled={!selectedBusinessTypeWithRates}
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1.5 block text-xs font-medium text-gray-700">
+                        Mô Tả
+                      </label>
+                      <textarea
+                        value={btMetadataForm.description}
+                        onChange={(e) =>
+                          setBtMetadataForm((prev) => ({
+                            ...prev,
+                            description: e.target.value,
+                          }))
+                        }
+                        placeholder="Nhập mô tả chi tiết"
+                        rows={3}
+                        className="w-full resize-none rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm transition-colors focus:border-[#23C4C1] focus:ring-1 focus:ring-[#23C4C1]/30 outline-none disabled:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
+                        disabled={!selectedBusinessTypeWithRates}
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1.5 block text-xs font-medium text-gray-700">
+                        Trạng Thái <span className="text-red-500">*</span>
+                      </label>
+                      <select
+                        value={btMetadataForm.status}
+                        onChange={(e) =>
+                          setBtMetadataForm((prev) => ({
+                            ...prev,
+                            status: e.target.value,
+                          }))
+                        }
+                        className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm transition-colors focus:border-[#23C4C1] focus:ring-1 focus:ring-[#23C4C1]/30 outline-none disabled:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
+                        disabled={!selectedBusinessTypeWithRates}
+                      >
+                        <option value="active">Kích hoạt</option>
+                        <option value="inactive">Vô hiệu hóa</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 pt-2 border-t border-gray-200">
                     <Button
                       size="sm"
-                      variant="secondary"
+                      className="bg-[#23C4C1] text-white hover:bg-[#1ea8a6] font-medium"
                       onClick={() => void btUpdateMetadata()}
                       disabled={!selectedBusinessTypeWithRates}
                     >
-                      Lưu
+                      Lưu Thay Đổi
                     </Button>
                     {!isConsultantMode && (
                       <Button
                         size="sm"
-                        variant="destructive"
+                        variant="ghost"
+                        className="text-red-600 hover:bg-red-50 hover:text-red-700 font-medium"
                         onClick={() => setBtDeleteConfirmOpen(true)}
                         disabled={!selectedBusinessTypeWithRates}
                       >
+                        <Trash2 className="mr-1.5 h-4 w-4" />
                         Xóa
                       </Button>
                     )}
                   </div>
                 </div>
 
-                <div className="space-y-2 rounded-xl border border-gray-100 bg-gray-50/60 p-3">
+                <div className="space-y-3 rounded-xl border border-gray-200 bg-gradient-to-br from-gray-50 to-white p-4">
                   <div className="flex items-center justify-between gap-2">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-gray-600">
                       Tỷ Lệ Thuế Áp Dụng
                     </p>
                     <Button
                       size="sm"
-                      variant="outline"
+                      className="bg-[#23C4C1]/10 text-[#23C4C1] border border-[#23C4C1]/20 hover:bg-[#23C4C1]/20 hover:border-[#23C4C1]/40"
                       onClick={addBtRate}
                       disabled={!selectedBusinessTypeWithRates}
                     >
-                      Thêm Tỷ Lệ Thuế
+                      <Plus className="mr-1.5 h-3.5 w-3.5" />
+                      Thêm Tỷ Lệ
                     </Button>
                   </div>
-                  <div className="max-h-72 space-y-2 overflow-auto">
+                  <div className="max-h-64 space-y-2.5 overflow-y-auto pr-2">
                     {btRatesForm.length === 0 ? (
-                      <div className="rounded-md border border-dashed border-gray-300 px-3 py-2 text-xs text-gray-500">
-                        Chưa có tax rate. Bấm Add Rate để thêm mới.
+                      <div className="rounded-lg border-2 border-dashed border-gray-300 bg-gray-50/50 px-4 py-6 text-center">
+                        <p className="text-xs text-gray-500 font-medium">
+                          Chưa có tỷ lệ thuế
+                        </p>
+                        <p className="text-xs text-gray-400 mt-1">
+                          Nhấp "Thêm Tỷ Lệ" để tạo mới
+                        </p>
                       </div>
                     ) : (
                       btRatesForm.map((rate, index) => (
                         <div
                           key={index}
-                          className="space-y-2 rounded-lg border border-gray-200 bg-white p-2"
+                          className="space-y-2 rounded-lg border border-gray-200 bg-white p-3 transition-all hover:border-gray-300 hover:shadow-sm"
                         >
-                          <select
-                            value={rate.taxType}
-                            onChange={(e) =>
-                              updateBtRateField(
-                                index,
-                                "taxType",
-                                e.target.value,
-                              )
-                            }
-                            className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-                            disabled={!selectedBusinessTypeWithRates}
-                          >
-                            <option value="">Chọn tax type</option>
-                            {businessTypeTaxTypeOptions.map((option) => (
-                              <option key={option.value} value={option.value}>
-                                {option.label}
-                              </option>
-                            ))}
-                          </select>
-                          <input
-                            value={rate.taxRate}
-                            onChange={(e) =>
-                              updateBtRateField(
-                                index,
-                                "taxRate",
-                                e.target.value,
-                              )
-                            }
-                            placeholder="Tax Rate (e.g. 0.05)"
-                            className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-                            disabled={!selectedBusinessTypeWithRates}
-                          />
-                          <input
-                            value={rate.description}
-                            onChange={(e) =>
-                              updateBtRateField(
-                                index,
-                                "description",
-                                e.target.value,
-                              )
-                            }
-                            placeholder="Description"
-                            className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-                            disabled={!selectedBusinessTypeWithRates}
-                          />
-                          <div className="text-right">
+                          <div className="flex items-center justify-between gap-2 mb-2">
+                            <span className="inline-flex items-center justify-center h-6 w-6 rounded-full bg-[#23C4C1]/10 text-[#23C4C1] font-semibold text-xs">
+                              {index + 1}
+                            </span>
                             <Button
                               size="sm"
                               variant="ghost"
-                              className="text-red-600 hover:text-red-700"
+                              className="h-6 px-2 text-red-600 hover:bg-red-50 hover:text-red-700"
                               onClick={() => removeBtRate(index)}
                               disabled={!selectedBusinessTypeWithRates}
                             >
-                              Remove
+                              <Trash2 className="h-3.5 w-3.5" />
                             </Button>
+                          </div>
+                          <div>
+                            <label className="mb-1 block text-xs font-medium text-gray-700">
+                              Loại Thuế <span className="text-red-500">*</span>
+                            </label>
+                            <select
+                              value={rate.taxType}
+                              onChange={(e) =>
+                                updateBtRateField(
+                                  index,
+                                  "taxType",
+                                  e.target.value,
+                                )
+                              }
+                              className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm transition-colors focus:border-[#23C4C1] focus:ring-1 focus:ring-[#23C4C1]/30 outline-none disabled:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
+                              disabled={!selectedBusinessTypeWithRates}
+                            >
+                              <option value="">Chọn loại thuế</option>
+                              {businessTypeTaxTypeOptions.map((option) => (
+                                <option key={option.value} value={option.value}>
+                                  {option.label}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <label className="mb-1 block text-xs font-medium text-gray-700">
+                                Tỷ Lệ (%)
+                              </label>
+                              <input
+                                value={rate.taxRate}
+                                onChange={(e) =>
+                                  updateBtRateField(
+                                    index,
+                                    "taxRate",
+                                    e.target.value,
+                                  )
+                                }
+                                placeholder="ví dụ: 0.05"
+                                type="number"
+                                step="0.001"
+                                min="0"
+                                className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm transition-colors focus:border-[#23C4C1] focus:ring-1 focus:ring-[#23C4C1]/30 outline-none disabled:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
+                                disabled={!selectedBusinessTypeWithRates}
+                              />
+                            </div>
+                            <div>
+                              <label className="mb-1 block text-xs font-medium text-gray-700">
+                                Ghi Chú
+                              </label>
+                              <input
+                                value={rate.description}
+                                onChange={(e) =>
+                                  updateBtRateField(
+                                    index,
+                                    "description",
+                                    e.target.value,
+                                  )
+                                }
+                                placeholder="ghi chú ngắn"
+                                className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm transition-colors focus:border-[#23C4C1] focus:ring-1 focus:ring-[#23C4C1]/30 outline-none disabled:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
+                                disabled={!selectedBusinessTypeWithRates}
+                              />
+                            </div>
                           </div>
                         </div>
                       ))
@@ -3695,11 +3761,13 @@ export default function AdminAccountingClient({
                   </div>
                   <Button
                     size="sm"
-                    className="w-full bg-[#23C4C1] text-white hover:bg-[#1ea8a6]"
+                    className="w-full bg-[#23C4C1] text-white hover:bg-[#1ea8a6] font-medium"
                     onClick={() => void btReplaceRates()}
-                    disabled={!selectedBusinessTypeWithRates}
+                    disabled={
+                      !selectedBusinessTypeWithRates || btRatesForm.length === 0
+                    }
                   >
-                    Áp Dụng
+                    Áp Dụng Tỷ Lệ Thuế
                   </Button>
                 </div>
               </CardContent>
