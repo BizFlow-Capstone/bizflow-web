@@ -849,6 +849,8 @@ export default function AdminAccountingClient({
   const [entityDeleteTarget, setEntityDeleteTarget] =
     useState<EntityDeleteTarget | null>(null);
   const [entityDeleteBusy, setEntityDeleteBusy] = useState(false);
+  const [showEntityModal, setShowEntityModal] = useState(false);
+  const [showFieldModal, setShowFieldModal] = useState(false);
   const [efEditId, setEfEditId] = useState("");
   const [efEntId, setEfEntId] = useState("");
   const [efCode, setEfCode] = useState("");
@@ -4280,8 +4282,23 @@ export default function AdminAccountingClient({
         <div className="space-y-6">
           <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
             <Card className="rounded-xl border border-gray-200 bg-white shadow-sm">
-              <CardHeader>
+              <CardHeader className="flex flex-row items-center justify-between">
                 <CardTitle>Entities</CardTitle>
+                <Button
+                  size="sm"
+                  className="bg-[#23C4C1] text-white hover:bg-[#1ea8a6]"
+                  onClick={() => {
+                    setEntEditId("");
+                    setEntCode("");
+                    setEntName("");
+                    setEntCat("revenue");
+                    setEntDesc("");
+                    setEntIsActive("true");
+                    setShowEntityModal(true);
+                  }}
+                >
+                  + Tạo mới
+                </Button>
               </CardHeader>
               <CardContent>
                 <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
@@ -4383,8 +4400,26 @@ export default function AdminAccountingClient({
             </Card>
 
             <Card className="rounded-xl border border-gray-200 bg-white shadow-sm">
-              <CardHeader>
+              <CardHeader className="flex flex-row items-center justify-between">
                 <CardTitle>Fields của {selectedEntityName}</CardTitle>
+                <Button
+                  size="sm"
+                  className="bg-[#23C4C1] text-white hover:bg-[#1ea8a6]"
+                  onClick={() => {
+                    setEfEditId("");
+                    setEfEntId(currentFieldEntityId);
+                    setEfCode("");
+                    setEfName("");
+                    setEfDtype("decimal");
+                    setEfAggs('["sum","none"]');
+                    setEfDesc("");
+                    setEfIsActive("true");
+                    setShowFieldModal(true);
+                  }}
+                  disabled={!currentFieldEntityId}
+                >
+                  + Tạo mới
+                </Button>
               </CardHeader>
               <CardContent>
                 <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
@@ -4471,284 +4506,245 @@ export default function AdminAccountingClient({
             </Card>
           </div>
 
-          <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-            <Card className="rounded-xl border border-gray-200 bg-white shadow-sm">
-              <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                <div className="space-y-1">
-                  <CardTitle>Chỉnh sửa</CardTitle>
-                  <p className="text-xs text-gray-500">
-                    {hasSelectedEntity
-                      ? `Đang chỉnh sửa entity #${entEditId}`
-                      : "Tạo mới entity"}
-                  </p>
-                </div>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => {
-                    setEntEditId("");
-                    setEntCode("");
-                    setEntName("");
-                    setEntCat("revenue");
-                    setEntDesc("");
-                    setEntIsActive("true");
-                  }}
-                >
-                  Tạo mới Entity
-                </Button>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="space-y-3 rounded-xl border border-gray-100 bg-gray-50/60 p-3">
-                  <div className="space-y-1">
-                    <label className="block text-xs font-medium text-gray-600">
-                      Entity ID
-                    </label>
-                    <input
-                      value={entEditId}
-                      readOnly
-                      placeholder="(auto)"
-                      className="w-full rounded-lg border border-gray-200 bg-gray-100 px-3 py-2 text-sm"
-                    />
-                  </div>
-                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                    <div className="space-y-1">
-                      <label className="block text-xs font-medium text-gray-600">
-                        Entity Code
-                      </label>
-                      <input
-                        value={entCode}
-                        onChange={(e) => setEntCode(e.target.value)}
-                        placeholder="orders"
-                        className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="block text-xs font-medium text-gray-600">
-                        Tên Entity
-                      </label>
-                      <input
-                        value={entName}
-                        onChange={(e) => setEntName(e.target.value)}
-                        placeholder="Đơn hàng"
-                        className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-                      />
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                    <div className="space-y-1">
-                      <label className="block text-xs font-medium text-gray-600">
-                        Danh mục
-                      </label>
-                      <select
-                        value={entCat}
-                        onChange={(e) => setEntCat(e.target.value)}
-                        className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-                      >
-                        <option>revenue - Doanh thu</option>
-                        <option>cost - Chi phí</option>
-                        <option>tax - Thuế</option>
-                        <option>asset - Tài sản</option>
-                      </select>
-                    </div>
-                    <div className="space-y-1">
-                      <label className="block text-xs font-medium text-gray-600">
-                        Trạng thái
-                      </label>
-                      <select
-                        value={entIsActive}
-                        onChange={(e) => setEntIsActive(e.target.value)}
-                        className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-                      >
-                        <option value="true">Hiệu lực</option>
-                        <option value="false">Vô hiệu</option>
-                      </select>
-                    </div>
-                  </div>
-                  <div className="space-y-1">
-                    <label className="block text-xs font-medium text-gray-600">
-                      Mô tả
-                    </label>
-                    <textarea
-                      value={entDesc}
-                      onChange={(e) => setEntDesc(e.target.value)}
-                      placeholder="Mô tả ngắn cho entity"
-                      rows={2}
-                      className="w-full resize-y rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-                    />
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <Button
-                    size="sm"
-                    className="bg-[#23C4C1] text-white hover:bg-[#1ea8a6]"
-                    onClick={() => void entCreate()}
-                    disabled={!entCode.trim() || !entName.trim()}
-                  >
-                    Tạo Entity
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    onClick={() => void entUpdate()}
-                    disabled={!hasSelectedEntity}
-                  >
-                    Cập nhật Entity
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="rounded-xl border border-gray-200 bg-white shadow-sm">
-              <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                <div className="space-y-1">
-                  <CardTitle>Chỉnh sửa</CardTitle>
-                  <p className="text-xs text-gray-500">
-                    {hasSelectedField
-                      ? `Đang chỉnh sửa field #${efEditId}`
-                      : "Tạo mới field cho entity đang chọn"}
-                  </p>
-                </div>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => {
-                    setEfEditId("");
-                    setEfEntId(currentFieldEntityId);
-                    setEfCode("");
-                    setEfName("");
-                    setEfDtype("decimal");
-                    setEfAggs('["sum","none"]');
-                    setEfDesc("");
-                    setEfIsActive("true");
-                  }}
-                  disabled={!currentFieldEntityId}
-                >
-                  Tạo Field
-                </Button>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="space-y-3 rounded-xl border border-gray-100 bg-gray-50/60 p-3">
-                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                    <div className="space-y-1">
-                      <label className="block text-xs font-medium text-gray-600">
-                        Field ID
-                      </label>
-                      <input
-                        value={efEditId}
-                        readOnly
-                        placeholder="(auto)"
-                        className="w-full rounded-lg border border-gray-200 bg-gray-100 px-3 py-2 text-sm"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="block text-xs font-medium text-gray-600">
-                        Entity ID
-                      </label>
-                      <input
-                        value={currentFieldEntityId}
-                        readOnly
-                        placeholder="Chọn entity trước"
-                        className="w-full rounded-lg border border-gray-200 bg-gray-100 px-3 py-2 text-sm"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                    <div className="space-y-1">
-                      <label className="block text-xs font-medium text-gray-600">
-                        Field Code
-                      </label>
-                      <input
-                        value={efCode}
-                        onChange={(e) => setEfCode(e.target.value)}
-                        placeholder="ABC"
-                        className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="block text-xs font-medium text-gray-600">
-                        Tên hiển thị
-                      </label>
-                      <input
-                        value={efName}
-                        onChange={(e) => setEfName(e.target.value)}
-                        placeholder="ABC Field"
-                        className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                    <div className="space-y-1">
-                      <label className="block text-xs font-medium text-gray-600">
-                        Loại dữ liệu
-                      </label>
-                      <select
-                        value={efDtype}
-                        onChange={(e) => setEfDtype(e.target.value)}
-                        className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-                      >
-                        <option>decimal - Số thập phân</option>
-                        <option>string - Chuỗi</option>
-                        <option>text - Văn bản</option>
-                        <option>date - Ngày tháng</option>
-                        <option>long - Số nguyên lớn</option>
-                        <option>guid - ID duy nhất</option>
-                      </select>
-                    </div>
-                    <div className="space-y-1">
-                      <label className="block text-xs font-medium text-gray-600">
-                        Trạng thái
-                      </label>
-                      <select
-                        value={efIsActive}
-                        onChange={(e) => setEfIsActive(e.target.value)}
-                        className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-                      >
-                        <option value="true">Hiệu lực</option>
-                        <option value="false">Vô hiệu</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="block text-xs font-medium text-gray-600">
-                      Description
-                    </label>
-                    <textarea
-                      value={efDesc}
-                      onChange={(e) => setEfDesc(e.target.value)}
-                      placeholder="Mô tả ngắn cho field"
-                      rows={2}
-                      className="w-full resize-y rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-                    />
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <Button
-                    size="sm"
-                    className="bg-[#23C4C1] text-white hover:bg-[#1ea8a6]"
-                    onClick={() => void efCreate()}
-                    disabled={
-                      !currentFieldEntityId || !efCode.trim() || !efName.trim()
-                    }
-                  >
-                    Tạo mới Field
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    onClick={() => void efUpdate()}
-                    disabled={!hasSelectedField || !currentFieldEntityId}
-                  >
-                    Cập nhật Field
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
+          {/* Entity & Field forms moved to modals - removed form cards here */}
         </div>
       ) : null}
+
+      {/* Entity Create Modal */}
+      <Dialog open={showEntityModal} onOpenChange={setShowEntityModal}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Tạo mới Entity</DialogTitle>
+            <DialogDescription>
+              Tạo entity mới và định nghĩa các trường dữ liệu cho nó
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-3 rounded-xl border border-gray-100 bg-gray-50/60 p-4">
+              <div className="space-y-1">
+                <label className="block text-xs font-medium text-gray-600">
+                  Entity ID
+                </label>
+                <input
+                  value={entEditId}
+                  readOnly
+                  placeholder="(auto)"
+                  className="w-full rounded-lg border border-gray-200 bg-gray-100 px-3 py-2 text-sm"
+                />
+              </div>
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                <div className="space-y-1">
+                  <label className="block text-xs font-medium text-gray-600">
+                    Entity Code
+                  </label>
+                  <input
+                    value={entCode}
+                    onChange={(e) => setEntCode(e.target.value)}
+                    placeholder="orders"
+                    className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="block text-xs font-medium text-gray-600">
+                    Tên Entity
+                  </label>
+                  <input
+                    value={entName}
+                    onChange={(e) => setEntName(e.target.value)}
+                    placeholder="Đơn hàng"
+                    className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                <div className="space-y-1">
+                  <label className="block text-xs font-medium text-gray-600">
+                    Danh mục
+                  </label>
+                  <select
+                    value={entCat}
+                    onChange={(e) => setEntCat(e.target.value)}
+                    className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                  >
+                    <option>revenue - Doanh thu</option>
+                    <option>cost - Chi phí</option>
+                    <option>tax - Thuế</option>
+                    <option>asset - Tài sản</option>
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="block text-xs font-medium text-gray-600">
+                    Trạng thái
+                  </label>
+                  <select
+                    value={entIsActive}
+                    onChange={(e) => setEntIsActive(e.target.value)}
+                    className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                  >
+                    <option value="true">Hiệu lực</option>
+                    <option value="false">Vô hiệu</option>
+                  </select>
+                </div>
+              </div>
+              <div className="space-y-1">
+                <label className="block text-xs font-medium text-gray-600">
+                  Mô tả
+                </label>
+                <textarea
+                  value={entDesc}
+                  onChange={(e) => setEntDesc(e.target.value)}
+                  placeholder="Mô tả ngắn cho entity"
+                  rows={2}
+                  className="w-full resize-y rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                />
+              </div>
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setShowEntityModal(false)}>
+              Hủy
+            </Button>
+            <Button
+              className="bg-[#23C4C1] text-white hover:bg-[#1ea8a6]"
+              onClick={() => {
+                void entCreate();
+                setShowEntityModal(false);
+              }}
+              disabled={!entCode.trim() || !entName.trim()}
+            >
+              Tạo Entity
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Field Create Modal */}
+      <Dialog open={showFieldModal} onOpenChange={setShowFieldModal}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Tạo mới Field</DialogTitle>
+            <DialogDescription>
+              Định nghĩa trường dữ liệu cho entity đang chọn
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-3 rounded-xl border border-gray-100 bg-gray-50/60 p-4">
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                <div className="space-y-1">
+                  <label className="block text-xs font-medium text-gray-600">
+                    Field ID
+                  </label>
+                  <input
+                    value={efEditId}
+                    readOnly
+                    placeholder="(auto)"
+                    className="w-full rounded-lg border border-gray-200 bg-gray-100 px-3 py-2 text-sm"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="block text-xs font-medium text-gray-600">
+                    Entity ID
+                  </label>
+                  <input
+                    value={currentFieldEntityId}
+                    readOnly
+                    placeholder="Chọn entity trước"
+                    className="w-full rounded-lg border border-gray-200 bg-gray-100 px-3 py-2 text-sm"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                <div className="space-y-1">
+                  <label className="block text-xs font-medium text-gray-600">
+                    Field Code
+                  </label>
+                  <input
+                    value={efCode}
+                    onChange={(e) => setEfCode(e.target.value)}
+                    placeholder="ABC"
+                    className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="block text-xs font-medium text-gray-600">
+                    Tên hiển thị
+                  </label>
+                  <input
+                    value={efName}
+                    onChange={(e) => setEfName(e.target.value)}
+                    placeholder="ABC Field"
+                    className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                <div className="space-y-1">
+                  <label className="block text-xs font-medium text-gray-600">
+                    Loại dữ liệu
+                  </label>
+                  <select
+                    value={efDtype}
+                    onChange={(e) => setEfDtype(e.target.value)}
+                    className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                  >
+                    <option>decimal - Số thập phân</option>
+                    <option>string - Chuỗi</option>
+                    <option>text - Văn bản</option>
+                    <option>date - Ngày tháng</option>
+                    <option>long - Số nguyên lớn</option>
+                    <option>guid - ID duy nhất</option>
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="block text-xs font-medium text-gray-600">
+                    Trạng thái
+                  </label>
+                  <select
+                    value={efIsActive}
+                    onChange={(e) => setEfIsActive(e.target.value)}
+                    className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                  >
+                    <option value="true">Hiệu lực</option>
+                    <option value="false">Vô hiệu</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="block text-xs font-medium text-gray-600">
+                  Description
+                </label>
+                <textarea
+                  value={efDesc}
+                  onChange={(e) => setEfDesc(e.target.value)}
+                  placeholder="Mô tả ngắn cho field"
+                  rows={2}
+                  className="w-full resize-y rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                />
+              </div>
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setShowFieldModal(false)}>
+              Hủy
+            </Button>
+            <Button
+              className="bg-[#23C4C1] text-white hover:bg-[#1ea8a6]"
+              onClick={() => {
+                void efCreate();
+                setShowFieldModal(false);
+              }}
+              disabled={
+                !currentFieldEntityId || !efCode.trim() || !efName.trim()
+              }
+            >
+              Tạo mới Field
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {activeTab === "compare" ? (
         <Card className="rounded-xl border border-gray-200 bg-white shadow-sm">

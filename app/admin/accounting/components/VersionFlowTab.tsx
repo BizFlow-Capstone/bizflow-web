@@ -845,7 +845,24 @@ export default function VersionTab(props: VersionTabProps) {
   const isDraft = isLoaded && isActive === false;
   const isActiveVersion = isLoaded && isActive === true;
 
+  const [renderPreviewResult, setRenderPreviewResult] = useState<Record<
+    string,
+    unknown
+  > | null>(null);
+
   const sampleBookColumns = useMemo(() => {
+    const root = asRecord(renderPreviewResult);
+    const apiColumns = asArray(root?.columns);
+    if (apiColumns.length > 0) {
+      return apiColumns
+        .map((col) => ({
+          fieldCode: asString(col.fieldCode),
+          label: asString(col.label) || asString(col.fieldCode),
+          fieldType: asString(col.fieldType) || "text",
+          exportColumn: asString(col.exportColumn),
+        }))
+        .filter((col) => col.fieldCode);
+    }
     return [...fieldMappings]
       .sort((a, b) => {
         const aSort = asNumber(a.sortOrder) ?? Number.MAX_SAFE_INTEGER;
@@ -859,7 +876,7 @@ export default function VersionTab(props: VersionTabProps) {
         exportColumn: asString(mapping.exportColumn),
       }))
       .filter((column) => column.fieldCode);
-  }, [fieldMappings]);
+  }, [renderPreviewResult, fieldMappings]);
 
   const sampleBookRows = useMemo(() => {
     return [...rowDefinitions]
@@ -877,10 +894,6 @@ export default function VersionTab(props: VersionTabProps) {
       }));
   }, [rowDefinitions]);
 
-  const [renderPreviewResult, setRenderPreviewResult] = useState<Record<
-    string,
-    unknown
-  > | null>(null);
   const [renderPreviewBusy, setRenderPreviewBusy] = useState(false);
   const [renderPreviewLoadingMore, setRenderPreviewLoadingMore] =
     useState(false);
@@ -1599,31 +1612,6 @@ export default function VersionTab(props: VersionTabProps) {
   }
 
   useEffect(() => {
-    if (!selectedVersionId || previewLoadedForVersionId === selectedVersionId) {
-      return;
-    }
-
-    let disposed = false;
-
-    async function loadMainPreviewStructure() {
-      try {
-        await loadFullStructure(selectedVersionId);
-        if (!disposed) {
-          setPreviewLoadedForVersionId(selectedVersionId);
-        }
-      } catch {
-        // Keep currently loaded detail data if full structure call fails.
-      }
-    }
-
-    void loadMainPreviewStructure();
-
-    return () => {
-      disposed = true;
-    };
-  }, [loadFullStructure, previewLoadedForVersionId, selectedVersionId]);
-
-  useEffect(() => {
     const versionId = toNullableNumber(selectedVersionId);
     if (!versionId || !previewPeriodId) {
       setRenderPreviewResult(null);
@@ -1657,6 +1645,7 @@ export default function VersionTab(props: VersionTabProps) {
           setRenderPreviewResult({
             summary: response.summary,
             rows: { items: response.rows.items },
+            columns: response.columns,
             sections: response.sections,
             footerRows: response.footerRows,
           } as Record<string, unknown>);
@@ -2970,7 +2959,7 @@ export default function VersionTab(props: VersionTabProps) {
             <CardContent>
               {sampleBookColumns.length === 0 ? (
                 <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 px-4 py-6 text-sm text-gray-500">
-                  Chưa có dữ liệu full structure để dựng sổ mẫu.
+                  Chưa có dữ liệu cột để dựng sổ mẫu.
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -4262,7 +4251,7 @@ export default function VersionTab(props: VersionTabProps) {
                   <CardContent className="space-y-4">
                     {sampleBookColumns.length === 0 ? (
                       <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 px-4 py-6 text-sm text-gray-500">
-                        Chưa có dữ liệu full structure để dựng sổ mẫu.
+                        Chưa có dữ liệu cột để dựng sổ mẫu.
                       </div>
                     ) : (
                       <div className="space-y-3 rounded-lg border border-gray-300 bg-white p-4 text-gray-900">
