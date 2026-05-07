@@ -472,6 +472,9 @@ function mapSectionRowsToStructure(
       asString(row.sectionType),
       asString(row.SectionType),
       asString(row.loai_phan),
+      asString(row.moneyChannel),
+      asString(row.MoneyChannel),
+      asString(row.money_channel),
       asString(nestedDataFilter?.section),
       asString(nestedDataFilter?.Section),
     ];
@@ -483,8 +486,15 @@ function mapSectionRowsToStructure(
       const rowType = normalizeKey(asString(sectionRow.lineType));
       if (rowType === "data_placeholder") {
         const sectionType = normalizeKey(asString(section.sectionType));
+        const rawDataFilter = asRecord(sectionRow.dataFilter);
         const filterBusinessTypeId = asString(
-          sectionRow.dataFilter?.businessTypeId || section.businessTypeId,
+          rawDataFilter &&
+            Object.prototype.hasOwnProperty.call(
+              rawDataFilter,
+              "businessTypeId",
+            )
+            ? rawDataFilter.businessTypeId
+            : section.businessTypeId,
         ).trim();
         const filterSection = asString(sectionRow.dataFilter?.section).trim();
 
@@ -930,14 +940,16 @@ export default function VersionTab(props: VersionTabProps) {
   const renderPreviewCanAutoLoadRef = useRef(true);
 
   const templateVersionFormulaItems = useMemo(() => {
-    return templateVersionFormulas.map((formula) => ({
-      formulaId: asNumber(formula.formulaId),
-      code: asString(formula.code),
-      name: asString(formula.name),
-      formulaType: asString(formula.formulaType),
-      isActive: asBoolean(formula.isActive),
-      usedByFieldCodes: asStringArray(formula.usedByFieldCodes),
-    }));
+    return templateVersionFormulas
+      .filter((formula) => formula.isActive !== false)
+      .map((formula) => ({
+        formulaId: asNumber(formula.formulaId),
+        code: asString(formula.code),
+        name: asString(formula.name),
+        formulaType: asString(formula.formulaType),
+        isActive: asBoolean(formula.isActive),
+        usedByFieldCodes: asStringArray(formula.usedByFieldCodes),
+      }));
   }, [templateVersionFormulas]);
 
   const renderPreviewSummaryMeta = useMemo(() => {
@@ -1355,6 +1367,7 @@ export default function VersionTab(props: VersionTabProps) {
         setMappingFormulaOptions(
           overview.formulas
             .map((formula) => {
+              if (!formula.isActive) return null;
               const formulaId = String(formula.formulaId ?? "").trim();
               if (!formulaId) return null;
               const formulaCode = String(formula.code ?? "").trim();

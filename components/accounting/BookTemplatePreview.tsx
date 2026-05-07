@@ -300,6 +300,30 @@ function getNumericValue(value: unknown): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function getSummaryFormulaValue(
+  summaryMeta: Record<string, unknown> | null | undefined,
+  keys: string[],
+): number | null {
+  const formulaMap = summaryMeta?.formulaValues;
+  if (!formulaMap || typeof formulaMap !== "object") return null;
+
+  const record = formulaMap as Record<string, unknown>;
+  for (const key of keys) {
+    const numeric = getNumericValue(record[key]);
+    if (numeric !== null) return numeric;
+    const lowerKey = key.toLowerCase();
+    const lowerMatch = Object.keys(record).find(
+      (candidate) => candidate.toLowerCase() === lowerKey,
+    );
+    if (lowerMatch) {
+      const lowerNumeric = getNumericValue(record[lowerMatch]);
+      if (lowerNumeric !== null) return lowerNumeric;
+    }
+  }
+
+  return null;
+}
+
 function getTaxTotalAmount(
   rows: AccountingBookRow[],
   summaryMeta: Record<string, unknown> | null | undefined,
@@ -1038,11 +1062,23 @@ function appendS2dBalanceRows(
     const normalizedLabel = normalizeCompareText(label);
     const isOpening = normalizedLabel.includes("dau ky");
     const quantity = isOpening
-      ? getLatestFieldValue(context.rows, "ton_dau_ky_sl")
-      : getLatestFieldValue(context.rows, "ton_cuoi_ky_sl");
+      ? (getSummaryFormulaValue(context.summaryMeta, [
+          "S2D_OPENING_QTY",
+          "ton_dau_ky_sl",
+        ]) ?? getLatestFieldValue(context.rows, "ton_dau_ky_sl"))
+      : (getSummaryFormulaValue(context.summaryMeta, [
+          "S2D_CLOSING_QTY",
+          "ton_cuoi_ky_sl",
+        ]) ?? getLatestFieldValue(context.rows, "ton_cuoi_ky_sl"));
     const value = isOpening
-      ? getLatestFieldValue(context.rows, "ton_dau_ky_gt")
-      : getLatestFieldValue(context.rows, "ton_cuoi_ky_gt");
+      ? (getSummaryFormulaValue(context.summaryMeta, [
+          "S2D_OPENING_VALUE",
+          "ton_dau_ky_gt",
+        ]) ?? getLatestFieldValue(context.rows, "ton_dau_ky_gt"))
+      : (getSummaryFormulaValue(context.summaryMeta, [
+          "S2D_CLOSING_VALUE",
+          "ton_cuoi_ky_gt",
+        ]) ?? getLatestFieldValue(context.rows, "ton_cuoi_ky_gt"));
 
     const balanceRow: DisplayRow = {
       id: `s2d-balance-${index}`,
@@ -1080,22 +1116,50 @@ function resolveS2eBalanceValue(
 
   if (section === "cash") {
     if (label.includes("dau ky"))
-      return getLatestFieldValue(context.rows, "cash_opening");
+      return (
+        getSummaryFormulaValue(context.summaryMeta, [
+          "S2E_CASH_OPENING",
+          "cash_opening",
+        ]) ?? getLatestFieldValue(context.rows, "cash_opening")
+      );
     if (label.includes("cuoi ky") || label.includes("du cuoi ky")) {
-      return getLatestFieldValue(context.rows, "cash_closing");
+      return (
+        getSummaryFormulaValue(context.summaryMeta, [
+          "S2E_CASH_CLOSING",
+          "cash_closing",
+        ]) ?? getLatestFieldValue(context.rows, "cash_closing")
+      );
     }
   }
 
   if (section === "bank") {
     if (label.includes("dau ky"))
-      return getLatestFieldValue(context.rows, "bank_opening");
+      return (
+        getSummaryFormulaValue(context.summaryMeta, [
+          "S2E_BANK_OPENING",
+          "bank_opening",
+        ]) ?? getLatestFieldValue(context.rows, "bank_opening")
+      );
     if (label.includes("cuoi ky") || label.includes("du cuoi ky")) {
-      return getLatestFieldValue(context.rows, "bank_closing");
+      return (
+        getSummaryFormulaValue(context.summaryMeta, [
+          "S2E_BANK_CLOSING",
+          "bank_closing",
+        ]) ?? getLatestFieldValue(context.rows, "bank_closing")
+      );
     }
   }
 
   if (label.includes("dau ky")) {
     return (
+      getSummaryFormulaValue(context.summaryMeta, [
+        "S2E_CASH_OPENING",
+        "cash_opening",
+      ]) ??
+      getSummaryFormulaValue(context.summaryMeta, [
+        "S2E_BANK_OPENING",
+        "bank_opening",
+      ]) ??
       getLatestFieldValue(context.rows, "cash_opening") ??
       getLatestFieldValue(context.rows, "bank_opening")
     );
@@ -1103,6 +1167,14 @@ function resolveS2eBalanceValue(
 
   if (label.includes("cuoi ky") || label.includes("du cuoi ky")) {
     return (
+      getSummaryFormulaValue(context.summaryMeta, [
+        "S2E_CASH_CLOSING",
+        "cash_closing",
+      ]) ??
+      getSummaryFormulaValue(context.summaryMeta, [
+        "S2E_BANK_CLOSING",
+        "bank_closing",
+      ]) ??
       getLatestFieldValue(context.rows, "cash_closing") ??
       getLatestFieldValue(context.rows, "bank_closing")
     );
@@ -1449,7 +1521,11 @@ function renderS2eTemplate(context: TemplateRenderContext): ReactElement {
       chi_ra: formatValue(
         pickFirstRowValue(row, ["chi_ra", "cash_out", "bank_out"]),
       ),
-      __section: asString(row.section).trim().toLowerCase(),
+      __section:
+        (asString(row.section).trim() ||
+          asString(row.moneyChannel).trim() ||
+          "")
+          .toLowerCase(),
     },
   }));
 
