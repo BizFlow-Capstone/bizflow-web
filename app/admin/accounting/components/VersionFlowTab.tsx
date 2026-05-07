@@ -211,6 +211,7 @@ type BookSectionRow = {
   };
   taxMetadata?: {
     taxType?: string;
+    rate?: number;
   };
 };
 
@@ -378,7 +379,8 @@ function mapSectionRowToStructure(
       asString(values.rowLabel) ||
       asString(values.dien_giai) ||
       asString(values.description),
-    explanation: asString(values.explanation) || asString(directValues.explanation),
+    explanation:
+      asString(values.explanation) || asString(directValues.explanation),
     visibleFieldCodes: values.visibleFieldCodes,
     taxType:
       asString(values.taxType) || asString(sectionRow.taxMetadata?.taxType),
@@ -951,8 +953,13 @@ export default function VersionTab(props: VersionTabProps) {
       sections: rawSections.map((section) => ({
         sectionType: asString(section.sectionType),
         businessTypeId: asString(section.groupKey || section.businessTypeId),
-        businessTypeName: asString(section.groupName || section.businessTypeName),
-        groupIndex: typeof section.groupIndex === "number" ? section.groupIndex : undefined,
+        businessTypeName: asString(
+          section.groupName || section.businessTypeName,
+        ),
+        groupIndex:
+          typeof section.groupIndex === "number"
+            ? section.groupIndex
+            : undefined,
         rows: asArray(section.rows) as unknown as BookSectionRow[],
       })),
       footerRows: asArray(root?.footerRows) as unknown as BookSectionRow[],
@@ -975,7 +982,12 @@ export default function VersionTab(props: VersionTabProps) {
         renderPreviewSectionsMeta,
         isSectionsOnlyTemplate(templateCode) ? [] : renderPreviewRows,
       ),
-    [sampleBookColumns, renderPreviewRows, templateCode, renderPreviewSectionsMeta],
+    [
+      sampleBookColumns,
+      renderPreviewRows,
+      templateCode,
+      renderPreviewSectionsMeta,
+    ],
   );
 
   const hasSectionRows = renderPreviewSectionRows.length > 0;
