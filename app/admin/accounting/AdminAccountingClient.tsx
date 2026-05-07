@@ -452,6 +452,8 @@ function buildFormulaSelectOptions(
 ): Array<{ value: string; label: string }> {
   return formulas
     .map((formula) => {
+      // skip inactive formulas
+      if ((formula as any).isActive === false) return null;
       const formulaId = String(formula.formulaId ?? "").trim();
       if (!formulaId) return null;
       const formulaCode = String(formula.code ?? "").trim();

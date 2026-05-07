@@ -10,6 +10,7 @@ import {
   BookOpen,
   ArrowLeftRight,
 } from "lucide-react";
+import Image from "next/image";
 
 const adminMenuItems = [
   {
@@ -59,10 +60,21 @@ export default function AdminSidebar() {
       {/* <Separator /> */}
 
       {/* Brand */}
-      <div className="px-4 pt-4 pb-2">
-        <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
-          Admin Panel
-        </h2>
+      <div className="p-6 ">
+        <Link
+          href="/dashboard"
+          prefetch={false}
+          className="flex items-center gap-3"
+        >
+          <div className="w-100 h-25  rounded-lg flex items-center justify-center">
+            <Image
+              src="/pictures/logo.png"
+              alt="BizFlow Logo"
+              width={100}
+              height={80}
+            />
+          </div>
+        </Link>
       </div>
 
       {/* Nav items */}
