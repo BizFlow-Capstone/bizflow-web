@@ -24,6 +24,7 @@ interface NormalizedRowDefinition {
   sectionType: string;
   sectionFilterValue: string;
   visibleFieldCodes: string[];
+  formulaValue: number | null;
 }
 
 type NormalizedColumn = {
@@ -145,6 +146,11 @@ function normalizeRowDefinitions(
         .trim()
         .toLowerCase(),
       visibleFieldCodes: parseVisibleFieldCodes(rowDef.visibleFieldCodes),
+      formulaValue:
+        typeof rowDef.formulaValue === "number" &&
+        Number.isFinite(rowDef.formulaValue)
+          ? rowDef.formulaValue
+          : null,
     }))
     .filter((rowDef) => rowDef.rowType.length > 0)
     .sort((left, right) => left.sortOrder - right.sortOrder);
@@ -624,7 +630,8 @@ function renderS1aTemplate(context: TemplateRenderContext): ReactElement {
           if (column.key === summaryLabelFieldCode)
             return [column.key, normalizeHumanLabel(totalRowDef.rowLabel)];
           if (column.key === summaryValueFieldCode) {
-            return [column.key, totalValue.toLocaleString("vi-VN")];
+            const displayValue = totalRowDef.formulaValue ?? totalValue;
+            return [column.key, displayValue.toLocaleString("vi-VN")];
           }
           return [column.key, ""];
         }),
@@ -815,20 +822,39 @@ function appendDefinitionTotals(
 
   endRows.forEach((rowDef, index) => {
     const taxType = rowDef.taxType ? rowDef.taxType.toUpperCase() : "";
-    if (!taxType) return;
-    if (!includePIT && taxType === "PIT") return;
-
     const label = normalizeHumanLabel(rowDef.rowLabel);
     if (!label) return;
     const normalized = normalizeCompareText(label);
     if (existingDescriptions.has(normalized)) return;
 
-    const amount = getTaxTotalAmount(
-      context.rows,
-      context.summaryMeta,
-      amountFieldCode,
-      taxType === "PIT" ? "PIT" : "VAT",
-    );
+    if (!taxType) {
+      // Non-tax grand total: use formulaValue if available
+      if (rowDef.formulaValue == null) return;
+      rows.push({
+        id: `rowdef-total-notax-${index}`,
+        isEmphasis: true,
+        cells: {
+          stt: "",
+          so_hieu: "",
+          ngay_thang: "",
+          dien_giai: label,
+          so_tien: rowDef.formulaValue.toLocaleString("vi-VN"),
+        },
+      });
+      existingDescriptions.add(normalized);
+      return;
+    }
+
+    if (!includePIT && taxType === "PIT") return;
+
+    const amount =
+      rowDef.formulaValue ??
+      getTaxTotalAmount(
+        context.rows,
+        context.summaryMeta,
+        amountFieldCode,
+        taxType === "PIT" ? "PIT" : "VAT",
+      );
 
     rows.push({
       id: `rowdef-total-${taxType}-${index}`,
@@ -841,14 +867,61 @@ function appendDefinitionTotals(
         so_tien: amount == null ? "" : amount.toLocaleString("vi-VN"),
       },
     });
+    existingDescriptions.add(normalized);
   });
 }
+
+const FORMULA_ROW_TYPES = new Set([
+  "grand_total",
+  "monthly_total",
+  "quarterly_total",
+  "subtotal",
+  "section_subtotal",
+  "tax_line",
+  "profit_row",
+]);
+
+function appendRemainingFormulaRows(
+  rows: DisplayRow[],
+  context: TemplateRenderContext,
+  amountCellKey: string,
+  baseCells: Record<string, string>,
+): void {
+  const existingDescriptions = new Set(
+    rows.map((row) => normalizeCompareText(row.cells.dien_giai || "")),
+  );
+
+  context.rowDefinitions
+    .filter(
+      (rowDef) =>
+        FORMULA_ROW_TYPES.has(rowDef.rowType) && rowDef.formulaValue !== null,
+    )
+    .forEach((rowDef, index) => {
+      if (rowDef.formulaValue == null) return;
+      const label = normalizeHumanLabel(rowDef.rowLabel);
+      if (!label) return;
+      if (existingDescriptions.has(normalizeCompareText(label))) return;
+
+      rows.push({
+        id: `formula-remaining-${rowDef.rowType}-${index}`,
+        isEmphasis: true,
+        cells: {
+          ...baseCells,
+          dien_giai: label,
+          [amountCellKey]: rowDef.formulaValue.toLocaleString("vi-VN"),
+        },
+      });
+    });
+}
+
+const S2_BASE_CELLS = { stt: "", so_hieu: "", ngay_thang: "" };
 
 function renderS2aTemplate(context: TemplateRenderContext): ReactElement {
   const { rows, columns, supplementalColumns, amountFieldCode } =
     buildS2MainRows(context, false);
 
   appendDefinitionTotals(rows, context, amountFieldCode, true);
+  appendRemainingFormulaRows(rows, context, "so_tien", S2_BASE_CELLS);
 
   return (
     <div className="bg-white p-8 font-serif text-slate-900 border shadow-2xl space-y-8">
@@ -870,6 +943,7 @@ function renderS2bTemplate(context: TemplateRenderContext): ReactElement {
     buildS2MainRows(context, true);
 
   appendDefinitionTotals(rows, context, amountFieldCode, false);
+  appendRemainingFormulaRows(rows, context, "so_tien", S2_BASE_CELLS);
 
   return (
     <div className="bg-white p-8 font-serif text-slate-900 border shadow-2xl space-y-8">
@@ -931,9 +1005,9 @@ function appendS2cDefinitionRows(
     if (!label || hasDescriptionRow(rows, label)) return;
 
     const formulaField = resolveS2cFormulaFieldByLabel(label);
-    const formulaValue = formulaField
-      ? getLatestFieldValue(context.rows, formulaField)
-      : null;
+    const resolvedValue =
+      rowDef.formulaValue ??
+      (formulaField ? getLatestFieldValue(context.rows, formulaField) : null);
 
     rows.push({
       id: `s2c-def-${rowDef.rowType}-${index}`,
@@ -943,7 +1017,7 @@ function appendS2cDefinitionRows(
         so_hieu: "",
         ngay_thang: "",
         dien_giai: label,
-        so_tien: formatValue(formulaValue),
+        so_tien: formatValue(resolvedValue),
       },
     });
   });
@@ -1205,6 +1279,7 @@ function renderS2cTemplate(context: TemplateRenderContext): ReactElement {
   }));
 
   appendS2cDefinitionRows(rows, context);
+  appendRemainingFormulaRows(rows, context, "so_tien", S2_BASE_CELLS);
 
   return (
     <div className="bg-white p-8 font-serif text-slate-900 border shadow-2xl space-y-8">
@@ -1279,6 +1354,17 @@ function renderS2dTemplate(context: TemplateRenderContext): ReactElement {
   }));
 
   appendS2dBalanceRows(rows, context);
+  appendRemainingFormulaRows(rows, context, "tien_ton", {
+    so_hieu: "",
+    ngay: "",
+    dvt: "",
+    don_gia: "",
+    sl_nhap: "",
+    tien_nhap: "",
+    sl_xuat: "",
+    tien_xuat: "",
+    sl_ton: "",
+  });
 
   const supplementalColumns = context.normalizedColumns.filter(
     (column) =>
@@ -1368,6 +1454,12 @@ function renderS2eTemplate(context: TemplateRenderContext): ReactElement {
   }));
 
   appendS2eDefinitionRows(rows, context);
+  appendRemainingFormulaRows(rows, context, "thu_vao", {
+    stt: "",
+    so_hieu: "",
+    ngay_thang: "",
+    chi_ra: "",
+  });
 
   return (
     <div className="bg-white p-8 font-serif text-slate-900 border shadow-2xl space-y-8">

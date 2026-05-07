@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -3008,7 +3008,7 @@ export default function AdminAccountingClient({
 
           <Card className="rounded-xl border border-gray-200 bg-white shadow-sm">
             <CardHeader className="flex-row items-center justify-between">
-              <CardTitle>Loại Hình Kinh Doanh</CardTitle>
+              <CardTitle>Nhóm Ngành Kinh Doanh</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
@@ -3899,7 +3899,8 @@ export default function AdminAccountingClient({
                               <MoreVertical className="h-4 w-4" />
                             </button>
                             {rowActionMenuId ===
-                            String(r.rowDefId ?? `row-${index}`) && !isConsultantMode ? (
+                              String(r.rowDefId ?? `row-${index}`) &&
+                            !isConsultantMode ? (
                               <div className="absolute right-0 top-9 z-10 w-28 rounded-md border border-gray-200 bg-white p-1 shadow-lg">
                                 <button
                                   type="button"
@@ -4002,10 +4003,15 @@ export default function AdminAccountingClient({
                   </label>
                   <select
                     value={rowForm.position}
+                    disabled={rowEditorMode === "update"}
                     onChange={(e) =>
                       setRowForm((p) => ({ ...p, position: e.target.value }))
                     }
-                    className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                    className={`w-full rounded-lg border px-3 py-2 text-sm ${
+                      rowEditorMode === "update"
+                        ? "border-gray-200 bg-gray-50 text-gray-500 cursor-not-allowed opacity-60"
+                        : "border-gray-200 bg-white"
+                    }`}
                   >
                     {rowPositionOptions.map((option) => (
                       <option key={option.value} value={option.value}>
@@ -4701,11 +4707,16 @@ export default function AdminAccountingClient({
                     <SelectValue placeholder="Draft Version ID" />
                   </SelectTrigger>
                   <SelectContent>
-                    {overview?.templates.flatMap(t => t.versions).map(v => (
-                      <SelectItem key={v.templateVersionId} value={String(v.templateVersionId)}>
-                        {v.templateVersionId} - {v.versionLabel}
-                      </SelectItem>
-                    ))}
+                    {overview?.templates
+                      .flatMap((t) => t.versions)
+                      .map((v) => (
+                        <SelectItem
+                          key={v.templateVersionId}
+                          value={String(v.templateVersionId)}
+                        >
+                          {v.templateVersionId} - {v.versionLabel}
+                        </SelectItem>
+                      ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -4715,11 +4726,16 @@ export default function AdminAccountingClient({
                     <SelectValue placeholder="Active Version ID" />
                   </SelectTrigger>
                   <SelectContent>
-                    {overview?.templates.flatMap(t => t.versions).map(v => (
-                      <SelectItem key={v.templateVersionId} value={String(v.templateVersionId)}>
-                        {v.templateVersionId} - {v.versionLabel}
-                      </SelectItem>
-                    ))}
+                    {overview?.templates
+                      .flatMap((t) => t.versions)
+                      .map((v) => (
+                        <SelectItem
+                          key={v.templateVersionId}
+                          value={String(v.templateVersionId)}
+                        >
+                          {v.templateVersionId} - {v.versionLabel}
+                        </SelectItem>
+                      ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -4746,7 +4762,7 @@ export default function AdminAccountingClient({
                     <SelectValue placeholder="Ruleset ID" />
                   </SelectTrigger>
                   <SelectContent>
-                    {overview?.taxRulesets.map(r => (
+                    {overview?.taxRulesets.map((r) => (
                       <SelectItem key={r.rulesetId} value={String(r.rulesetId)}>
                         {r.rulesetId} - {r.code}
                       </SelectItem>
