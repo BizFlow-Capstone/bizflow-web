@@ -1052,7 +1052,7 @@ export default function DashboardPage() {
             )}
           </div>
 
-          <div className="rounded-2xl border bg-white p-6 shadow-sm">
+          {/* <div className="rounded-2xl border bg-white p-6 shadow-sm">
             <div className="mb-5 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div>
                 <h4 className="text-lg font-semibold text-gray-900">
@@ -1119,7 +1119,7 @@ export default function DashboardPage() {
                       data={topSellerChartData}
                       emptyLabel="Chưa có dữ liệu sản phẩm bán chạy"
                       valueFormatter={(value) =>
-                        `${Math.round(value).toLocaleString("vi-VN")} sp`
+                        `${Math.round(value).toLocaleString("vi-VN")} vnđ`
                       }
                     />
                   </div>
@@ -1207,7 +1207,7 @@ export default function DashboardPage() {
                 </div>
               </div>
             )}
-          </div>
+          </div> */}
         </section>
       </main>
     </div>
