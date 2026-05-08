@@ -252,15 +252,8 @@ export default function AdminOverviewClient() {
         trendText: `trong ${rangeLabel.toLowerCase()}`,
         isPositive: true,
       },
-      {
-        title: "Số Thông Báo",
-        value: formatCount(totalDispatches),
-        trend: "—",
-        trendText: "đã gửi",
-        isPositive: false,
-      },
     ],
-    [totalRevenue, totalUsers, totalSubscriptions, totalDispatches, rangeLabel],
+    [totalRevenue, totalUsers, totalSubscriptions, rangeLabel],
   );
 
   const revenueData = useMemo(() => {
