@@ -61,7 +61,7 @@ function formatDate(iso: string) {
 function featureValue(feat: PublicPlanFeature): string {
   const usageLimit = Number(feat?.usageLimit ?? 0);
   if (usageLimit === -1) return "Không giới hạn";
-  if (usageLimit === 0) return "—";
+  if (usageLimit === 0) return "0";
   return usageLimit.toLocaleString("vi-VN");
 }
 
