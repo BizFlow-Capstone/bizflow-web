@@ -622,7 +622,10 @@ export default function DashboardPage() {
     } else if (forecastTrendNote?.trim()) {
       actions.push({
         title: "Điều chỉnh kế hoạch bán",
-        detail: forecastTrendNote,
+        detail:
+          forecastTrendNote === "not_enough_data"
+            ? "Không đủ dữ liệu tính toán, vui lòng kiểm tra lại sau."
+            : forecastTrendNote,
         badge: "Theo dự báo",
         tone: "blue",
         icon: TrendingUp,
@@ -818,10 +821,6 @@ export default function DashboardPage() {
               <h3 className="mt-3 text-3xl font-bold tracking-tight text-white">
                 Dự báo &amp; Phân tích thông minh
               </h3>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">
-                Mô hình Machine Learning phân tích dữ liệu lịch sử để dự báo xu
-                hướng và gợi ý tối ưu vận hành cho chi nhánh.
-              </p>
             </div>
 
             <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.35fr_0.85fr]">
