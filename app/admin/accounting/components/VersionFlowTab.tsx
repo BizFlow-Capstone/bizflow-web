@@ -3085,6 +3085,7 @@ export default function VersionTab(props: VersionTabProps) {
                               : sampleBookRows
                     }
                     rowDefinitions={enrichedRowDefinitions}
+                    sectionsMeta={renderPreviewSectionsMeta}
                     referenceData={previewReferenceData}
                     summaryMeta={
                       renderPreviewSummaryMeta ?? asRecord(result?.summary)
@@ -4379,6 +4380,7 @@ export default function VersionTab(props: VersionTabProps) {
                                   : sampleBookRows
                           }
                           rowDefinitions={enrichedRowDefinitions}
+                          sectionsMeta={renderPreviewSectionsMeta}
                           referenceData={previewReferenceData}
                           summaryMeta={
                             renderPreviewSummaryMeta ??

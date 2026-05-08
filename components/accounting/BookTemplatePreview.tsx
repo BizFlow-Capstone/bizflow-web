@@ -11,6 +11,24 @@ interface BookTemplatePreviewProps {
   columns: AccountingTemplateColumnSummary[];
   rows: AccountingBookRow[];
   rowDefinitions?: Array<Record<string, unknown>>;
+  sectionsMeta?: {
+    sections?: Array<{
+      sectionType?: string;
+      businessTypeId?: string;
+      businessTypeName?: string;
+      groupKey?: string;
+      groupName?: string;
+      groupIndex?: number;
+      rows?: Array<{
+        lineType?: string;
+        [key: string]: unknown;
+      }>;
+    }>;
+    footerRows?: Array<{
+      lineType?: string;
+      [key: string]: unknown;
+    }>;
+  } | null;
   referenceData?: Record<string, unknown> | null;
   summaryMeta?: Record<string, unknown> | null;
 }
@@ -41,6 +59,7 @@ interface TemplateRenderContext {
   normalizedColumns: NormalizedColumn[];
   rows: AccountingBookRow[];
   rowDefinitions: NormalizedRowDefinition[];
+  sectionsMeta?: BookTemplatePreviewProps["sectionsMeta"];
   referenceData?: Record<string, unknown> | null;
   summaryMeta?: Record<string, unknown> | null;
   totalValue: number;
@@ -60,10 +79,17 @@ interface DisplayRow {
   id: string;
   cells: Record<string, string>;
   isEmphasis?: boolean;
+  isSectionHeader?: boolean;
 }
 
 function asString(value: unknown): string {
   return typeof value === "string" ? value : "";
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object"
+    ? (value as Record<string, unknown>)
+    : {};
 }
 
 function asNumber(value: unknown): number | null {
@@ -197,21 +223,21 @@ function normalizeHumanLabel(raw: string): string {
   if (!trimmed) return "";
 
   const replacements: Array<[RegExp, string]> = [
-    [/tong so thue gtgt phai nop/gi, "Tß╗òng sß╗æ thuß║┐ GTGT phß║úi nß╗Öp"],
-    [/tong so thue tncn phai nop/gi, "Tß╗òng sß╗æ thuß║┐ TNCN phß║úi nß╗Öp"],
-    [/thue gtgt phai nop/gi, "Thuß║┐ GTGT phß║úi nß╗Öp"],
-    [/thue tncn phai nop/gi, "Thuß║┐ TNCN phß║úi nß╗Öp"],
-    [/thue gtgt/gi, "Thuß║┐ GTGT"],
-    [/thue tncn/gi, "Thuß║┐ TNCN"],
-    [/tong cong/gi, "Tß╗òng cß╗Öng"],
-    [/tong doanh thu/gi, "Tß╗òng doanh thu"],
-    [/tong chi phi hop ly/gi, "Tß╗òng chi ph├¡ hß╗úp l├╜"],
-    [/chenh lech/gi, "Ch├¬nh lß╗çch"],
-    [/ton dau ky/gi, "Tß╗ôn ─æß║ºu kß╗│"],
-    [/ton cuoi ky/gi, "Tß╗ôn cuß╗æi kß╗│"],
-    [/du cuoi ky/gi, "D╞░ cuß╗æi kß╗│"],
-    [/tien gui ngan hang/gi, "TIß╗ÇN Gß╗¼I NG├éN H├ÇNG"],
-    [/tien mat/gi, "TIß╗ÇN Mß║╢T"],
+    [/tong so thue gtgt phai nop/gi, "Tổng số thuế GTGT phải nộp"],
+    [/tong so thue tncn phai nop/gi, "Tổng số thuế TNCN phải nộp"],
+    [/thue gtgt phai nop/gi, "Thuế GTGT phải nộp"],
+    [/thue tncn phai nop/gi, "Thuế TNCN phải nộp"],
+    [/thue gtgt/gi, "Thuế GTGT"],
+    [/thue tncn/gi, "Thuế TNCN"],
+    [/tong cong/gi, "Tổng cộng"],
+    [/tong doanh thu/gi, "Tổng doanh thu"],
+    [/tong chi phi hop ly/gi, "Tổng chi phí hợp lý"],
+    [/chenh lech/gi, "Chênh lệch"],
+    [/ton dau ky/gi, "Tồn đầu kỳ"],
+    [/ton cuoi ky/gi, "Tồn cuối kỳ"],
+    [/du cuoi ky/gi, "Dư cuối kỳ"],
+    [/tien gui ngan hang/gi, "TIỀN GỬI NGÂN HÀNG"],
+    [/tien mat/gi, "TIỀN MẶT"],
   ];
 
   let result = trimmed;
@@ -401,15 +427,15 @@ function renderSignatureBlock() {
     <div className="grid grid-cols-2 gap-8 pt-8 font-serif">
       <div className="text-center italic text-xs font-serif"></div>
       <div className="text-center space-y-1 font-serif">
-        <p className="italic text-xs font-serif">Ng├áy ... th├íng ... n─âm ...</p>
+        <p className="italic text-xs font-serif">Ngày ... tháng ... năm ...</p>
         <p className="font-bold text-sm uppercase font-serif">
-          NG╞»ß╗£I ─Éß║áI DIß╗åN Hß╗ÿ KINH DOANH/
+          NGƯỜI ĐẠI DIỆN HỘ KINH DOANH/
         </p>
         <p className="font-bold text-sm uppercase font-serif">
-          C├ü NH├éN KINH DOANH
+          CÁ NHÂN KINH DOANH
         </p>
         <p className="italic text-xs pt-2 font-serif">
-          (K├╜, ghi r├╡ hß╗ì t├¬n, ─æ├│ng dß║Ñu (nß║┐u c├│))
+          (Ký, ghi rõ họ tên, đóng dấu (nếu có))
         </p>
       </div>
     </div>
@@ -425,26 +451,26 @@ function renderFormHeader(
     <div className="flex justify-between items-start text-xs leading-relaxed font-serif">
       <div className="space-y-1 font-serif">
         <p className="font-bold font-serif uppercase">
-          Hß╗ÿ, C├ü NH├éN KINH DOANH: ........................
+          HỘ, CÁ NHÂN KINH DOANH: ........................
         </p>
         <p className="font-serif">
-          ─Éß╗ïa chß╗ë: .............................................................
+          Địa chỉ: .............................................................
         </p>
         <p className="font-serif">
-          M├ú sß╗æ thuß║┐: .......................................................
+          Mã số thuế: .......................................................
         </p>
       </div>
       <div className="text-right italic space-y-1 max-w-xs font-serif">
-        <p className="font-bold not-italic font-serif">Mß║½u sß╗æ {formCode}</p>
+        <p className="font-bold not-italic font-serif">Mẫu số {formCode}</p>
         <p className="font-serif">
-          {templateName || "Sß╗ò doanh thu b├ín h├áng h├│a, dß╗ïch vß╗Ñ"}
+          {templateName || "Sổ doanh thu bán hàng hóa, dịch vụ"}
         </p>
         <p className="font-serif">
           {versionLabel ? `Version: ${versionLabel}` : ""}
         </p>
-        <p className="font-serif">(K├¿m theo Th├┤ng t╞░ sß╗æ 152/2025/TT-BTC</p>
-        <p className="font-serif">ng├áy 31 th├íng 12 n─âm 2025 cß╗ºa Bß╗Ö tr╞░ß╗ƒng</p>
-        <p className="font-serif">Bß╗Ö T├ái ch├¡nh)</p>
+        <p className="font-serif">(Kèm theo Thông tư số 152/2025/TT-BTC</p>
+        <p className="font-serif">ngày 31 tháng 12 năm 2025 của Bộ trưởng</p>
+        <p className="font-serif">Bộ Tài chính)</p>
       </div>
     </div>
   );
@@ -459,18 +485,18 @@ function renderBookTitle(title: string, showUnit: boolean = true) {
         </h2>
         <div className="text-sm space-y-1 font-serif">
           <p className="font-serif">
-            ─Éß╗ïa ─æiß╗âm kinh doanh:
+            Địa điểm kinh doanh:
             .....................................................
           </p>
           <p className="font-serif">
-            Kß╗│ k├¬ khai:
+            Kỳ kê khai:
             .......................................................................
           </p>
         </div>
       </div>
       {showUnit ? (
         <div className="flex justify-end italic text-xs mb-2 font-serif">
-          ─É╞ín vß╗ï t├¡nh: .....................
+          Đơn vị tính: .....................
         </div>
       ) : null}
     </>
@@ -507,21 +533,35 @@ function renderLedgerTable(
           </tr>
         </thead>
         <tbody>
-          {rows.map((row) => (
-            <tr
-              key={row.id}
-              className={`border-b border-slate-400/30 hover:bg-cyan-50/30 transition-colors font-serif ${row.isEmphasis ? "font-semibold" : ""}`}
-            >
-              {columns.map((column) => (
+          {rows.map((row) =>
+            row.isSectionHeader ? (
+              <tr
+                key={row.id}
+                className="border-b border-t border-slate-900 bg-slate-100 font-serif"
+              >
                 <td
-                  key={`${row.id}-${column.key}`}
-                  className={`border-r border-slate-900 last:border-r-0 p-3 ${column.align === "right" ? "text-right font-mono" : ""}`}
+                  colSpan={columns.length}
+                  className="px-3 py-2 font-bold text-sm text-slate-800 uppercase tracking-wide"
                 >
-                  {row.cells[column.key] ?? ""}
+                  {row.cells.dien_giai ?? ""}
                 </td>
-              ))}
-            </tr>
-          ))}
+              </tr>
+            ) : (
+              <tr
+                key={row.id}
+                className={`border-b border-slate-400/30 hover:bg-cyan-50/30 transition-colors font-serif ${row.isEmphasis ? "font-semibold" : ""}`}
+              >
+                {columns.map((column) => (
+                  <td
+                    key={`${row.id}-${column.key}`}
+                    className={`border-r border-slate-900 last:border-r-0 p-3 ${column.align === "right" ? "text-right font-mono" : ""}`}
+                  >
+                    {row.cells[column.key] ?? ""}
+                  </td>
+                ))}
+              </tr>
+            ),
+          )}
         </tbody>
       </table>
     </div>
@@ -672,7 +712,7 @@ function renderS1aTemplate(context: TemplateRenderContext): ReactElement {
   return (
     <div className="bg-white p-8 font-serif text-slate-900 border shadow-2xl space-y-8 transition-all hover:shadow-cyan-100/50">
       {renderFormHeader("S1a-HKD", templateName, versionLabel)}
-      {renderBookTitle("Sß╗ö DOANH THU B├üN H├ÇNG H├ôA, Dß╗èCH Vß╗ñ")}
+      {renderBookTitle("SỔ DOANH THU BÁN HÀNG HÓA, DỊCH VỤ")}
       {renderLedgerTable(displayColumns, displayRows)}
       {renderSignatureBlock()}
     </div>
@@ -718,7 +758,7 @@ function buildS2MainRows(
     findAmountColumn(normalizedColumns, reservedCodes) ||
     ({
       fieldCode: "so_tien",
-      label: "Sß╗æ tiß╗ün",
+      label: "Số tiền",
       fieldType: "decimal",
       exportColumn: "",
     } as NormalizedColumn);
@@ -737,25 +777,25 @@ function buildS2MainRows(
   displayColumns.push(
     {
       key: "so_hieu",
-      label: "Sß╗æ hiß╗çu chß╗⌐ng tß╗½",
+      label: "Số hiệu chứng từ",
       letter: includeStt ? "B" : "A",
       minWidthClass: "min-w-32",
     },
     {
       key: "ngay_thang",
-      label: "Ng├áy, th├íng",
+      label: "Ngày, tháng",
       letter: includeStt ? "C" : "B",
       minWidthClass: "min-w-28",
     },
     {
       key: "dien_giai",
-      label: "Diß╗àn giß║úi",
+      label: "Diễn giải",
       letter: includeStt ? "D" : "C",
       align: "left",
     },
     {
       key: "so_tien",
-      label: "Sß╗æ tiß╗ün",
+      label: "Số tiền",
       letter: "1",
       align: "right",
       minWidthClass: "min-w-36",
@@ -766,7 +806,7 @@ function buildS2MainRows(
     const taxType = asString(row.taxType).toUpperCase();
     const taxLabel =
       taxTypeLabels.get(taxType) ||
-      (taxType === "PIT" ? "Thuß║┐ TNCN" : "Thuß║┐ GTGT");
+      (taxType === "PIT" ? "Thuế TNCN" : "Thuế GTGT");
     const description = resolveRowDescription(
       row,
       descriptionColumn?.fieldCode,
@@ -950,10 +990,10 @@ function renderS2aTemplate(context: TemplateRenderContext): ReactElement {
   return (
     <div className="bg-white p-8 font-serif text-slate-900 border shadow-2xl space-y-8">
       {renderFormHeader("S2a-HKD", context.templateName, context.versionLabel)}
-      {renderBookTitle("Sß╗ö DOANH THU B├üN H├ÇNG H├ôA, Dß╗èCH Vß╗ñ")}
+      {renderBookTitle("SỔ DOANH THU BÁN HÀNG HÓA, DỊCH VỤ")}
       {renderLedgerTable(columns, rows)}
       {renderSupplementalTable(
-        "Th├┤ng tin bß╗ò sung tß╗½ template",
+        "Thông tin bổ sung từ template",
         supplementalColumns,
         context.rows,
       )}
@@ -972,10 +1012,10 @@ function renderS2bTemplate(context: TemplateRenderContext): ReactElement {
   return (
     <div className="bg-white p-8 font-serif text-slate-900 border shadow-2xl space-y-8">
       {renderFormHeader("S2b-HKD", context.templateName, context.versionLabel)}
-      {renderBookTitle("Sß╗ö DOANH THU B├üN H├ÇNG H├ôA, Dß╗èCH Vß╗ñ (C├üCH 2)")}
+      {renderBookTitle("SỔ DOANH THU BÁN HÀNG HÓA, DỊCH VỤ (CÁCH 2)")}
       {renderLedgerTable(columns, rows)}
       {renderSupplementalTable(
-        "Th├┤ng tin bß╗ò sung tß╗½ template",
+        "Thông tin bổ sung từ template",
         supplementalColumns,
         context.rows,
       )}
@@ -1294,7 +1334,7 @@ function renderS2cTemplate(context: TemplateRenderContext): ReactElement {
     findAmountColumn(context.normalizedColumns) ||
     ({
       fieldCode: "so_tien",
-      label: "Sß╗æ tiß╗ün",
+      label: "Số tiền",
       fieldType: "decimal",
       exportColumn: "",
     } as NormalizedColumn);
@@ -1303,20 +1343,20 @@ function renderS2cTemplate(context: TemplateRenderContext): ReactElement {
     { key: "stt", label: "STT", letter: "A", minWidthClass: "min-w-14" },
     {
       key: "so_hieu",
-      label: "Sß╗æ hiß╗çu chß╗⌐ng tß╗½",
+      label: "Số hiệu chứng từ",
       letter: "B",
       minWidthClass: "min-w-32",
     },
     {
       key: "ngay_thang",
-      label: "Ng├áy, th├íng",
+      label: "Ngày, tháng",
       letter: "C",
       minWidthClass: "min-w-28",
     },
-    { key: "dien_giai", label: "Diß╗àn giß║úi", letter: "D" },
+    { key: "dien_giai", label: "Diễn giải", letter: "D" },
     {
       key: "so_tien",
-      label: "Sß╗æ tiß╗ün",
+      label: "Số tiền",
       letter: "1",
       align: "right",
       minWidthClass: "min-w-36",
@@ -1356,7 +1396,7 @@ function renderS2cTemplate(context: TemplateRenderContext): ReactElement {
   return (
     <div className="bg-white p-8 font-serif text-slate-900 border shadow-2xl space-y-8">
       {renderFormHeader("S2c-HKD", context.templateName, context.versionLabel)}
-      {renderBookTitle("Sß╗ö CHI TIß║╛T DOANH THU, CHI PH├ì")}
+      {renderBookTitle("SỔ CHI TIẾT DOANH THU, CHI PHÍ")}
       {renderLedgerTable(columns, rows)}
 
       {renderSignatureBlock()}
@@ -1369,7 +1409,7 @@ function renderS2dTemplate(context: TemplateRenderContext): ReactElement {
     findColumn(context.normalizedColumns, ["ngay", "ngay_thang", "date"]) ||
     ({
       fieldCode: "ngay",
-      label: "Ng├áy",
+      label: "Ngày",
       fieldType: "date",
       exportColumn: "",
     } as NormalizedColumn);
@@ -1377,55 +1417,250 @@ function renderS2dTemplate(context: TemplateRenderContext): ReactElement {
   const columns: DisplayColumn[] = [
     {
       key: "so_hieu",
-      label: "Sß╗æ hiß╗çu CT",
+      label: "Số hiệu CT",
       letter: "A",
       minWidthClass: "min-w-28",
     },
-    { key: "ngay", label: "Ng├áy", letter: "B", minWidthClass: "min-w-24" },
+    { key: "ngay", label: "Ngày", letter: "B", minWidthClass: "min-w-24" },
     {
       key: "dien_giai",
-      label: "Diß╗àn giß║úi",
+      label: "Diễn giải",
       letter: "C",
       minWidthClass: "min-w-44",
     },
-    { key: "dvt", label: "─ÉVT", letter: "D", minWidthClass: "min-w-16" },
-    { key: "don_gia", label: "─É╞ín gi├í", letter: "1", align: "right" },
-    { key: "sl_nhap", label: "Nhß║¡p - SL", letter: "2", align: "right" },
-    { key: "tien_nhap", label: "Nhß║¡p - Tiß╗ün", letter: "3", align: "right" },
-    { key: "sl_xuat", label: "Xuß║Ñt - SL", letter: "4", align: "right" },
-    { key: "tien_xuat", label: "Xuß║Ñt - Tiß╗ün", letter: "5", align: "right" },
-    { key: "sl_ton", label: "Tß╗ôn - SL", letter: "6", align: "right" },
-    { key: "tien_ton", label: "Tß╗ôn - Tiß╗ün", letter: "7", align: "right" },
+    { key: "dvt", label: "ĐVT", letter: "D", minWidthClass: "min-w-16" },
+    { key: "don_gia", label: "Đơn giá", letter: "1", align: "right" },
+    { key: "sl_nhap", label: "Nhập - SL", letter: "2", align: "right" },
+    { key: "tien_nhap", label: "Nhập - Tiền", letter: "3", align: "right" },
+    { key: "sl_xuat", label: "Xuất - SL", letter: "4", align: "right" },
+    { key: "tien_xuat", label: "Xuất - Tiền", letter: "5", align: "right" },
+    { key: "sl_ton", label: "Tồn - SL", letter: "6", align: "right" },
+    { key: "tien_ton", label: "Tồn - Tiền", letter: "7", align: "right" },
   ];
 
-  const rows: DisplayRow[] = context.rows.map((row, index) => ({
-    id: `s2d-${index}`,
-    isEmphasis: isEmphasisRowType(asString(row.rowType), context.referenceData),
-    cells: {
-      so_hieu: formatValue(
-        pickFirstRowValue(row, ["so_hieu", "chung_tu_so_hieu"]),
-      ),
-      ngay: formatValue(
-        pickFirstRowValue(row, [
-          dateColumn.fieldCode,
-          "ngay",
-          "ngay_thang",
-          "date",
-        ]),
-      ),
-      dien_giai: resolveRowDescription(row, "dien_giai", ""),
-      dvt: formatValue(row.dvt),
-      don_gia: formatValue(row.don_gia),
-      sl_nhap: formatValue(row.sl_nhap),
-      tien_nhap: formatValue(row.tien_nhap),
-      sl_xuat: formatValue(row.sl_xuat),
-      tien_xuat: formatValue(row.tien_xuat),
-      sl_ton: formatValue(row.sl_ton),
-      tien_ton: formatValue(row.tien_ton),
-    },
-  }));
+  const mapDataRow = (
+    row: AccountingBookRow,
+    id: string,
+    overrides?: Partial<DisplayRow>,
+  ): DisplayRow => {
+    const lineType = asString(row.lineType).toLowerCase();
+    const rowType = asString(row.rowType).toLowerCase();
+    return {
+      id,
+      isEmphasis: isEmphasisRowType(rowType || lineType, context.referenceData),
+      cells: {
+        so_hieu: formatValue(
+          pickFirstRowValue(row, ["so_hieu", "chung_tu_so_hieu"]),
+        ),
+        ngay: formatValue(
+          pickFirstRowValue(row, [
+            dateColumn.fieldCode,
+            "ngay",
+            "ngay_thang",
+            "date",
+          ]),
+        ),
+        dien_giai: resolveRowDescription(row, "dien_giai", ""),
+        dvt: formatValue(row.dvt),
+        don_gia: formatValue(row.don_gia),
+        sl_nhap: formatValue(row.sl_nhap),
+        tien_nhap: formatValue(row.tien_nhap),
+        sl_xuat: formatValue(row.sl_xuat),
+        tien_xuat: formatValue(row.tien_xuat),
+        sl_ton: formatValue(row.sl_ton),
+        tien_ton: formatValue(row.tien_ton),
+      },
+      ...overrides,
+    };
+  };
 
-  appendS2dBalanceRows(rows, context);
+  const mapBalanceRow = (
+    rowDef: Record<string, unknown>,
+    index: string,
+  ): DisplayRow => {
+    const label = normalizeHumanLabel(
+      asString(rowDef.rowLabel || rowDef.dien_giai || rowDef.description || ""),
+    );
+    const rowLabel = label || "Tồn đầu kỳ";
+    const normalizedLabel = normalizeCompareText(rowLabel);
+    const isOpening = normalizedLabel.includes("dau ky");
+    const quantity =
+      rowDef.sl_ton ??
+      (isOpening
+        ? (getSummaryFormulaValue(context.summaryMeta, [
+            "S2D_OPENING_QTY",
+            "ton_dau_ky_sl",
+          ]) ?? getLatestFieldValue(context.rows, "ton_dau_ky_sl"))
+        : (getSummaryFormulaValue(context.summaryMeta, [
+            "S2D_CLOSING_QTY",
+            "ton_cuoi_ky_sl",
+          ]) ?? getLatestFieldValue(context.rows, "ton_cuoi_ky_sl")));
+    const value =
+      rowDef.tien_ton ??
+      (isOpening
+        ? (getSummaryFormulaValue(context.summaryMeta, [
+            "S2D_OPENING_VALUE",
+            "ton_dau_ky_gt",
+          ]) ?? getLatestFieldValue(context.rows, "ton_dau_ky_gt"))
+        : (getSummaryFormulaValue(context.summaryMeta, [
+            "S2D_CLOSING_VALUE",
+            "ton_cuoi_ky_gt",
+          ]) ?? getLatestFieldValue(context.rows, "ton_cuoi_ky_gt")));
+
+    return {
+      id: index,
+      isEmphasis: true,
+      cells: {
+        so_hieu: "",
+        ngay: "",
+        dien_giai: rowLabel,
+        dvt: "",
+        don_gia: "",
+        sl_nhap: "",
+        tien_nhap: "",
+        sl_xuat: "",
+        tien_xuat: "",
+        sl_ton: formatValue(quantity),
+        tien_ton: formatValue(value),
+      },
+    };
+  };
+
+  const getRowSectionKey = (row: AccountingBookRow): string => {
+    const nestedDataFilter = asRecord(row.dataFilter);
+    const candidates = [
+      asString(row.section),
+      asString((row as Record<string, unknown>).Section),
+      asString(row.sectionType),
+      asString((row as Record<string, unknown>).SectionType),
+      asString(row.groupKey),
+      asString(nestedDataFilter?.section),
+      asString(nestedDataFilter?.Section),
+      asString(nestedDataFilter?.productId),
+    ];
+    return candidates.find((item) => item.trim().length > 0) ?? "";
+  };
+
+  const getRowProductKey = (row: AccountingBookRow): string => {
+    const nestedProduct = asRecord(row.product);
+    const nestedItem = asRecord(row.item);
+    const candidates = [
+      asString(row.productId),
+      asString((row as Record<string, unknown>).product_id),
+      asString((row as Record<string, unknown>).ProductId),
+      asString(row.itemId),
+      asString((row as Record<string, unknown>).ItemId),
+      asString(row.inventoryItemId),
+      asString((row as Record<string, unknown>).InventoryItemId),
+      asString(nestedProduct?.id),
+      asString(nestedProduct?.productId),
+      asString(nestedItem?.id),
+      asString(nestedItem?.itemId),
+    ];
+    return candidates.find((item) => item.trim().length > 0) ?? "";
+  };
+
+  const rows: DisplayRow[] = [];
+  const sections = context.sectionsMeta?.sections ?? [];
+
+  if (sections.length > 0) {
+    const sortedSections = [...sections].sort(
+      (left, right) => (left.groupIndex ?? 0) - (right.groupIndex ?? 0),
+    );
+    const consumedDataRowIndexes = new Set<number>();
+
+    sortedSections.forEach((section, sectionIndex) => {
+      const sectionLabel = normalizeHumanLabel(
+        asString(
+          section.groupName ||
+            section.businessTypeName ||
+            section.groupKey ||
+            section.sectionType ||
+            `Section ${sectionIndex + 1}`,
+        ),
+      );
+      const sectionKey = normalizeCompareText(
+        asString(
+          section.groupKey || section.businessTypeId || section.sectionType,
+        ),
+      );
+
+      rows.push({
+        id: `s2d-section-${sectionIndex}`,
+        isSectionHeader: true,
+        cells: { dien_giai: sectionLabel },
+      });
+
+      (section.rows ?? []).forEach((sectionRow, sectionRowIndex) => {
+        const lineType = normalizeCompareText(asString(sectionRow.lineType));
+
+        if (lineType === "balance row") {
+          rows.push(
+            mapBalanceRow(
+              sectionRow as Record<string, unknown>,
+              `s2d-${sectionIndex}-balance-${sectionRowIndex}`,
+            ),
+          );
+          return;
+        }
+
+        if (lineType === "data placeholder") {
+          const rawFilter = asRecord(sectionRow.dataFilter);
+          const filterKey = normalizeCompareText(
+            asString(
+              rawFilter?.productId ||
+                rawFilter?.section ||
+                section.groupKey ||
+                section.businessTypeId ||
+                section.sectionType,
+            ),
+          );
+
+          context.rows.forEach((dataRow, dataIndex) => {
+            if (consumedDataRowIndexes.has(dataIndex)) return;
+
+            const rowSectionKey = normalizeCompareText(
+              getRowSectionKey(dataRow),
+            );
+            const rowProductKey = normalizeCompareText(
+              getRowProductKey(dataRow),
+            );
+            const matched = filterKey
+              ? rowSectionKey === filterKey || rowProductKey === filterKey
+              : rowSectionKey === sectionKey || rowProductKey === sectionKey;
+
+            if (matched) {
+              consumedDataRowIndexes.add(dataIndex);
+              rows.push(
+                mapDataRow(dataRow, `s2d-${sectionIndex}-data-${dataIndex}`),
+              );
+            }
+          });
+        }
+      });
+    });
+
+    const footerRows = context.sectionsMeta?.footerRows ?? [];
+    footerRows.forEach((footerRow, footerIndex) => {
+      if (
+        normalizeCompareText(asString(footerRow.lineType)) !== "balance row"
+      ) {
+        return;
+      }
+      rows.push(
+        mapBalanceRow(
+          footerRow as Record<string, unknown>,
+          `s2d-footer-${footerIndex}`,
+        ),
+      );
+    });
+  } else {
+    context.rows.forEach((row, index) => {
+      rows.push(mapDataRow(row, `s2d-${index}`));
+    });
+    appendS2dBalanceRows(rows, context);
+  }
+
   appendRemainingFormulaRows(rows, context, "tien_ton", {
     so_hieu: "",
     ngay: "",
@@ -1461,10 +1696,10 @@ function renderS2dTemplate(context: TemplateRenderContext): ReactElement {
   return (
     <div className="bg-white p-8 font-serif text-slate-900 border shadow-2xl space-y-8">
       {renderFormHeader("S2d-HKD", context.templateName, context.versionLabel)}
-      {renderBookTitle("Sß╗ö CHI TIß║╛T Vß║¼T LIß╗åU, Dß╗ñNG Cß╗ñ, Sß║óN PHß║¿M, H├ÇNG H├ôA")}
+      {renderBookTitle("SỔ CHI TIẾT VẬT LIỆU, DỤNG CỤ, SẢN PHẨM, HÀNG HÓA")}
       {renderLedgerTable(columns, rows)}
       {renderSupplementalTable(
-        "Chß╗ë ti├¬u c├┤ng thß╗⌐c v├á c├ón ─æß╗æi tß╗ôn",
+        "Chỉ tiêu công thức và cân đối tồn",
         supplementalColumns,
         context.rows,
       )}
@@ -1478,27 +1713,27 @@ function renderS2eTemplate(context: TemplateRenderContext): ReactElement {
     { key: "stt", label: "STT", letter: "A", minWidthClass: "min-w-14" },
     {
       key: "so_hieu",
-      label: "Sß╗æ hiß╗çu chß╗⌐ng tß╗½",
+      label: "Số hiệu chứng từ",
       letter: "B",
       minWidthClass: "min-w-32",
     },
     {
       key: "ngay_thang",
-      label: "Ng├áy, th├íng",
+      label: "Ngày, tháng",
       letter: "C",
       minWidthClass: "min-w-28",
     },
-    { key: "dien_giai", label: "Diß╗àn giß║úi", letter: "D" },
+    { key: "dien_giai", label: "Diễn giải", letter: "D" },
     {
       key: "thu_vao",
-      label: "Thu/Gß╗¡i v├áo",
+      label: "Thu/Gửi vào",
       letter: "1",
       align: "right",
       minWidthClass: "min-w-24",
     },
     {
       key: "chi_ra",
-      label: "Chi/R├║t ra",
+      label: "Chi/Rút ra",
       letter: "2",
       align: "right",
       minWidthClass: "min-w-24",
@@ -1521,11 +1756,11 @@ function renderS2eTemplate(context: TemplateRenderContext): ReactElement {
       chi_ra: formatValue(
         pickFirstRowValue(row, ["chi_ra", "cash_out", "bank_out"]),
       ),
-      __section:
-        (asString(row.section).trim() ||
-          asString(row.moneyChannel).trim() ||
-          "")
-          .toLowerCase(),
+      __section: (
+        asString(row.section).trim() ||
+        asString(row.moneyChannel).trim() ||
+        ""
+      ).toLowerCase(),
     },
   }));
 
@@ -1540,7 +1775,7 @@ function renderS2eTemplate(context: TemplateRenderContext): ReactElement {
   return (
     <div className="bg-white p-8 font-serif text-slate-900 border shadow-2xl space-y-8">
       {renderFormHeader("S2e-HKD", context.templateName, context.versionLabel)}
-      {renderBookTitle("Sß╗ö CHI TIß║╛T TIß╗ÇN")}
+      {renderBookTitle("SỔ CHI TIẾT TIỀN")}
       {renderLedgerTable(columns, rows)}
 
       {renderSignatureBlock()}
@@ -1580,7 +1815,7 @@ function renderFallbackTemplate(context: TemplateRenderContext): ReactElement {
   return (
     <div className="bg-white p-8 font-serif text-slate-900 border shadow-2xl space-y-8">
       {renderFormHeader(fallbackFormCode, templateName, versionLabel)}
-      {renderBookTitle("Sß╗ö DOANH THU B├üN H├ÇNG H├ôA, Dß╗èCH Vß╗ñ")}
+      {renderBookTitle("SỔ DOANH THU BÁN HÀNG HÓA, DỊCH VỤ")}
       {renderLedgerTable(displayColumns, displayRows)}
       {renderSignatureBlock()}
     </div>
@@ -1611,6 +1846,7 @@ export default function BookTemplatePreview({
   columns,
   rows,
   rowDefinitions,
+  sectionsMeta,
   referenceData,
   summaryMeta,
 }: BookTemplatePreviewProps) {
@@ -1631,6 +1867,7 @@ export default function BookTemplatePreview({
         normalizedColumns,
         rows,
         rowDefinitions: normalizedRowDefinitions,
+        sectionsMeta,
         referenceData,
         summaryMeta,
         totalValue,

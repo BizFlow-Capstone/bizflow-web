@@ -165,6 +165,15 @@ function assembleRowsFromSections(
   const consumedBusinessTypes = new Set<string>();
 
   sectionsMeta.sections.forEach((section) => {
+    const sectionLabel = section.groupName ?? section.businessTypeName;
+    if (sectionLabel) {
+      assembledRows.push({
+        lineType: "section_header",
+        rowType: "section_header",
+        dien_giai: sectionLabel,
+      });
+    }
+
     (section.rows ?? []).forEach((layoutRow) => {
       if (layoutRow.lineType !== "data_placeholder") {
         assembledRows.push(toSectionDisplayRow(layoutRow));

@@ -983,6 +983,32 @@ export default function AdminAccountingClient({
     return asRecord(root?.summary);
   }, [previewResult]);
 
+  const previewSectionsMeta = useMemo(() => {
+    const root = asRecord(previewResult);
+    const rawSections = asArray(root?.sections);
+    if (rawSections.length === 0) return null;
+
+    return {
+      sections: rawSections.map((section) => ({
+        sectionType: String(section.sectionType ?? ""),
+        businessTypeId: String(
+          section.groupKey ?? section.businessTypeId ?? "",
+        ),
+        businessTypeName: String(
+          section.groupName ?? section.businessTypeName ?? "",
+        ),
+        groupKey: String(section.groupKey ?? ""),
+        groupName: String(section.groupName ?? ""),
+        groupIndex:
+          typeof section.groupIndex === "number"
+            ? section.groupIndex
+            : undefined,
+        rows: asArray(section.rows) as Array<Record<string, unknown>>,
+      })),
+      footerRows: asArray(root?.footerRows) as Array<Record<string, unknown>>,
+    };
+  }, [previewResult]);
+
   const previewTemplateIdentity = useMemo(() => {
     const structure = asRecord(previewFullStructure);
     return {
@@ -5485,6 +5511,7 @@ export default function AdminAccountingClient({
                         columns={previewRenderableColumns}
                         rows={previewTemplateRows}
                         rowDefinitions={previewTemplateRowDefinitions}
+                        sectionsMeta={previewSectionsMeta}
                         referenceData={refData}
                         summaryMeta={previewSummaryMeta}
                       />
