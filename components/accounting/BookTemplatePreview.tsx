@@ -1391,6 +1391,7 @@ function renderS2cTemplate(context: TemplateRenderContext): ReactElement {
   const rows: DisplayRow[] = context.rows.map((row, index) => ({
     id: `s2c-${index}`,
     isEmphasis: isEmphasisRowType(asString(row.rowType), context.referenceData),
+    explanation: asString((row as Record<string, unknown>).explanation),
     cells: {
       stt: formatValue(pickFirstRowValue(row, [sttColumn?.fieldCode, "stt"])),
       so_hieu: formatValue(
@@ -1473,6 +1474,7 @@ function renderS2dTemplate(context: TemplateRenderContext): ReactElement {
     return {
       id,
       isEmphasis: isEmphasisRowType(rowType || lineType, context.referenceData),
+      explanation: asString((row as Record<string, unknown>).explanation),
       cells: {
         so_hieu: formatValue(
           pickFirstRowValue(row, ["so_hieu", "chung_tu_so_hieu"]),
@@ -1535,6 +1537,7 @@ function renderS2dTemplate(context: TemplateRenderContext): ReactElement {
     return {
       id: index,
       isEmphasis: true,
+      explanation: asString((rowDef as Record<string, unknown>).explanation),
       cells: {
         so_hieu: "",
         ngay: "",
