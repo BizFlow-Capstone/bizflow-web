@@ -86,6 +86,7 @@ type BookSectionRow = {
   dataFilter?: {
     businessTypeId?: string;
     section?: string;
+    productId?: string;
   };
   taxMetadata?: {
     taxType?: string;
@@ -96,6 +97,8 @@ type BookSection = {
   sectionType: string;
   businessTypeId?: string;
   businessTypeName?: string;
+  groupKey?: string;
+  groupName?: string;
   rows?: BookSectionRow[];
 };
 
@@ -170,8 +173,10 @@ function assembleRowsFromSections(
 
       const placeholderBusinessType = normalizeKey(
         layoutRow.dataFilter?.businessTypeId ??
+          layoutRow.dataFilter?.productId ??
           layoutRow.dataFilter?.section ??
           section.businessTypeId ??
+          section.groupKey ??
           "",
       );
 

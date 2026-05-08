@@ -1,4 +1,4 @@
-import type {
+﻿import type {
   AccountingBookRow,
   AccountingTemplateColumnSummary,
 } from "@/lib/types/adminAccounting";
@@ -197,21 +197,21 @@ function normalizeHumanLabel(raw: string): string {
   if (!trimmed) return "";
 
   const replacements: Array<[RegExp, string]> = [
-    [/tong so thue gtgt phai nop/gi, "Tổng số thuế GTGT phải nộp"],
-    [/tong so thue tncn phai nop/gi, "Tổng số thuế TNCN phải nộp"],
-    [/thue gtgt phai nop/gi, "Thuế GTGT phải nộp"],
-    [/thue tncn phai nop/gi, "Thuế TNCN phải nộp"],
-    [/thue gtgt/gi, "Thuế GTGT"],
-    [/thue tncn/gi, "Thuế TNCN"],
-    [/tong cong/gi, "Tổng cộng"],
-    [/tong doanh thu/gi, "Tổng doanh thu"],
-    [/tong chi phi hop ly/gi, "Tổng chi phí hợp lý"],
-    [/chenh lech/gi, "Chênh lệch"],
-    [/ton dau ky/gi, "Tồn đầu kỳ"],
-    [/ton cuoi ky/gi, "Tồn cuối kỳ"],
-    [/du cuoi ky/gi, "Dư cuối kỳ"],
-    [/tien gui ngan hang/gi, "TIỀN GỬI NGÂN HÀNG"],
-    [/tien mat/gi, "TIỀN MẶT"],
+    [/tong so thue gtgt phai nop/gi, "Tß╗òng sß╗æ thuß║┐ GTGT phß║úi nß╗Öp"],
+    [/tong so thue tncn phai nop/gi, "Tß╗òng sß╗æ thuß║┐ TNCN phß║úi nß╗Öp"],
+    [/thue gtgt phai nop/gi, "Thuß║┐ GTGT phß║úi nß╗Öp"],
+    [/thue tncn phai nop/gi, "Thuß║┐ TNCN phß║úi nß╗Öp"],
+    [/thue gtgt/gi, "Thuß║┐ GTGT"],
+    [/thue tncn/gi, "Thuß║┐ TNCN"],
+    [/tong cong/gi, "Tß╗òng cß╗Öng"],
+    [/tong doanh thu/gi, "Tß╗òng doanh thu"],
+    [/tong chi phi hop ly/gi, "Tß╗òng chi ph├¡ hß╗úp l├╜"],
+    [/chenh lech/gi, "Ch├¬nh lß╗çch"],
+    [/ton dau ky/gi, "Tß╗ôn ─æß║ºu kß╗│"],
+    [/ton cuoi ky/gi, "Tß╗ôn cuß╗æi kß╗│"],
+    [/du cuoi ky/gi, "D╞░ cuß╗æi kß╗│"],
+    [/tien gui ngan hang/gi, "TIß╗ÇN Gß╗¼I NG├éN H├ÇNG"],
+    [/tien mat/gi, "TIß╗ÇN Mß║╢T"],
   ];
 
   let result = trimmed;
@@ -401,15 +401,15 @@ function renderSignatureBlock() {
     <div className="grid grid-cols-2 gap-8 pt-8 font-serif">
       <div className="text-center italic text-xs font-serif"></div>
       <div className="text-center space-y-1 font-serif">
-        <p className="italic text-xs font-serif">Ngày ... tháng ... năm ...</p>
+        <p className="italic text-xs font-serif">Ng├áy ... th├íng ... n─âm ...</p>
         <p className="font-bold text-sm uppercase font-serif">
-          NGƯỜI ĐẠI DIỆN HỘ KINH DOANH/
+          NG╞»ß╗£I ─Éß║áI DIß╗åN Hß╗ÿ KINH DOANH/
         </p>
         <p className="font-bold text-sm uppercase font-serif">
-          CÁ NHÂN KINH DOANH
+          C├ü NH├éN KINH DOANH
         </p>
         <p className="italic text-xs pt-2 font-serif">
-          (Ký, ghi rõ họ tên, đóng dấu (nếu có))
+          (K├╜, ghi r├╡ hß╗ì t├¬n, ─æ├│ng dß║Ñu (nß║┐u c├│))
         </p>
       </div>
     </div>
@@ -425,26 +425,26 @@ function renderFormHeader(
     <div className="flex justify-between items-start text-xs leading-relaxed font-serif">
       <div className="space-y-1 font-serif">
         <p className="font-bold font-serif uppercase">
-          HỘ, CÁ NHÂN KINH DOANH: ........................
+          Hß╗ÿ, C├ü NH├éN KINH DOANH: ........................
         </p>
         <p className="font-serif">
-          Địa chỉ: .............................................................
+          ─Éß╗ïa chß╗ë: .............................................................
         </p>
         <p className="font-serif">
-          Mã số thuế: .......................................................
+          M├ú sß╗æ thuß║┐: .......................................................
         </p>
       </div>
       <div className="text-right italic space-y-1 max-w-xs font-serif">
-        <p className="font-bold not-italic font-serif">Mẫu số {formCode}</p>
+        <p className="font-bold not-italic font-serif">Mß║½u sß╗æ {formCode}</p>
         <p className="font-serif">
-          {templateName || "Sổ doanh thu bán hàng hóa, dịch vụ"}
+          {templateName || "Sß╗ò doanh thu b├ín h├áng h├│a, dß╗ïch vß╗Ñ"}
         </p>
         <p className="font-serif">
           {versionLabel ? `Version: ${versionLabel}` : ""}
         </p>
-        <p className="font-serif">(Kèm theo Thông tư số 152/2025/TT-BTC</p>
-        <p className="font-serif">ngày 31 tháng 12 năm 2025 của Bộ trưởng</p>
-        <p className="font-serif">Bộ Tài chính)</p>
+        <p className="font-serif">(K├¿m theo Th├┤ng t╞░ sß╗æ 152/2025/TT-BTC</p>
+        <p className="font-serif">ng├áy 31 th├íng 12 n─âm 2025 cß╗ºa Bß╗Ö tr╞░ß╗ƒng</p>
+        <p className="font-serif">Bß╗Ö T├ái ch├¡nh)</p>
       </div>
     </div>
   );
@@ -459,18 +459,18 @@ function renderBookTitle(title: string, showUnit: boolean = true) {
         </h2>
         <div className="text-sm space-y-1 font-serif">
           <p className="font-serif">
-            Địa điểm kinh doanh:
+            ─Éß╗ïa ─æiß╗âm kinh doanh:
             .....................................................
           </p>
           <p className="font-serif">
-            Kỳ kê khai:
+            Kß╗│ k├¬ khai:
             .......................................................................
           </p>
         </div>
       </div>
       {showUnit ? (
         <div className="flex justify-end italic text-xs mb-2 font-serif">
-          Đơn vị tính: .....................
+          ─É╞ín vß╗ï t├¡nh: .....................
         </div>
       ) : null}
     </>
@@ -672,7 +672,7 @@ function renderS1aTemplate(context: TemplateRenderContext): ReactElement {
   return (
     <div className="bg-white p-8 font-serif text-slate-900 border shadow-2xl space-y-8 transition-all hover:shadow-cyan-100/50">
       {renderFormHeader("S1a-HKD", templateName, versionLabel)}
-      {renderBookTitle("SỔ DOANH THU BÁN HÀNG HÓA, DỊCH VỤ")}
+      {renderBookTitle("Sß╗ö DOANH THU B├üN H├ÇNG H├ôA, Dß╗èCH Vß╗ñ")}
       {renderLedgerTable(displayColumns, displayRows)}
       {renderSignatureBlock()}
     </div>
@@ -718,7 +718,7 @@ function buildS2MainRows(
     findAmountColumn(normalizedColumns, reservedCodes) ||
     ({
       fieldCode: "so_tien",
-      label: "Số tiền",
+      label: "Sß╗æ tiß╗ün",
       fieldType: "decimal",
       exportColumn: "",
     } as NormalizedColumn);
@@ -737,25 +737,25 @@ function buildS2MainRows(
   displayColumns.push(
     {
       key: "so_hieu",
-      label: "Số hiệu chứng từ",
+      label: "Sß╗æ hiß╗çu chß╗⌐ng tß╗½",
       letter: includeStt ? "B" : "A",
       minWidthClass: "min-w-32",
     },
     {
       key: "ngay_thang",
-      label: "Ngày, tháng",
+      label: "Ng├áy, th├íng",
       letter: includeStt ? "C" : "B",
       minWidthClass: "min-w-28",
     },
     {
       key: "dien_giai",
-      label: "Diễn giải",
+      label: "Diß╗àn giß║úi",
       letter: includeStt ? "D" : "C",
       align: "left",
     },
     {
       key: "so_tien",
-      label: "Số tiền",
+      label: "Sß╗æ tiß╗ün",
       letter: "1",
       align: "right",
       minWidthClass: "min-w-36",
@@ -766,7 +766,7 @@ function buildS2MainRows(
     const taxType = asString(row.taxType).toUpperCase();
     const taxLabel =
       taxTypeLabels.get(taxType) ||
-      (taxType === "PIT" ? "Thuế TNCN" : "Thuế GTGT");
+      (taxType === "PIT" ? "Thuß║┐ TNCN" : "Thuß║┐ GTGT");
     const description = resolveRowDescription(
       row,
       descriptionColumn?.fieldCode,
@@ -950,10 +950,10 @@ function renderS2aTemplate(context: TemplateRenderContext): ReactElement {
   return (
     <div className="bg-white p-8 font-serif text-slate-900 border shadow-2xl space-y-8">
       {renderFormHeader("S2a-HKD", context.templateName, context.versionLabel)}
-      {renderBookTitle("SỔ DOANH THU BÁN HÀNG HÓA, DỊCH VỤ")}
+      {renderBookTitle("Sß╗ö DOANH THU B├üN H├ÇNG H├ôA, Dß╗èCH Vß╗ñ")}
       {renderLedgerTable(columns, rows)}
       {renderSupplementalTable(
-        "Thông tin bổ sung từ template",
+        "Th├┤ng tin bß╗ò sung tß╗½ template",
         supplementalColumns,
         context.rows,
       )}
@@ -972,10 +972,10 @@ function renderS2bTemplate(context: TemplateRenderContext): ReactElement {
   return (
     <div className="bg-white p-8 font-serif text-slate-900 border shadow-2xl space-y-8">
       {renderFormHeader("S2b-HKD", context.templateName, context.versionLabel)}
-      {renderBookTitle("SỔ DOANH THU BÁN HÀNG HÓA, DỊCH VỤ (CÁCH 2)")}
+      {renderBookTitle("Sß╗ö DOANH THU B├üN H├ÇNG H├ôA, Dß╗èCH Vß╗ñ (C├üCH 2)")}
       {renderLedgerTable(columns, rows)}
       {renderSupplementalTable(
-        "Thông tin bổ sung từ template",
+        "Th├┤ng tin bß╗ò sung tß╗½ template",
         supplementalColumns,
         context.rows,
       )}
@@ -1294,7 +1294,7 @@ function renderS2cTemplate(context: TemplateRenderContext): ReactElement {
     findAmountColumn(context.normalizedColumns) ||
     ({
       fieldCode: "so_tien",
-      label: "Số tiền",
+      label: "Sß╗æ tiß╗ün",
       fieldType: "decimal",
       exportColumn: "",
     } as NormalizedColumn);
@@ -1303,20 +1303,20 @@ function renderS2cTemplate(context: TemplateRenderContext): ReactElement {
     { key: "stt", label: "STT", letter: "A", minWidthClass: "min-w-14" },
     {
       key: "so_hieu",
-      label: "Số hiệu chứng từ",
+      label: "Sß╗æ hiß╗çu chß╗⌐ng tß╗½",
       letter: "B",
       minWidthClass: "min-w-32",
     },
     {
       key: "ngay_thang",
-      label: "Ngày, tháng",
+      label: "Ng├áy, th├íng",
       letter: "C",
       minWidthClass: "min-w-28",
     },
-    { key: "dien_giai", label: "Diễn giải", letter: "D" },
+    { key: "dien_giai", label: "Diß╗àn giß║úi", letter: "D" },
     {
       key: "so_tien",
-      label: "Số tiền",
+      label: "Sß╗æ tiß╗ün",
       letter: "1",
       align: "right",
       minWidthClass: "min-w-36",
@@ -1356,7 +1356,7 @@ function renderS2cTemplate(context: TemplateRenderContext): ReactElement {
   return (
     <div className="bg-white p-8 font-serif text-slate-900 border shadow-2xl space-y-8">
       {renderFormHeader("S2c-HKD", context.templateName, context.versionLabel)}
-      {renderBookTitle("SỔ CHI TIẾT DOANH THU, CHI PHÍ")}
+      {renderBookTitle("Sß╗ö CHI TIß║╛T DOANH THU, CHI PH├ì")}
       {renderLedgerTable(columns, rows)}
 
       {renderSignatureBlock()}
@@ -1369,7 +1369,7 @@ function renderS2dTemplate(context: TemplateRenderContext): ReactElement {
     findColumn(context.normalizedColumns, ["ngay", "ngay_thang", "date"]) ||
     ({
       fieldCode: "ngay",
-      label: "Ngày",
+      label: "Ng├áy",
       fieldType: "date",
       exportColumn: "",
     } as NormalizedColumn);
@@ -1377,25 +1377,25 @@ function renderS2dTemplate(context: TemplateRenderContext): ReactElement {
   const columns: DisplayColumn[] = [
     {
       key: "so_hieu",
-      label: "Số hiệu CT",
+      label: "Sß╗æ hiß╗çu CT",
       letter: "A",
       minWidthClass: "min-w-28",
     },
-    { key: "ngay", label: "Ngày", letter: "B", minWidthClass: "min-w-24" },
+    { key: "ngay", label: "Ng├áy", letter: "B", minWidthClass: "min-w-24" },
     {
       key: "dien_giai",
-      label: "Diễn giải",
+      label: "Diß╗àn giß║úi",
       letter: "C",
       minWidthClass: "min-w-44",
     },
-    { key: "dvt", label: "ĐVT", letter: "D", minWidthClass: "min-w-16" },
-    { key: "don_gia", label: "Đơn giá", letter: "1", align: "right" },
-    { key: "sl_nhap", label: "Nhập - SL", letter: "2", align: "right" },
-    { key: "tien_nhap", label: "Nhập - Tiền", letter: "3", align: "right" },
-    { key: "sl_xuat", label: "Xuất - SL", letter: "4", align: "right" },
-    { key: "tien_xuat", label: "Xuất - Tiền", letter: "5", align: "right" },
-    { key: "sl_ton", label: "Tồn - SL", letter: "6", align: "right" },
-    { key: "tien_ton", label: "Tồn - Tiền", letter: "7", align: "right" },
+    { key: "dvt", label: "─ÉVT", letter: "D", minWidthClass: "min-w-16" },
+    { key: "don_gia", label: "─É╞ín gi├í", letter: "1", align: "right" },
+    { key: "sl_nhap", label: "Nhß║¡p - SL", letter: "2", align: "right" },
+    { key: "tien_nhap", label: "Nhß║¡p - Tiß╗ün", letter: "3", align: "right" },
+    { key: "sl_xuat", label: "Xuß║Ñt - SL", letter: "4", align: "right" },
+    { key: "tien_xuat", label: "Xuß║Ñt - Tiß╗ün", letter: "5", align: "right" },
+    { key: "sl_ton", label: "Tß╗ôn - SL", letter: "6", align: "right" },
+    { key: "tien_ton", label: "Tß╗ôn - Tiß╗ün", letter: "7", align: "right" },
   ];
 
   const rows: DisplayRow[] = context.rows.map((row, index) => ({
@@ -1461,10 +1461,10 @@ function renderS2dTemplate(context: TemplateRenderContext): ReactElement {
   return (
     <div className="bg-white p-8 font-serif text-slate-900 border shadow-2xl space-y-8">
       {renderFormHeader("S2d-HKD", context.templateName, context.versionLabel)}
-      {renderBookTitle("SỔ CHI TIẾT VẬT LIỆU, DỤNG CỤ, SẢN PHẨM, HÀNG HÓA")}
+      {renderBookTitle("Sß╗ö CHI TIß║╛T Vß║¼T LIß╗åU, Dß╗ñNG Cß╗ñ, Sß║óN PHß║¿M, H├ÇNG H├ôA")}
       {renderLedgerTable(columns, rows)}
       {renderSupplementalTable(
-        "Chỉ tiêu công thức và cân đối tồn",
+        "Chß╗ë ti├¬u c├┤ng thß╗⌐c v├á c├ón ─æß╗æi tß╗ôn",
         supplementalColumns,
         context.rows,
       )}
@@ -1478,27 +1478,27 @@ function renderS2eTemplate(context: TemplateRenderContext): ReactElement {
     { key: "stt", label: "STT", letter: "A", minWidthClass: "min-w-14" },
     {
       key: "so_hieu",
-      label: "Số hiệu chứng từ",
+      label: "Sß╗æ hiß╗çu chß╗⌐ng tß╗½",
       letter: "B",
       minWidthClass: "min-w-32",
     },
     {
       key: "ngay_thang",
-      label: "Ngày, tháng",
+      label: "Ng├áy, th├íng",
       letter: "C",
       minWidthClass: "min-w-28",
     },
-    { key: "dien_giai", label: "Diễn giải", letter: "D" },
+    { key: "dien_giai", label: "Diß╗àn giß║úi", letter: "D" },
     {
       key: "thu_vao",
-      label: "Thu/Gửi vào",
+      label: "Thu/Gß╗¡i v├áo",
       letter: "1",
       align: "right",
       minWidthClass: "min-w-24",
     },
     {
       key: "chi_ra",
-      label: "Chi/Rút ra",
+      label: "Chi/R├║t ra",
       letter: "2",
       align: "right",
       minWidthClass: "min-w-24",
@@ -1540,7 +1540,7 @@ function renderS2eTemplate(context: TemplateRenderContext): ReactElement {
   return (
     <div className="bg-white p-8 font-serif text-slate-900 border shadow-2xl space-y-8">
       {renderFormHeader("S2e-HKD", context.templateName, context.versionLabel)}
-      {renderBookTitle("SỔ CHI TIẾT TIỀN")}
+      {renderBookTitle("Sß╗ö CHI TIß║╛T TIß╗ÇN")}
       {renderLedgerTable(columns, rows)}
 
       {renderSignatureBlock()}
@@ -1580,7 +1580,7 @@ function renderFallbackTemplate(context: TemplateRenderContext): ReactElement {
   return (
     <div className="bg-white p-8 font-serif text-slate-900 border shadow-2xl space-y-8">
       {renderFormHeader(fallbackFormCode, templateName, versionLabel)}
-      {renderBookTitle("SỔ DOANH THU BÁN HÀNG HÓA, DỊCH VỤ")}
+      {renderBookTitle("Sß╗ö DOANH THU B├üN H├ÇNG H├ôA, Dß╗èCH Vß╗ñ")}
       {renderLedgerTable(displayColumns, displayRows)}
       {renderSignatureBlock()}
     </div>
