@@ -2,6 +2,7 @@ import { authFetch } from "@/lib/auth/tokenManager";
 import type {
   ApiResponse,
   DashboardSummary,
+  SummaryPeriod,
   RevenueChartData,
   TopProductsData,
   PaymentRatioData,
@@ -21,8 +22,8 @@ type BackendDashboardSummary = {
   totalRevenue: number;
   totalCost: number;
   totalCompletedOrders: number;
-  totalOutstandingDebt: number;
-  outstandingDebtAsOfUtc: string;
+  outstandingDebtNetChangeInPeriod?: number;
+  totalOutstandingDebt?: number;
 };
 
 type BackendOrderItem = {
@@ -41,11 +42,6 @@ type BackendOrderPage = {
   pageNumber: number;
   pageSize: number;
   hasNextPage: boolean;
-};
-
-type BackendProductPage = {
-  items: unknown[];
-  totalCount: number;
 };
 
 // ---------------------------------------------------------------------------
@@ -115,47 +111,30 @@ async function fetchCompletedOrders(
 
 export async function getDashboardSummary(
   locationId: number,
+  period: SummaryPeriod = "day",
 ): Promise<ApiResponse<DashboardSummary>> {
-  const today = isoDateOffset(0);
-
-  // Run summary + low-stock-count + today's orders in parallel
-  const [summaryData, productPage, todayOrders] = await Promise.all([
-    fetchBackendApiJson<BackendDashboardSummary>(
-      "/api/my-business/dashboard",
-      locationId > 0
-        ? { Period: "day", BusinessLocationId: locationId }
-        : { Period: "day" },
-    ),
-    fetchBackendApiJson<BackendProductPage>("/api/products", {
-      LocationId: locationId,
-      MaxStock: 10,
-      TrackInventory: "true",
-      Status: "active",
-      PageSize: 1,
-    }),
-    fetchCompletedOrders(locationId, today, today),
-  ]);
-
-  const todayCashIn = todayOrders.reduce(
-    (s, o) => s + (Number(o.cashAmount) || 0),
-    0,
-  );
-  const todayBankIn = todayOrders.reduce(
-    (s, o) => s + (Number(o.bankAmount) || 0),
-    0,
+  const summaryData = await fetchBackendApiJson<BackendDashboardSummary>(
+    "/api/my-business/dashboard/summary",
+    locationId > 0
+      ? { Period: period, BusinessLocationId: locationId }
+      : { Period: period },
   );
 
   return {
     data: {
-      date: today,
-      todayRevenue: Number(summaryData?.totalRevenue ?? 0),
-      todayOrders: summaryData?.totalCompletedOrders ?? 0,
-      totalOutstandingDebt: Number(summaryData?.totalOutstandingDebt ?? 0),
-      lowStockCount: productPage?.totalCount ?? 0,
-      todayCashIn,
-      todayBankIn,
-      todayCashOut: 0,
-      todayBankOut: 0,
+      businessLocationId: summaryData?.businessLocationId ?? locationId,
+      includedLocationCount: Number(summaryData?.includedLocationCount ?? 0),
+      period,
+      fromDate: summaryData?.fromDate ?? "",
+      toDate: summaryData?.toDate ?? "",
+      totalRevenue: Number(summaryData?.totalRevenue ?? 0),
+      totalCost: Number(summaryData?.totalCost ?? 0),
+      totalCompletedOrders: Number(summaryData?.totalCompletedOrders ?? 0),
+      outstandingDebtNetChangeInPeriod: Number(
+        summaryData?.outstandingDebtNetChangeInPeriod ??
+          summaryData?.totalOutstandingDebt ??
+          0,
+      ),
     },
     success: true,
     messageCode: "SUCCESS",

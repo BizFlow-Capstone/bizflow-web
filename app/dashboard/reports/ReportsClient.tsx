@@ -883,11 +883,7 @@ function ReportsTab({ locationId }: { locationId: number }) {
       label: "Chi phí",
       icon: <TrendingDown className="w-3.5 h-3.5" />,
     },
-    {
-      key: "cashflow" as const,
-      label: "Dòng tiền",
-      icon: <Banknote className="w-3.5 h-3.5" />,
-    },
+
     {
       key: "anomalies" as const,
       label: "Bất thường",
@@ -1244,96 +1240,8 @@ function ReportsTab({ locationId }: { locationId: number }) {
 
       {/* Revenue */}
       {subTab === "revenue" && (
-        <DataCard
-          title="Doanh thu"
-          subtitle={
-            revenues
-              ? `${revenueCardWindows.current.label}: ${new Intl.NumberFormat("vi-VN").format(revenueCardTxnCount)} giao dịch · Tổng: ${formatVnd(revenueCardTotal)}`
-              : undefined
-          }
-          loading={revLoading}
-        >
+        <DataCard title="Doanh thu" loading={revLoading}>
           <div className="p-5 space-y-5">
-            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-              <div>
-                <h4 className="text-base font-semibold text-gray-900">
-                  Tổng quan doanh thu
-                </h4>
-                <p className="text-sm text-gray-500">
-                  Theo dõi xu hướng doanh thu và thêm ghi nhận thủ công.
-                </p>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-lg">
-                  {CARD_PERIOD_OPTIONS.map((option) => (
-                    <button
-                      key={`rev-period-${option.key}`}
-                      onClick={() => setRevenueCardPeriod(option.key)}
-                      className={`px-2.5 py-1.5 rounded-md text-xs font-medium transition-all ${
-                        revenueCardPeriod === option.key
-                          ? "bg-white text-gray-800 shadow-sm"
-                          : "text-gray-500 hover:text-gray-700"
-                      }`}
-                    >
-                      {option.label}
-                    </button>
-                  ))}
-                </div>
-
-                <Button
-                  onClick={() => {
-                    resetRevenueForm();
-                    setIsRevenueModalOpen(true);
-                  }}
-                  className="bg-[#23C4C1] hover:bg-[#1aa8a5] text-white"
-                >
-                  <Plus className="w-4 h-4 mr-1" />
-                  Thêm doanh thu
-                </Button>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-              <RevenueStatCard
-                title={`Tổng doanh thu (${revenueCardWindows.current.label})`}
-                value={formatCompactVnd(revenueCardTotal)}
-                trend={formatPeriodTrend(
-                  revenueCardTotal,
-                  revenueCardTotalPrev,
-                )}
-                positive={revenueCardTotal >= revenueCardTotalPrev}
-              />
-              <RevenueStatCard
-                title="Trung bình mỗi ngày"
-                value={formatCompactVnd(revenueCardAvgDaily)}
-                trend={formatPeriodTrend(
-                  revenueCardAvgDaily,
-                  revenueCardAvgDailyPrev,
-                )}
-                positive={revenueCardAvgDaily >= revenueCardAvgDailyPrev}
-              />
-              <RevenueStatCard
-                title="Giá trị giao dịch TB"
-                value={formatCompactVnd(revenueCardAvgOrder)}
-                trend={formatPeriodTrend(
-                  revenueCardAvgOrder,
-                  revenueCardAvgOrderPrev,
-                )}
-                positive={revenueCardAvgOrder >= revenueCardAvgOrderPrev}
-              />
-              <RevenueStatCard
-                title="Số lượng giao dịch"
-                value={new Intl.NumberFormat("vi-VN").format(
-                  revenueCardTxnCount,
-                )}
-                trend={formatPeriodTrend(
-                  revenueCardTxnCount,
-                  revenueCardTxnCountPrev,
-                )}
-                positive={revenueCardTxnCount >= revenueCardTxnCountPrev}
-              />
-            </div>
-
             <div className="rounded-2xl border p-4 space-y-4 bg-linear-to-br from-slate-50 to-cyan-50/50">
               <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
                 <div>
@@ -1407,103 +1315,6 @@ function ReportsTab({ locationId }: { locationId: number }) {
                   Chưa có dữ liệu dự báo doanh thu cho địa điểm này.
                 </div>
               )}
-            </div>
-
-            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-              <div className="rounded-2xl border p-4">
-                <h5 className="text-xl font-semibold leading-none text-gray-900 mb-4">
-                  Doanh Thu vs Thực Tế
-                </h5>
-                <RevenueBarsChart data={revenueSeries} />
-              </div>
-              <div className="rounded-2xl border p-4">
-                <h5 className="text-xl font-semibold leading-none text-gray-900 mb-4">
-                  Xu Hướng Tăng Trưởng Doanh Thu
-                </h5>
-                <RevenueGrowthDots data={revenueSeries} />
-              </div>
-            </div>
-
-            <div className="rounded-2xl border overflow-hidden">
-              <div className="px-4 py-3 border-b bg-white">
-                <h5 className="text-xl font-semibold leading-none text-gray-900">
-                  Chi Tiết Doanh Thu Theo Nguồn
-                </h5>
-              </div>
-              <Table>
-                <TableHeader>
-                  <TableRow className="bg-gray-50 hover:bg-gray-50">
-                    <TableHead>Nguồn Doanh Thu</TableHead>
-                    <TableHead className="text-right">Tổng Doanh Thu</TableHead>
-                    <TableHead className="text-right">% Tổng</TableHead>
-                    <TableHead className="text-right">
-                      Tỷ Lệ Tăng Trưởng
-                    </TableHead>
-                    <TableHead className="text-right">Xu Hướng</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {revenueSourceRows.map((row) => (
-                    <TableRow key={row.label}>
-                      <TableCell className="font-medium">{row.label}</TableCell>
-                      <TableCell className="text-right font-semibold text-gray-800">
-                        {formatCompactVnd(row.total)}
-                      </TableCell>
-                      <TableCell className="text-right text-gray-600">
-                        {row.share.toFixed(1)}%
-                      </TableCell>
-                      <TableCell
-                        className={`text-right font-semibold ${row.growth >= 0 ? "text-emerald-600" : "text-red-500"}`}
-                      >
-                        {row.growth >= 0 ? "+" : ""}
-                        {row.growth.toFixed(1)}%
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <Badge
-                          className={
-                            row.growth >= 0
-                              ? "bg-blue-600 text-white"
-                              : "bg-pink-500 text-white"
-                          }
-                        >
-                          {row.growth >= 0 ? "↑ Tăng" : "↓ Giảm"}
-                        </Badge>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                  {revenueSourceRows.length === 0 && (
-                    <TableRow>
-                      <TableCell
-                        colSpan={5}
-                        className="text-center py-8 text-gray-500"
-                      >
-                        Chưa có dữ liệu doanh thu.
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-              <div className="px-4 py-3 border-t bg-gray-50 flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-gray-500">
-                    Tổng từ tất cả các nguồn
-                  </p>
-                  <p className="text-2xl font-bold text-gray-900">
-                    {formatCompactVnd(totalRevenue)}
-                  </p>
-                </div>
-                <div className="text-right">
-                  <p className="text-sm text-gray-500">
-                    Tỷ lệ tăng trưởng trung bình
-                  </p>
-                  <p
-                    className={`text-3xl font-bold ${revenueTrendAverage >= 0 ? "text-emerald-600" : "text-red-500"}`}
-                  >
-                    {revenueTrendAverage >= 0 ? "+" : ""}
-                    {revenueTrendAverage.toFixed(1)}%
-                  </p>
-                </div>
-              </div>
             </div>
 
             <div className="rounded-2xl border overflow-hidden">
@@ -1736,15 +1547,7 @@ function ReportsTab({ locationId }: { locationId: number }) {
 
       {/* Cost */}
       {subTab === "cost" && (
-        <DataCard
-          title="Chi phí"
-          subtitle={
-            costs
-              ? `${costCardWindows.current.label}: ${new Intl.NumberFormat("vi-VN").format(costCardTxnCount)} giao dịch · Tổng: ${formatVnd(costCardTotal)}`
-              : undefined
-          }
-          loading={costLoading}
-        >
+        <DataCard title="Chi phí" loading={costLoading}>
           <div className="p-5 space-y-5">
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-lg w-fit">
@@ -1770,71 +1573,6 @@ function ReportsTab({ locationId }: { locationId: number }) {
                 <Plus className="w-4 h-4 mr-1" />
                 Thêm chi phí
               </Button>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-              <CostStatCard
-                title={`Tổng chi phí (${costCardWindows.current.label})`}
-                value={formatCompactVnd(costCardTotal)}
-                trend={formatPeriodTrend(costCardTotal, costCardTotalPrev)}
-                positive={costCardTotal <= costCardTotalPrev}
-              />
-              <CostStatCard
-                title="Trung bình mỗi ngày"
-                value={formatCompactVnd(costCardAvgDaily)}
-                trend={formatPeriodTrend(
-                  costCardAvgDaily,
-                  costCardAvgDailyPrev,
-                )}
-                positive={costCardAvgDaily <= costCardAvgDailyPrev}
-              />
-              <CostStatCard
-                title="Tỷ trọng chi phí / doanh thu"
-                value={`${costToRevenueRatio.toFixed(1)}%`}
-                trend={formatPeriodTrend(
-                  costToRevenueRatio,
-                  costToRevenueRatioPrev,
-                )}
-                positive={costToRevenueRatio <= costToRevenueRatioPrev}
-              />
-              <CostStatCard
-                title="Số lượng giao dịch"
-                value={new Intl.NumberFormat("vi-VN").format(costCardTxnCount)}
-                trend={formatPeriodTrend(
-                  costCardTxnCount,
-                  costCardTxnCountPrev,
-                )}
-                positive={costCardTxnCount <= costCardTxnCountPrev}
-              />
-            </div>
-
-            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-              <div className="rounded-2xl border p-4">
-                <h5 className="text-xl font-semibold leading-none text-gray-900 mb-4">
-                  Phân Bổ Chi Phí
-                </h5>
-                <CostPieChart data={costCategoryRows} />
-              </div>
-              <div className="rounded-2xl border p-4">
-                <h5 className="text-xl font-semibold leading-none text-gray-900 mb-4">
-                  Xu Hướng Chi Phí vs Ngân Sách
-                </h5>
-                <CostBudgetBarsChart data={costSeries} />
-              </div>
-            </div>
-
-            <div className="rounded-2xl border p-4">
-              <h5 className="text-xl font-semibold leading-none text-gray-900 mb-4">
-                Phân Tích Xu Hướng Chi Phí
-              </h5>
-              <CostTrendDots data={costSeries} />
-            </div>
-
-            <div className="rounded-2xl border p-4">
-              <h5 className="text-2xl font-semibold leading-none text-gray-900 mb-4">
-                Các Danh Mục Chi Phí &amp; Trạng Thái Ngân Sách
-              </h5>
-              <CostBudgetCategoryList data={costCategoryRows} />
             </div>
 
             <div className="rounded-2xl border overflow-hidden">
@@ -2247,108 +1985,6 @@ function ReportsTab({ locationId }: { locationId: number }) {
           </div>
         </DataCard>
       )}
-
-      {/* Cash Flow */}
-      {subTab === "cashflow" &&
-        (cfLoading ? (
-          <div className="bg-white rounded-2xl border p-12 flex justify-center">
-            <Loader2 className="w-6 h-6 animate-spin text-[#23C4C1]" />
-          </div>
-        ) : cashFlow ? (
-          <div className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {cashFlow.channels.map((ch) => (
-                <div
-                  key={ch.channel}
-                  className="bg-white rounded-2xl border p-5 space-y-4"
-                >
-                  <div className="flex items-center gap-2">
-                    {ch.channel === "cash" && (
-                      <Banknote className="w-5 h-5 text-emerald-500" />
-                    )}
-                    {ch.channel === "bank" && (
-                      <Landmark className="w-5 h-5 text-blue-500" />
-                    )}
-                    {ch.channel === "debt" && (
-                      <CreditCard className="w-5 h-5 text-amber-500" />
-                    )}
-                    <h4 className="font-semibold text-gray-800">
-                      {ch.channel === "cash"
-                        ? "Tiền mặt"
-                        : ch.channel === "bank"
-                          ? "Ngân hàng"
-                          : "Công nợ"}
-                    </h4>
-                  </div>
-                  <div className="space-y-2 text-sm">
-                    <div className="flex justify-between">
-                      <span className="text-gray-500">Vào</span>
-                      <span className="font-medium text-emerald-600">
-                        +{formatVnd(ch.totalIn)}
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-500">Ra</span>
-                      <span className="font-medium text-red-500">
-                        -{formatVnd(ch.totalOut)}
-                      </span>
-                    </div>
-                    <Separator />
-                    <div className="flex justify-between">
-                      <span className="font-medium text-gray-700">Ròng</span>
-                      <span className="font-bold text-gray-900">
-                        {formatVnd(ch.net)}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div className="bg-white rounded-2xl border p-5">
-              <h4 className="font-semibold text-gray-800 mb-4">
-                Tổng hợp dòng tiền
-              </h4>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                {[
-                  {
-                    label: "Tổng vào",
-                    value: cashFlow.channels.reduce((s, c) => s + c.totalIn, 0),
-                    color: "text-emerald-600",
-                  },
-                  {
-                    label: "Tổng ra",
-                    value: cashFlow.channels.reduce(
-                      (s, c) => s + c.totalOut,
-                      0,
-                    ),
-                    color: "text-red-500",
-                  },
-                  {
-                    label: "Ròng tiền mặt",
-                    value:
-                      cashFlow.channels.find((c) => c.channel === "cash")
-                        ?.net ?? 0,
-                    color: "text-gray-900",
-                  },
-                  {
-                    label: "Nợ phát sinh",
-                    value:
-                      cashFlow.channels.find((c) => c.channel === "debt")
-                        ?.totalIn ?? 0,
-                    color: "text-amber-600",
-                  },
-                ].map((item) => (
-                  <div key={item.label}>
-                    <p className="text-gray-400 text-xs mb-1">{item.label}</p>
-                    <p className={`font-bold text-lg ${item.color}`}>
-                      {formatVnd(item.value)}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        ) : null)}
     </div>
   );
 }

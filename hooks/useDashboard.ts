@@ -6,12 +6,12 @@ import {
   getPaymentRatio,
   getRevenueByType,
 } from "@/services/dashboardService";
-import type { ChartPeriod } from "@/lib/types/dashboard";
+import type { ChartPeriod, SummaryPeriod } from "@/lib/types/dashboard";
 
 export const dashboardKeys = {
   all: ["dashboard"] as const,
-  summary: (locationId: number) =>
-    [...dashboardKeys.all, "summary", locationId] as const,
+  summary: (locationId: number, period: SummaryPeriod) =>
+    [...dashboardKeys.all, "summary", locationId, period] as const,
   revenueChart: (locationId: number, period: ChartPeriod) =>
     [...dashboardKeys.all, "revenue-chart", locationId, period] as const,
   topProducts: (locationId: number, period: ChartPeriod) =>
@@ -22,11 +22,11 @@ export const dashboardKeys = {
     [...dashboardKeys.all, "revenue-by-type", locationId, period] as const,
 };
 
-export function useDashboardSummary(locationId: number) {
+export function useDashboardSummary(locationId: number, period: SummaryPeriod) {
   return useQuery({
-    queryKey: dashboardKeys.summary(locationId),
+    queryKey: dashboardKeys.summary(locationId, period),
     queryFn: async () => {
-      const result = await getDashboardSummary(locationId);
+      const result = await getDashboardSummary(locationId, period);
       if (!result.success) throw new Error(result.message);
       return result.data;
     },

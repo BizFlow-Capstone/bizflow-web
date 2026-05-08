@@ -46,7 +46,7 @@ export default function DashboardSidebar() {
     { href: "/dashboard/products", label: "Sản Phẩm", icon: Package },
     {
       href: "/dashboard/customers",
-      label: "Khách Hàng Thân Thiết",
+      label: "Công Nợ",
       icon: Heart,
     },
     {

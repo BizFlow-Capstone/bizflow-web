@@ -466,27 +466,6 @@ export default function GeneralLedgerTab({
 
   return (
     <div className="space-y-5">
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-        <div className="rounded-2xl border bg-white p-4">
-          <p className="text-sm text-gray-500 mb-1">Tổng thu (theo bộ lọc)</p>
-          <p className="text-2xl font-bold text-emerald-600">
-            {fmt.format(summary.totalIn)}
-          </p>
-        </div>
-        <div className="rounded-2xl border bg-white p-4">
-          <p className="text-sm text-gray-500 mb-1">Tổng chi (theo bộ lọc)</p>
-          <p className="text-2xl font-bold text-red-600">
-            {fmt.format(summary.totalOut)}
-          </p>
-        </div>
-        <div className="rounded-2xl border bg-white p-4">
-          <p className="text-sm text-gray-500 mb-1">Chênh lệch thu chi</p>
-          <p className="text-2xl font-bold text-gray-900">
-            {fmt.format(summary.net)}
-          </p>
-        </div>
-      </div>
-
       <div className="bg-white rounded-2xl border p-5 space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2 text-gray-800">
