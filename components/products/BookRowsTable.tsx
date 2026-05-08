@@ -86,6 +86,7 @@ type BookSectionRow = {
   dataFilter?: {
     businessTypeId?: string;
     section?: string;
+    productId?: string;
   };
   taxMetadata?: {
     taxType?: string;
@@ -96,6 +97,8 @@ type BookSection = {
   sectionType: string;
   businessTypeId?: string;
   businessTypeName?: string;
+  groupKey?: string;
+  groupName?: string;
   rows?: BookSectionRow[];
 };
 
@@ -162,6 +165,15 @@ function assembleRowsFromSections(
   const consumedBusinessTypes = new Set<string>();
 
   sectionsMeta.sections.forEach((section) => {
+    const sectionLabel = section.groupName ?? section.businessTypeName;
+    if (sectionLabel) {
+      assembledRows.push({
+        lineType: "section_header",
+        rowType: "section_header",
+        dien_giai: sectionLabel,
+      });
+    }
+
     (section.rows ?? []).forEach((layoutRow) => {
       if (layoutRow.lineType !== "data_placeholder") {
         assembledRows.push(toSectionDisplayRow(layoutRow));
@@ -170,8 +182,10 @@ function assembleRowsFromSections(
 
       const placeholderBusinessType = normalizeKey(
         layoutRow.dataFilter?.businessTypeId ??
+          layoutRow.dataFilter?.productId ??
           layoutRow.dataFilter?.section ??
           section.businessTypeId ??
+          section.groupKey ??
           "",
       );
 

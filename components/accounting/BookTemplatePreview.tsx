@@ -1,4 +1,4 @@
-import type {
+﻿import type {
   AccountingBookRow,
   AccountingTemplateColumnSummary,
 } from "@/lib/types/adminAccounting";
@@ -11,6 +11,24 @@ interface BookTemplatePreviewProps {
   columns: AccountingTemplateColumnSummary[];
   rows: AccountingBookRow[];
   rowDefinitions?: Array<Record<string, unknown>>;
+  sectionsMeta?: {
+    sections?: Array<{
+      sectionType?: string;
+      businessTypeId?: string;
+      businessTypeName?: string;
+      groupKey?: string;
+      groupName?: string;
+      groupIndex?: number;
+      rows?: Array<{
+        lineType?: string;
+        [key: string]: unknown;
+      }>;
+    }>;
+    footerRows?: Array<{
+      lineType?: string;
+      [key: string]: unknown;
+    }>;
+  } | null;
   referenceData?: Record<string, unknown> | null;
   summaryMeta?: Record<string, unknown> | null;
 }
@@ -41,6 +59,7 @@ interface TemplateRenderContext {
   normalizedColumns: NormalizedColumn[];
   rows: AccountingBookRow[];
   rowDefinitions: NormalizedRowDefinition[];
+  sectionsMeta?: BookTemplatePreviewProps["sectionsMeta"];
   referenceData?: Record<string, unknown> | null;
   summaryMeta?: Record<string, unknown> | null;
   totalValue: number;
@@ -60,10 +79,17 @@ interface DisplayRow {
   id: string;
   cells: Record<string, string>;
   isEmphasis?: boolean;
+  isSectionHeader?: boolean;
 }
 
 function asString(value: unknown): string {
   return typeof value === "string" ? value : "";
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object"
+    ? (value as Record<string, unknown>)
+    : {};
 }
 
 function asNumber(value: unknown): number | null {
@@ -507,21 +533,35 @@ function renderLedgerTable(
           </tr>
         </thead>
         <tbody>
-          {rows.map((row) => (
-            <tr
-              key={row.id}
-              className={`border-b border-slate-400/30 hover:bg-cyan-50/30 transition-colors font-serif ${row.isEmphasis ? "font-semibold" : ""}`}
-            >
-              {columns.map((column) => (
+          {rows.map((row) =>
+            row.isSectionHeader ? (
+              <tr
+                key={row.id}
+                className="border-b border-t border-slate-900 bg-slate-100 font-serif"
+              >
                 <td
-                  key={`${row.id}-${column.key}`}
-                  className={`border-r border-slate-900 last:border-r-0 p-3 ${column.align === "right" ? "text-right font-mono" : ""}`}
+                  colSpan={columns.length}
+                  className="px-3 py-2 font-bold text-sm text-slate-800 uppercase tracking-wide"
                 >
-                  {row.cells[column.key] ?? ""}
+                  {row.cells.dien_giai ?? ""}
                 </td>
-              ))}
-            </tr>
-          ))}
+              </tr>
+            ) : (
+              <tr
+                key={row.id}
+                className={`border-b border-slate-400/30 hover:bg-cyan-50/30 transition-colors font-serif ${row.isEmphasis ? "font-semibold" : ""}`}
+              >
+                {columns.map((column) => (
+                  <td
+                    key={`${row.id}-${column.key}`}
+                    className={`border-r border-slate-900 last:border-r-0 p-3 ${column.align === "right" ? "text-right font-mono" : ""}`}
+                  >
+                    {row.cells[column.key] ?? ""}
+                  </td>
+                ))}
+              </tr>
+            ),
+          )}
         </tbody>
       </table>
     </div>
@@ -1398,34 +1438,229 @@ function renderS2dTemplate(context: TemplateRenderContext): ReactElement {
     { key: "tien_ton", label: "Tồn - Tiền", letter: "7", align: "right" },
   ];
 
-  const rows: DisplayRow[] = context.rows.map((row, index) => ({
-    id: `s2d-${index}`,
-    isEmphasis: isEmphasisRowType(asString(row.rowType), context.referenceData),
-    cells: {
-      so_hieu: formatValue(
-        pickFirstRowValue(row, ["so_hieu", "chung_tu_so_hieu"]),
-      ),
-      ngay: formatValue(
-        pickFirstRowValue(row, [
-          dateColumn.fieldCode,
-          "ngay",
-          "ngay_thang",
-          "date",
-        ]),
-      ),
-      dien_giai: resolveRowDescription(row, "dien_giai", ""),
-      dvt: formatValue(row.dvt),
-      don_gia: formatValue(row.don_gia),
-      sl_nhap: formatValue(row.sl_nhap),
-      tien_nhap: formatValue(row.tien_nhap),
-      sl_xuat: formatValue(row.sl_xuat),
-      tien_xuat: formatValue(row.tien_xuat),
-      sl_ton: formatValue(row.sl_ton),
-      tien_ton: formatValue(row.tien_ton),
-    },
-  }));
+  const mapDataRow = (
+    row: AccountingBookRow,
+    id: string,
+    overrides?: Partial<DisplayRow>,
+  ): DisplayRow => {
+    const lineType = asString(row.lineType).toLowerCase();
+    const rowType = asString(row.rowType).toLowerCase();
+    return {
+      id,
+      isEmphasis: isEmphasisRowType(rowType || lineType, context.referenceData),
+      cells: {
+        so_hieu: formatValue(
+          pickFirstRowValue(row, ["so_hieu", "chung_tu_so_hieu"]),
+        ),
+        ngay: formatValue(
+          pickFirstRowValue(row, [
+            dateColumn.fieldCode,
+            "ngay",
+            "ngay_thang",
+            "date",
+          ]),
+        ),
+        dien_giai: resolveRowDescription(row, "dien_giai", ""),
+        dvt: formatValue(row.dvt),
+        don_gia: formatValue(row.don_gia),
+        sl_nhap: formatValue(row.sl_nhap),
+        tien_nhap: formatValue(row.tien_nhap),
+        sl_xuat: formatValue(row.sl_xuat),
+        tien_xuat: formatValue(row.tien_xuat),
+        sl_ton: formatValue(row.sl_ton),
+        tien_ton: formatValue(row.tien_ton),
+      },
+      ...overrides,
+    };
+  };
 
-  appendS2dBalanceRows(rows, context);
+  const mapBalanceRow = (
+    rowDef: Record<string, unknown>,
+    index: string,
+  ): DisplayRow => {
+    const label = normalizeHumanLabel(
+      asString(rowDef.rowLabel || rowDef.dien_giai || rowDef.description || ""),
+    );
+    const rowLabel = label || "Tồn đầu kỳ";
+    const normalizedLabel = normalizeCompareText(rowLabel);
+    const isOpening = normalizedLabel.includes("dau ky");
+    const quantity =
+      rowDef.sl_ton ??
+      (isOpening
+        ? (getSummaryFormulaValue(context.summaryMeta, [
+            "S2D_OPENING_QTY",
+            "ton_dau_ky_sl",
+          ]) ?? getLatestFieldValue(context.rows, "ton_dau_ky_sl"))
+        : (getSummaryFormulaValue(context.summaryMeta, [
+            "S2D_CLOSING_QTY",
+            "ton_cuoi_ky_sl",
+          ]) ?? getLatestFieldValue(context.rows, "ton_cuoi_ky_sl")));
+    const value =
+      rowDef.tien_ton ??
+      (isOpening
+        ? (getSummaryFormulaValue(context.summaryMeta, [
+            "S2D_OPENING_VALUE",
+            "ton_dau_ky_gt",
+          ]) ?? getLatestFieldValue(context.rows, "ton_dau_ky_gt"))
+        : (getSummaryFormulaValue(context.summaryMeta, [
+            "S2D_CLOSING_VALUE",
+            "ton_cuoi_ky_gt",
+          ]) ?? getLatestFieldValue(context.rows, "ton_cuoi_ky_gt")));
+
+    return {
+      id: index,
+      isEmphasis: true,
+      cells: {
+        so_hieu: "",
+        ngay: "",
+        dien_giai: rowLabel,
+        dvt: "",
+        don_gia: "",
+        sl_nhap: "",
+        tien_nhap: "",
+        sl_xuat: "",
+        tien_xuat: "",
+        sl_ton: formatValue(quantity),
+        tien_ton: formatValue(value),
+      },
+    };
+  };
+
+  const getRowSectionKey = (row: AccountingBookRow): string => {
+    const nestedDataFilter = asRecord(row.dataFilter);
+    const candidates = [
+      asString(row.section),
+      asString((row as Record<string, unknown>).Section),
+      asString(row.sectionType),
+      asString((row as Record<string, unknown>).SectionType),
+      asString(row.groupKey),
+      asString(nestedDataFilter?.section),
+      asString(nestedDataFilter?.Section),
+      asString(nestedDataFilter?.productId),
+    ];
+    return candidates.find((item) => item.trim().length > 0) ?? "";
+  };
+
+  const getRowProductKey = (row: AccountingBookRow): string => {
+    const nestedProduct = asRecord(row.product);
+    const nestedItem = asRecord(row.item);
+    const candidates = [
+      asString(row.productId),
+      asString((row as Record<string, unknown>).product_id),
+      asString((row as Record<string, unknown>).ProductId),
+      asString(row.itemId),
+      asString((row as Record<string, unknown>).ItemId),
+      asString(row.inventoryItemId),
+      asString((row as Record<string, unknown>).InventoryItemId),
+      asString(nestedProduct?.id),
+      asString(nestedProduct?.productId),
+      asString(nestedItem?.id),
+      asString(nestedItem?.itemId),
+    ];
+    return candidates.find((item) => item.trim().length > 0) ?? "";
+  };
+
+  const rows: DisplayRow[] = [];
+  const sections = context.sectionsMeta?.sections ?? [];
+
+  if (sections.length > 0) {
+    const sortedSections = [...sections].sort(
+      (left, right) => (left.groupIndex ?? 0) - (right.groupIndex ?? 0),
+    );
+    const consumedDataRowIndexes = new Set<number>();
+
+    sortedSections.forEach((section, sectionIndex) => {
+      const sectionLabel = normalizeHumanLabel(
+        asString(
+          section.groupName ||
+            section.businessTypeName ||
+            section.groupKey ||
+            section.sectionType ||
+            `Section ${sectionIndex + 1}`,
+        ),
+      );
+      const sectionKey = normalizeCompareText(
+        asString(
+          section.groupKey || section.businessTypeId || section.sectionType,
+        ),
+      );
+
+      rows.push({
+        id: `s2d-section-${sectionIndex}`,
+        isSectionHeader: true,
+        cells: { dien_giai: sectionLabel },
+      });
+
+      (section.rows ?? []).forEach((sectionRow, sectionRowIndex) => {
+        const lineType = normalizeCompareText(asString(sectionRow.lineType));
+
+        if (lineType === "balance row") {
+          rows.push(
+            mapBalanceRow(
+              sectionRow as Record<string, unknown>,
+              `s2d-${sectionIndex}-balance-${sectionRowIndex}`,
+            ),
+          );
+          return;
+        }
+
+        if (lineType === "data placeholder") {
+          const rawFilter = asRecord(sectionRow.dataFilter);
+          const filterKey = normalizeCompareText(
+            asString(
+              rawFilter?.productId ||
+                rawFilter?.section ||
+                section.groupKey ||
+                section.businessTypeId ||
+                section.sectionType,
+            ),
+          );
+
+          context.rows.forEach((dataRow, dataIndex) => {
+            if (consumedDataRowIndexes.has(dataIndex)) return;
+
+            const rowSectionKey = normalizeCompareText(
+              getRowSectionKey(dataRow),
+            );
+            const rowProductKey = normalizeCompareText(
+              getRowProductKey(dataRow),
+            );
+            const matched = filterKey
+              ? rowSectionKey === filterKey || rowProductKey === filterKey
+              : rowSectionKey === sectionKey || rowProductKey === sectionKey;
+
+            if (matched) {
+              consumedDataRowIndexes.add(dataIndex);
+              rows.push(
+                mapDataRow(dataRow, `s2d-${sectionIndex}-data-${dataIndex}`),
+              );
+            }
+          });
+        }
+      });
+    });
+
+    const footerRows = context.sectionsMeta?.footerRows ?? [];
+    footerRows.forEach((footerRow, footerIndex) => {
+      if (
+        normalizeCompareText(asString(footerRow.lineType)) !== "balance row"
+      ) {
+        return;
+      }
+      rows.push(
+        mapBalanceRow(
+          footerRow as Record<string, unknown>,
+          `s2d-footer-${footerIndex}`,
+        ),
+      );
+    });
+  } else {
+    context.rows.forEach((row, index) => {
+      rows.push(mapDataRow(row, `s2d-${index}`));
+    });
+    appendS2dBalanceRows(rows, context);
+  }
+
   appendRemainingFormulaRows(rows, context, "tien_ton", {
     so_hieu: "",
     ngay: "",
@@ -1521,11 +1756,11 @@ function renderS2eTemplate(context: TemplateRenderContext): ReactElement {
       chi_ra: formatValue(
         pickFirstRowValue(row, ["chi_ra", "cash_out", "bank_out"]),
       ),
-      __section:
-        (asString(row.section).trim() ||
-          asString(row.moneyChannel).trim() ||
-          "")
-          .toLowerCase(),
+      __section: (
+        asString(row.section).trim() ||
+        asString(row.moneyChannel).trim() ||
+        ""
+      ).toLowerCase(),
     },
   }));
 
@@ -1611,6 +1846,7 @@ export default function BookTemplatePreview({
   columns,
   rows,
   rowDefinitions,
+  sectionsMeta,
   referenceData,
   summaryMeta,
 }: BookTemplatePreviewProps) {
@@ -1631,6 +1867,7 @@ export default function BookTemplatePreview({
         normalizedColumns,
         rows,
         rowDefinitions: normalizedRowDefinitions,
+        sectionsMeta,
         referenceData,
         summaryMeta,
         totalValue,

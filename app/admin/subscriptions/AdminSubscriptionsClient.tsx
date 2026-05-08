@@ -531,6 +531,17 @@ function PlanDetailDialog({
     return ref?.name || f.featureName || f.featureDescription;
   };
 
+  // Determine discount timing: upcoming / expired / active
+  const now = new Date();
+  const discountStartDate = detail?.currentPrice?.discountStart
+    ? new Date(detail!.currentPrice!.discountStart)
+    : null;
+  const discountEndDate = detail?.currentPrice?.discountEnd
+    ? new Date(detail!.currentPrice!.discountEnd)
+    : null;
+  const discountExpired = !!discountEndDate && discountEndDate < now;
+  const discountUpcoming = !!discountStartDate && discountStartDate > now;
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
@@ -602,19 +613,37 @@ function PlanDetailDialog({
                     </span>
                   </div>
                   {detail.currentPrice.discountedPrice != null && (
-                    <div className="flex items-center justify-between">
-                      <span className="text-gray-500">
-                        Giá giảm
-                        {!detail.currentPrice.isDiscountActive && (
-                          <span className="ml-1 text-xs text-gray-400">
-                            (chưa áp dụng)
+                    <>
+                      {discountUpcoming ? (
+                        <div className="flex items-center justify-between">
+                          <span className="text-gray-500">Giá giảm</span>
+                          <span className="text-xs text-gray-400">
+                            Giảm giá sắp ra mắt
                           </span>
-                        )}
-                      </span>
-                      <span className="font-medium text-rose-600">
-                        {formatVND(detail.currentPrice.discountedPrice)}
-                      </span>
-                    </div>
+                        </div>
+                      ) : discountExpired ? (
+                        <div className="flex items-center justify-between">
+                          <span className="text-gray-500">Giá giảm</span>
+                          <span className="text-xs text-gray-400">
+                            Giảm giá đã kết thúc
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-between">
+                          <span className="text-gray-500">
+                            Giá giảm
+                            {!detail.currentPrice.isDiscountActive && (
+                              <span className="ml-1 text-xs text-gray-400">
+                                (chưa áp dụng)
+                              </span>
+                            )}
+                          </span>
+                          <span className="font-medium text-rose-600">
+                            {formatVND(detail.currentPrice.discountedPrice)}
+                          </span>
+                        </div>
+                      )}
+                    </>
                   )}
                   {detail.currentPrice.discountStart && (
                     <div className="flex items-center justify-between text-xs text-gray-400">
@@ -1033,6 +1062,13 @@ export default function AdminSubscriptionsClient() {
               </TableHeader>
               <TableBody>
                 {filteredPlans.map((plan) => {
+                  const now = new Date();
+                  const discountEndDate = plan.discountEnd
+                    ? new Date(plan.discountEnd)
+                    : null;
+                  const discountExpired =
+                    !!discountEndDate && discountEndDate < now;
+
                   return (
                     <TableRow key={plan.subscriptionPlanId}>
                       <TableCell>
@@ -1055,27 +1091,34 @@ export default function AdminSubscriptionsClient() {
                           <div className="flex items-baseline gap-1.5">
                             <span className="text-sm font-semibold text-gray-800">
                               {formatVND(
-                                plan.discountedPrice != null
+                                plan.discountedPrice != null && !discountExpired
                                   ? plan.discountedPrice
                                   : (plan.basePrice ?? 0),
                               )}
                             </span>
-                            {plan.discountedPrice != null && (
-                              <span className="text-xs text-gray-400 line-through">
-                                {formatVND(plan.basePrice ?? 0)}
-                              </span>
-                            )}
+                            {plan.discountedPrice != null &&
+                              !discountExpired && (
+                                <span className="text-xs text-gray-400 line-through">
+                                  {formatVND(plan.basePrice ?? 0)}
+                                </span>
+                              )}
                           </div>
-                          {plan.discountedPrice != null && (
+                          {plan.discountedPrice != null && !discountExpired && (
                             <div className="text-[10px] text-gray-400 flex flex-col leading-tight mt-0.5">
                               {plan.discountStart && (
                                 <span>
-                                  Từ: {new Date(plan.discountStart).toLocaleDateString("vi-VN")}
+                                  Từ:{" "}
+                                  {new Date(
+                                    plan.discountStart,
+                                  ).toLocaleDateString("vi-VN")}
                                 </span>
                               )}
                               {plan.discountEnd && (
                                 <span>
-                                  Đến: {new Date(plan.discountEnd).toLocaleDateString("vi-VN")}
+                                  Đến:{" "}
+                                  {new Date(
+                                    plan.discountEnd,
+                                  ).toLocaleDateString("vi-VN")}
                                 </span>
                               )}
                             </div>
