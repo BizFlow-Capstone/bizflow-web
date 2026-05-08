@@ -2126,6 +2126,28 @@ export default function VersionTab(props: VersionTabProps) {
 
       await updateFieldMappingForTesting(mappingId, payload);
       await refreshCurrentStructure();
+      if (previewLoadedForVersionId === String(selectedVersionId)) {
+        try {
+          const response = await previewTemplateVersion({
+            businessLocationId: previewLocationId,
+            periodId: previewPeriodId!,
+            templateVersionId: toNullableNumber(selectedVersionId)!,
+            rulesetId: PREVIEW_DEFAULT_RULESET_ID,
+            batchSize: PREVIEW_BATCH_SIZE,
+          });
+          setRenderPreviewResult({
+            summary: response.summary,
+            rows: { items: response.rows.items },
+            columns: response.columns,
+            sections: response.sections,
+            footerRows: response.footerRows,
+          } as Record<string, unknown>);
+          setRenderPreviewCursor(response.rows.nextCursor ?? null);
+          setRenderPreviewHasMore(Boolean(response.rows.nextCursor));
+        } catch {
+          /* ignore preview errors */
+        }
+      }
     } catch (error) {
       setWizardError(
         error instanceof Error ? error.message : "Lưu mapping thất bại.",
@@ -2169,6 +2191,28 @@ export default function VersionTab(props: VersionTabProps) {
         visibleFieldCodes: rowDraft.visibleFieldCodes.trim() || null,
       });
       await refreshCurrentStructure();
+      if (previewLoadedForVersionId === String(selectedVersionId)) {
+        try {
+          const response = await previewTemplateVersion({
+            businessLocationId: previewLocationId,
+            periodId: previewPeriodId!,
+            templateVersionId: toNullableNumber(selectedVersionId)!,
+            rulesetId: PREVIEW_DEFAULT_RULESET_ID,
+            batchSize: PREVIEW_BATCH_SIZE,
+          });
+          setRenderPreviewResult({
+            summary: response.summary,
+            rows: { items: response.rows.items },
+            columns: response.columns,
+            sections: response.sections,
+            footerRows: response.footerRows,
+          } as Record<string, unknown>);
+          setRenderPreviewCursor(response.rows.nextCursor ?? null);
+          setRenderPreviewHasMore(Boolean(response.rows.nextCursor));
+        } catch {
+          /* ignore preview errors */
+        }
+      }
     } catch (error) {
       setWizardError(
         error instanceof Error ? error.message : "Lưu row definition thất bại.",
@@ -2261,6 +2305,28 @@ export default function VersionTab(props: VersionTabProps) {
       ]);
 
       await refreshCurrentStructure();
+      if (previewLoadedForVersionId === String(selectedVersionId)) {
+        try {
+          const response = await previewTemplateVersion({
+            businessLocationId: previewLocationId,
+            periodId: previewPeriodId!,
+            templateVersionId: toNullableNumber(selectedVersionId)!,
+            rulesetId: PREVIEW_DEFAULT_RULESET_ID,
+            batchSize: PREVIEW_BATCH_SIZE,
+          });
+          setRenderPreviewResult({
+            summary: response.summary,
+            rows: { items: response.rows.items },
+            columns: response.columns,
+            sections: response.sections,
+            footerRows: response.footerRows,
+          } as Record<string, unknown>);
+          setRenderPreviewCursor(response.rows.nextCursor ?? null);
+          setRenderPreviewHasMore(Boolean(response.rows.nextCursor));
+        } catch {
+          /* ignore preview errors */
+        }
+      }
       const refreshedFormulas = await Promise.all(
         Array.from(
           new Set([
