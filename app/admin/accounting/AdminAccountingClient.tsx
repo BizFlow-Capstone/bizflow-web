@@ -239,13 +239,13 @@ const tabs: Array<{
   },
   {
     key: "business-types",
-    label: "Loại Hình Kinh Doanh & Thuế Suất",
+    label: "Nhóm Ngành Kinh Doanh",
     icon: <BookOpen className="h-4 w-4" />,
     group: "core",
   },
   {
     key: "version",
-    label: "Phiên Bản Template",
+    label: "Phiên Bản Mẫu Sổ",
     icon: <GitBranch className="h-4 w-4" />,
     group: "core",
   },
@@ -2042,34 +2042,37 @@ export default function AdminAccountingClient({
 
   const fmActivate = async () => {
     const id = toNum(fmId);
+    const name = fmName || id;
     if (!id) return;
     await runSafe(async () => {
       await updateFormulaTesting(id, { isActive: true });
       setFmIsActive("true");
       await fmDetail(String(id));
-      log(`Activated formula ${id}`, "ok");
+      log(`${name} đã được kích hoạt`, "ok");
       await loadOverview();
     });
   };
 
   const fmDeactivate = async () => {
     const id = toNum(fmId);
+    const name = fmName || id;
     if (!id) return;
     await runSafe(async () => {
       await updateFormulaTesting(id, { isActive: false });
       setFmIsActive("false");
       await fmDetail(String(id));
-      log(`Deactivated formula ${id}`, "ok");
+      log(`${name} đã được vô hiệu hóa`, "ok");
       await loadOverview();
     });
   };
 
   const fmDelete = async () => {
     const id = toNum(fmId);
+    const name = fmName || id;
     if (!id) return;
     await runSafe(async () => {
       await deleteFormula(id);
-      log(`Đã xóa formula #${id}`, "ok");
+      log(`${name} đã được xóa`, "ok");
       setFmId("");
       await loadOverview();
     });
@@ -3324,7 +3327,7 @@ export default function AdminAccountingClient({
                                     Activate
                                   </Button>
                                 ) : null}
-                                {isActive ? (
+                                {isActive && mode !== "consultant" ? (
                                   <Button
                                     size="sm"
                                     variant="outline"
@@ -3426,7 +3429,7 @@ export default function AdminAccountingClient({
                       <Settings className="h-5 w-5 text-[#23C4C1]" />
                     </div>
                     <CardTitle className="text-lg">
-                      Các Loại Hình Kinh Doanh
+                      Nhóm Ngành Kinh Doanh
                     </CardTitle>
                   </div>
                   <div className="flex flex-wrap gap-2">
@@ -3446,7 +3449,7 @@ export default function AdminAccountingClient({
                       onClick={() => setShowCreateBtModal(true)}
                     >
                       <Plus className="mr-1.5 h-4 w-4" />
-                      Tạo Loại Hình Kinh Doanh Mới
+                      Tạo Nhóm Ngành Kinh Doanh Mới
                     </Button>
                   </div>
                 </div>
@@ -3481,7 +3484,8 @@ export default function AdminAccountingClient({
                         {selectedRulesetStatus || "unknown"}
                       </Badge>
                     ) : null}
-                    {selectedRulesetId > 0 ? (
+                    {selectedRulesetId > 0 &&
+                    !(mode === "consultant" && selectedRulesetIsActive) ? (
                       <Button
                         type="button"
                         size="sm"

@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ArrowLeftRight, Bell, BookOpen, LogOut } from "lucide-react";
+import Image from "next/image";
+import { Separator } from "@/components/ui/separator";
 
 const menuItems = [
   {
@@ -29,37 +31,42 @@ export default function ConsultantSidebar() {
   const pathname = usePathname();
 
   return (
-    <aside className="flex min-h-full w-60 shrink-0 flex-col border-r border-gray-200 bg-white">
-      <div className="px-4 pt-4 pb-2">
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-400">
-          Consultant Panel
-        </h2>
-        <p className="mt-1 text-sm font-semibold text-gray-900">
-          BizFlow Consultant
-        </p>
+    <aside className="w-64 bg-white border-r border-gray-200 min-h-screen flex flex-col">
+      <div className="p-6">
+        <Link
+          href="/consultant"
+          prefetch={false}
+          className="flex items-center gap-3"
+        >
+          <div className="w-100 h-25  rounded-lg flex items-center justify-center">
+            <Image
+              src="/pictures/logo.png"
+              alt="BizFlow Logo"
+              width={100}
+              height={80}
+            />
+          </div>
+        </Link>
       </div>
 
-      <nav className="flex-1 px-3 pb-4">
+      <nav className="flex-1 p-4">
         <ul className="space-y-1">
           {menuItems.map((item) => {
             const Icon = item.icon;
             const isActive =
               pathname === item.href || pathname.startsWith(`${item.href}/`);
-
             return (
               <li key={item.href}>
                 <Link
                   href={item.href}
-                  className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-150 ${
+                  className={`flex items-center gap-3 px-4 py-2.5 rounded-lg transition-colors ${
                     isActive
-                      ? "bg-linear-to-r from-teal-50 to-cyan-50 text-teal-700 shadow-sm"
-                      : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+                      ? "bg-cyan-50 text-[#23C4C1]"
+                      : "text-gray-700 hover:bg-gray-50"
                   }`}
                 >
-                  <Icon
-                    className={`h-4.5 w-4.5 ${isActive ? "text-teal-600" : "text-gray-400"}`}
-                  />
-                  {item.label}
+                  <Icon className="w-5 h-5" />
+                  <span className="text-sm font-medium">{item.label}</span>
                 </Link>
               </li>
             );
@@ -67,29 +74,36 @@ export default function ConsultantSidebar() {
         </ul>
       </nav>
 
-      <div className="px-3 pb-2">
+      <div className="p-4">
+        <Separator className="mb-4" />
         <Link
           href="/dashboard"
           prefetch={false}
-          className="flex items-center gap-3 border border-dashed border-gray-200 rounded-lg px-3 py-2.5 text-sm font-medium text-gray-600 transition-all duration-150 hover:bg-gray-50 hover:text-gray-900"
+          className="flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50 hover:text-gray-900 transition-colors border border-dashed border-gray-200"
         >
-          <ArrowLeftRight className="h-4 w-4 text-gray-400" />
+          <ArrowLeftRight className="w-5 h-5 text-gray-400" />
           <span>Xem Dashboard Người Dùng</span>
         </Link>
       </div>
 
-      <div className="border-t border-gray-100 px-3 py-4">
+      <div className="p-4">
+        <Separator className="mb-4" />
         <ul className="space-y-1">
           {bottomMenuItems.map((item) => {
             const Icon = item.icon;
+            const isActive = pathname === item.href;
             return (
               <li key={item.href}>
                 <Link
                   href={item.href}
-                  className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-gray-600 transition-all duration-150 hover:bg-gray-50 hover:text-gray-900"
+                  className={`flex items-center gap-3 px-4 py-2.5 rounded-lg transition-colors ${
+                    isActive
+                      ? "bg-cyan-50 text-[#23C4C1]"
+                      : "text-gray-700 hover:bg-gray-50"
+                  }`}
                 >
-                  <Icon className="h-4.5 w-4.5 text-gray-400" />
-                  {item.label}
+                  <Icon className="w-5 h-5" />
+                  <span className="text-sm font-medium">{item.label}</span>
                 </Link>
               </li>
             );

@@ -4131,8 +4131,8 @@ export default function FormulaTab(props: FormulaTabProps) {
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-[1.15fr_1.85fr]">
-        <Card className="h-fit self-start rounded-xl border border-gray-200 bg-white shadow-sm">
+      <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-[1.15fr_1.85fr] ">
+        <Card className="h-fit self-start rounded-xl border border-gray-200 bg-white shadow-sm h-[1500px]">
           <CardHeader>
             <CardTitle>Thư viện công thức</CardTitle>
           </CardHeader>
@@ -4143,7 +4143,7 @@ export default function FormulaTab(props: FormulaTabProps) {
               placeholder="Tìm công thức..."
               className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
             />
-            <div className="max-h-128 space-y-2 overflow-y-auto pr-1">
+            <div className="max-h-[1350px] space-y-2 overflow-y-auto pr-1">
               {filteredFormulas.map((formula) => (
                 <button
                   key={formula.formulaId}
@@ -4435,7 +4435,9 @@ export default function FormulaTab(props: FormulaTabProps) {
                     Kích hoạt
                   </Button>
                 )}
-                {!isCreateMode && !isActiveFormula && props.mode !== "consultant" ? (
+                {!isCreateMode &&
+                !isActiveFormula &&
+                props.mode !== "consultant" ? (
                   <Button
                     size="sm"
                     variant="destructive"

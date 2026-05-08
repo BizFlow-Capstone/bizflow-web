@@ -363,7 +363,7 @@ export default function AdminOverviewClient() {
                   <div className="grid grid-cols-2 gap-2 mb-3">
                     <input
                       type="date"
-                      className="w-full border border-gray-200 rounded-md px-2 py-1 text-xs bg-white outline-none focus:border-[#23c4c1]"
+                      className="w-full border border-gray-200 rounded-md px-2 py-1 text-xs bg-white outline-none"
                       value={customFrom}
                       onChange={(e) => {
                         setSelectedRange("custom");
@@ -373,7 +373,7 @@ export default function AdminOverviewClient() {
                     />
                     <input
                       type="date"
-                      className="w-full border border-gray-200 rounded-md px-2 py-1 text-xs bg-white outline-none focus:border-[#23c4c1]"
+                      className="w-full border border-gray-200 rounded-md px-2 py-1 text-xs bg-white outline-none"
                       value={customTo}
                       onChange={(e) => {
                         setSelectedRange("custom");
