@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import {
   DollarSign,
   ShoppingCart,
@@ -49,6 +49,7 @@ import {
   useProductInsights,
   useAnomalyAlerts,
 } from "@/hooks/useProducts";
+import { useDashboardSummary } from "@/hooks/useDashboard";
 import {
   useAllRevenuesByFilters,
   useAllCosts,
@@ -64,6 +65,7 @@ import {
   formatDateTimeVi,
 } from "@/lib/format";
 import type { CostFilters, RevenueFilters } from "@/lib/types/accounting";
+import type { SummaryPeriod } from "@/lib/types/dashboard";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -168,6 +170,7 @@ function formatInsightMetric(type: ProductInsightType, value: number) {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function DashboardPage() {
+  const [summaryPeriod, setSummaryPeriod] = useState<SummaryPeriod>("day");
   const { data: locations, isLoading: locLoading } = useLocations();
   const { selectedLocationId } = useDashboardLocation();
   const locationList = locations ?? [];
@@ -183,6 +186,11 @@ export default function DashboardPage() {
       ? (selectedLocationId as number)
       : locationList[0].id
     : 0;
+
+  const { data: summary, isLoading: sumLoading } = useDashboardSummary(
+    activeLocationId,
+    summaryPeriod,
+  );
 
   // Data hooks
   const overviewRevenueFilters = useMemo<RevenueFilters>(
@@ -664,10 +672,75 @@ export default function DashboardPage() {
 
   const finDataLoading = revLoading || costLoading;
 
+  const summaryPeriodLabel =
+    summaryPeriod === "day"
+      ? "hôm nay"
+      : summaryPeriod === "month"
+        ? "tháng này"
+        : "năm nay";
+
   return (
     <div className="flex-1 flex flex-col">
       <main className="flex-1 p-8 bg-gray-50 space-y-6 overflow-auto">
         {/* ── Section 1: Today summary ── */}
+        <section className="space-y-3">
+          <div className="flex items-center gap-2">
+            <SummaryPeriodButton
+              label="Hôm nay"
+              isActive={summaryPeriod === "day"}
+              onClick={() => setSummaryPeriod("day")}
+            />
+            <SummaryPeriodButton
+              label="Tháng"
+              isActive={summaryPeriod === "month"}
+              onClick={() => setSummaryPeriod("month")}
+            />
+            <SummaryPeriodButton
+              label="Năm"
+              isActive={summaryPeriod === "year"}
+              onClick={() => setSummaryPeriod("year")}
+            />
+          </div>
+
+          {sumLoading ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div
+                  key={i}
+                  className="bg-white rounded-xl border p-5 animate-pulse h-24"
+                />
+              ))}
+            </div>
+          ) : summary ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <SummaryCard
+                icon={<ShoppingCart className="w-5 h-5" />}
+                iconBg="bg-sky-100 text-sky-600"
+                label={`Đơn hàng ${summaryPeriodLabel}`}
+                value={String(summary.totalCompletedOrders)}
+              />
+              <SummaryCard
+                icon={<DollarSign className="w-5 h-5" />}
+                iconBg="bg-emerald-100 text-emerald-600"
+                label={`Doanh thu ${summaryPeriodLabel}`}
+                value={formatVnd(summary.totalRevenue)}
+              />
+              <SummaryCard
+                icon={<Banknote className="w-5 h-5" />}
+                iconBg="bg-amber-100 text-amber-600"
+                label={`Chi phí ${summaryPeriodLabel}`}
+                value={formatVnd(summary.totalCost)}
+              />
+              <SummaryCard
+                icon={<AlertTriangle className="w-5 h-5" />}
+                iconBg="bg-rose-100 text-rose-600"
+                label={`Công nợ ${summaryPeriodLabel}`}
+                value={formatVnd(summary.outstandingDebtNetChangeInPeriod)}
+              />
+            </div>
+          ) : null}
+        </section>
+
         {/* {sumLoading ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             {Array.from({ length: 8 }).map((_, i) => (
@@ -733,185 +806,6 @@ export default function DashboardPage() {
             </div>
           </>
         ) : null} */}
-
-        {/* ── Section 2: YTD Financial KPIs ── */}
-        {finDataLoading ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <div
-                key={i}
-                className="bg-white rounded-xl border p-5 animate-pulse h-28"
-              />
-            ))}
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <FinancialKpiCard
-              icon={<TrendingUp className="w-5 h-5" />}
-              iconBg="bg-emerald-100 text-emerald-600"
-              label="Tổng doanh thu"
-              value={formatCompactVnd(totalRevenue)}
-              sub={`${revenueItems.length} giao dịch phát sinh`}
-              trend={revenueTrendAverage}
-              trendColor="emerald"
-            />
-            <FinancialKpiCard
-              icon={<TrendingDown className="w-5 h-5" />}
-              iconBg="bg-rose-100 text-rose-600"
-              label="Tổng chi phí"
-              value={formatCompactVnd(totalCost)}
-              sub={`${costItems.length} giao dịch phát sinh`}
-              trendColor="rose"
-            />
-            <FinancialKpiCard
-              icon={
-                netProfit >= 0 ? (
-                  <ArrowUpRight className="w-5 h-5" />
-                ) : (
-                  <ArrowDownRight className="w-5 h-5" />
-                )
-              }
-              iconBg={
-                netProfit >= 0
-                  ? "bg-teal-100 text-teal-600"
-                  : "bg-red-100 text-red-600"
-              }
-              label="Lợi nhuận ròng"
-              value={formatCompactVnd(netProfit)}
-              sub="Doanh thu − Chi phí"
-              trendColor={netProfit >= 0 ? "emerald" : "rose"}
-            />
-            <FinancialKpiCard
-              icon={<Sparkles className="w-5 h-5" />}
-              iconBg="bg-blue-100 text-blue-600"
-              label="Tỉ suất lợi nhuận"
-              value={`${costEfficiency.toFixed(1)}%`}
-              sub="(DT − CP) / DT"
-              trendColor={costEfficiency >= 50 ? "emerald" : "rose"}
-            />
-          </div>
-        )}
-
-        {/* ── Section 3: 7-month charts ── */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2 bg-white rounded-2xl border p-6">
-            <div className="mb-5">
-              <h3 className="font-semibold text-gray-900 flex items-center gap-2">
-                <TrendingUp className="w-5 h-5 text-[#23C4C1]" />
-                Doanh thu &amp; Chi phí (7 tháng gần nhất)
-              </h3>
-              <p className="text-sm text-gray-500 mt-1">
-                So sánh doanh thu và chi phí phát sinh theo từng tháng.
-              </p>
-            </div>
-            {finDataLoading ? (
-              <div className="h-72 animate-pulse bg-gray-100 rounded-lg" />
-            ) : (
-              <RevenueCostBarChart data={combinedSeries} />
-            )}
-          </div>
-
-          <div className="bg-white rounded-2xl border p-6">
-            <div className="mb-5">
-              <h3 className="font-semibold text-gray-900">
-                Xu hướng tăng trưởng DT
-              </h3>
-              <p className="text-sm text-gray-500 mt-1">
-                Tốc độ tăng trưởng doanh thu so với tháng trước.
-              </p>
-            </div>
-            {revLoading ? (
-              <div className="h-72 animate-pulse bg-gray-100 rounded-lg" />
-            ) : (
-              <RevenueGrowthLineChart data={revenueSeries} />
-            )}
-          </div>
-        </div>
-
-        {/* ── Section 4: Breakdown panels ── */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="bg-white rounded-2xl border p-6">
-            <div className="mb-4">
-              <h3 className="font-semibold text-gray-900">Phân bổ chi phí</h3>
-              <p className="text-sm text-gray-500 mt-1">
-                Tỷ trọng từng danh mục chi phí.
-              </p>
-            </div>
-            {costLoading ? (
-              <div className="h-60 animate-pulse bg-gray-100 rounded-lg" />
-            ) : costCategoryRows.length > 0 ? (
-              <CostPieChartViz data={costCategoryRows} />
-            ) : (
-              <div className="flex flex-col items-center justify-center h-48 gap-2 text-gray-400">
-                <TrendingDown className="w-8 h-8 opacity-30" />
-                <p className="text-sm">Chưa có dữ liệu chi phí</p>
-              </div>
-            )}
-          </div>
-
-          <div className="bg-white rounded-2xl border p-6">
-            <div className="mb-4">
-              <h3 className="font-semibold text-gray-900">Nguồn doanh thu</h3>
-              <p className="text-sm text-gray-500 mt-1">
-                Doanh thu theo phương thức thanh toán.
-              </p>
-            </div>
-            {revLoading ? (
-              <div className="h-60 animate-pulse bg-gray-100 rounded-lg" />
-            ) : revenueSourceRows.length > 0 ? (
-              <div className="space-y-4">
-                {revenueSourceRows.map((row, idx) => (
-                  <div key={row.label} className="space-y-1">
-                    <div className="flex items-center justify-between">
-                      <span className="flex items-center gap-2 text-sm font-medium text-gray-700">
-                        <span
-                          className="w-2.5 h-2.5 rounded-full"
-                          style={{
-                            backgroundColor:
-                              PIE_COLORS[idx % PIE_COLORS.length],
-                          }}
-                        />
-                        {row.label}
-                      </span>
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-semibold text-gray-800">
-                          {formatCompactVnd(row.total)}
-                        </span>
-                        <span
-                          className={`text-xs font-semibold ${row.growth >= 0 ? "text-emerald-600" : "text-red-500"}`}
-                        >
-                          {row.growth >= 0 ? "+" : ""}
-                          {row.growth.toFixed(1)}%
-                        </span>
-                      </div>
-                    </div>
-                    <div className="h-2 rounded-full bg-gray-100 overflow-hidden">
-                      <div
-                        className="h-full rounded-full transition-all duration-500"
-                        style={{
-                          width: `${Math.min(row.share, 100)}%`,
-                          backgroundColor: PIE_COLORS[idx % PIE_COLORS.length],
-                        }}
-                      />
-                    </div>
-                  </div>
-                ))}
-                <Separator className="my-2" />
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-500">Tổng</span>
-                  <span className="font-bold text-gray-900">
-                    {formatCompactVnd(totalRevenue)}
-                  </span>
-                </div>
-              </div>
-            ) : (
-              <div className="flex flex-col items-center justify-center h-48 gap-2 text-gray-400">
-                <TrendingUp className="w-8 h-8 opacity-30" />
-                <p className="text-sm">Chưa có dữ liệu doanh thu</p>
-              </div>
-            )}
-          </div>
-        </div>
 
         {/* ── Section 5: AI overview hero ── */}
         <section className="space-y-6">
@@ -998,7 +892,9 @@ export default function DashboardPage() {
                           Nhận định
                         </p>
                         <p className="mt-1 text-sm leading-relaxed text-cyan-50">
-                          {forecastTrendNote}
+                          {forecastTrendNote === "not_enough_data"
+                            ? "không đủ dữ liệu"
+                            : forecastTrendNote}
                         </p>
                       </div>
                     )}
@@ -1320,6 +1216,30 @@ export default function DashboardPage() {
 }
 
 // ─── Card components ──────────────────────────────────────────────────────────
+
+function SummaryPeriodButton({
+  label,
+  isActive,
+  onClick,
+}: {
+  label: string;
+  isActive: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`px-4 py-1.5 rounded-full text-sm font-semibold border transition-colors ${
+        isActive
+          ? "bg-[#23C4C1] border-[#23C4C1] text-white"
+          : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50"
+      }`}
+    >
+      {label}
+    </button>
+  );
+}
 
 function SummaryCard({
   icon,

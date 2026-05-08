@@ -495,65 +495,6 @@ export default function OrdersClient() {
   return (
     <div className="flex-1 flex flex-col">
       <main className="flex-1 p-8 bg-gray-50">
-        {/* Summary Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-          <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-500">Tổng đơn hàng</p>
-                <p className="text-2xl font-bold text-gray-900 mt-1">
-                  {stats.total}
-                </p>
-              </div>
-              <div className="w-12 h-12 rounded-xl bg-[#23C4C1]/10 flex items-center justify-center">
-                <ShoppingCart className="w-6 h-6 text-[#23C4C1]" />
-              </div>
-            </div>
-          </div>
-          <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-500">Chờ xử lý</p>
-                <p className="text-2xl font-bold text-blue-600 mt-1">
-                  {stats.pending}
-                </p>
-              </div>
-              <div className="w-12 h-12 rounded-xl bg-blue-50 flex items-center justify-center">
-                <Clock className="w-6 h-6 text-blue-600" />
-              </div>
-            </div>
-          </div>
-          <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-500">Hoàn thành</p>
-                <p className="text-2xl font-bold text-green-600 mt-1">
-                  {stats.completed}
-                </p>
-              </div>
-              <div className="w-12 h-12 rounded-xl bg-green-50 flex items-center justify-center">
-                <PackageCheck className="w-6 h-6 text-green-600" />
-              </div>
-            </div>
-          </div>
-          <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-500">Doanh thu</p>
-                <p className="text-2xl font-bold text-green-600 mt-1">
-                  {new Intl.NumberFormat("vi-VN", {
-                    notation: "compact",
-                    compactDisplay: "short",
-                  }).format(totalRevenue)}
-                </p>
-              </div>
-              <div className="w-12 h-12 rounded-xl bg-green-50 flex items-center justify-center">
-                <CircleDollarSign className="w-6 h-6 text-green-600" />
-              </div>
-            </div>
-          </div>
-        </div>
-
         {/* Top Control Bar */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
           <div>

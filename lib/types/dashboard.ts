@@ -11,16 +11,18 @@ export interface ApiResponse<T> {
 // --- Summary (Tầng 1 — Quick Glance) ---
 
 export interface DashboardSummary {
-  date: string;
-  todayRevenue: number;
-  todayOrders: number;
-  totalOutstandingDebt: number;
-  lowStockCount: number;
-  todayCashIn: number;
-  todayBankIn: number;
-  todayCashOut: number;
-  todayBankOut: number;
+  businessLocationId?: number | null;
+  includedLocationCount: number;
+  period: SummaryPeriod;
+  fromDate: string;
+  toDate: string;
+  totalRevenue: number;
+  totalCost: number;
+  totalCompletedOrders: number;
+  outstandingDebtNetChangeInPeriod: number;
 }
+
+export type SummaryPeriod = "day" | "month" | "year";
 
 // --- Revenue Chart ---
 

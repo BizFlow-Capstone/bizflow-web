@@ -194,10 +194,10 @@ export default function CustomerDetailClient() {
             </Button>
             <div>
               <p className="text-sm font-semibold text-gray-800">
-                {debtor.name}
+                {debtor.name} · {debtor.phone || ""}
               </p>
-              <p className="text-sm text-gray-500">
-                Mã KH: #{debtor.debtorId} · {debtor.businessLocationName}
+              <p className="text-xs text-gray-500">
+                Địa chỉ: {debtor.address || "Chưa có"}
               </p>
             </div>
           </div>
@@ -280,24 +280,6 @@ export default function CustomerDetailClient() {
           {/* Stats row */}
           <div className="mt-5 pt-4 border-t border-gray-200/60 grid grid-cols-2 sm:grid-cols-4 gap-4">
             <div>
-              <p className="text-xs text-gray-500">Tổng đơn hàng</p>
-              <p className="text-lg font-bold text-gray-800">
-                {debtor.statistics.totalOrders}
-              </p>
-            </div>
-            <div>
-              <p className="text-xs text-gray-500">Tổng mua hàng</p>
-              <p className="text-lg font-bold text-gray-800">
-                {formatCurrency(debtor.statistics.totalPurchaseAmount)}
-              </p>
-            </div>
-            <div>
-              <p className="text-xs text-gray-500">Đã thanh toán</p>
-              <p className="text-lg font-bold text-green-600">
-                {formatCurrency(debtor.statistics.totalPaidAmount)}
-              </p>
-            </div>
-            <div>
               <p className="text-xs text-gray-500">Giới hạn nợ</p>
               <p className="text-lg font-bold text-gray-800">
                 {debtor.creditLimit != null
@@ -305,109 +287,6 @@ export default function CustomerDetailClient() {
                   : "Không giới hạn"}
               </p>
             </div>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Customer Info */}
-          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
-            <h3 className="text-base font-semibold text-gray-800 mb-4 flex items-center gap-2">
-              <FileText className="w-4 h-4 text-[#23C4C1]" />
-              Thông tin khách hàng
-            </h3>
-            <div className="space-y-3.5">
-              <InfoRow
-                icon={<Phone className="w-4 h-4" />}
-                label="Số điện thoại"
-                value={debtor.phone || "Chưa có"}
-              />
-              <InfoRow
-                icon={<MapPin className="w-4 h-4" />}
-                label="Địa chỉ"
-                value={debtor.address || "Chưa có"}
-              />
-              <InfoRow
-                icon={<MapPin className="w-4 h-4 text-[#23C4C1]" />}
-                label="Địa điểm KD"
-                value={debtor.businessLocationName || "—"}
-              />
-              <InfoRow
-                icon={<Calendar className="w-4 h-4" />}
-                label="Ngày tạo"
-                value={formatDate(debtor.createdAt)}
-              />
-              <InfoRow
-                icon={<Calendar className="w-4 h-4" />}
-                label="Mua gần nhất"
-                value={formatDate(debtor.lastOrderDate)}
-              />
-              <InfoRow
-                icon={<Banknote className="w-4 h-4" />}
-                label="Trả nợ gần nhất"
-                value={formatDate(debtor.lastPaymentDate)}
-              />
-              {debtor.notes && (
-                <InfoRow
-                  icon={<FileText className="w-4 h-4" />}
-                  label="Ghi chú"
-                  value={debtor.notes}
-                />
-              )}
-            </div>
-          </div>
-
-          {/* Recent Orders */}
-          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 lg:col-span-2">
-            <h3 className="text-base font-semibold text-gray-800 mb-4 flex items-center gap-2">
-              <Package className="w-4 h-4 text-[#23C4C1]" />
-              Đơn hàng gần đây
-            </h3>
-            {debtor.recentOrders.length === 0 ? (
-              <p className="text-sm text-gray-500 text-center py-8">
-                Chưa có đơn hàng nào.
-              </p>
-            ) : (
-              <div className="space-y-2">
-                {debtor.recentOrders.map((order) => (
-                  <div
-                    key={order.orderId}
-                    className="rounded-lg border border-gray-100 p-3 hover:bg-gray-50 transition-colors"
-                  >
-                    <div className="flex items-center justify-between mb-1.5">
-                      <div className="flex items-center gap-3">
-                        <span className="text-sm font-semibold text-[#23C4C1]">
-                          #{order.orderCode}
-                        </span>
-                        {orderStatusBadge(order.status)}
-                      </div>
-                      <span className="text-xs text-gray-400">
-                        {formatDate(order.orderDate)}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-gray-600">
-                        Tổng: {formatCurrency(order.totalAmount)}
-                      </span>
-                      <span className="text-gray-600">
-                        Đã trả:{" "}
-                        <span className="text-green-600 font-medium">
-                          {formatCurrency(order.paidAmount)}
-                        </span>
-                        {order.debtAmount > 0 && (
-                          <>
-                            {" "}
-                            · Nợ:{" "}
-                            <span className="text-red-600 font-medium">
-                              {formatCurrency(order.debtAmount)}
-                            </span>
-                          </>
-                        )}
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
           </div>
         </div>
 

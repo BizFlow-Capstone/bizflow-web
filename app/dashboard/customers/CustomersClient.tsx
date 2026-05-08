@@ -296,7 +296,7 @@ export default function CustomersClient() {
   if (!hasLocations) {
     return (
       <NoLocationScreenSkeleton
-        title="Khách hàng thân thiết"
+        title="Công Nợ"
         description="Đang chờ bạn tạo địa điểm hoặc nhận lời mời trước khi tải dữ liệu."
       />
     );
@@ -305,89 +305,9 @@ export default function CustomersClient() {
   return (
     <div className="flex-1 flex flex-col">
       <main className="flex-1 p-8 bg-gray-50">
-        {/* Summary Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-          <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-500">Tổng khách hàng</p>
-                <p className="text-2xl font-bold text-gray-900 mt-1">
-                  {summary?.totalDebtors ?? 0}
-                </p>
-              </div>
-              <div className="w-12 h-12 rounded-xl bg-[#23C4C1]/10 flex items-center justify-center">
-                <Users className="w-6 h-6 text-[#23C4C1]" />
-              </div>
-            </div>
-          </div>
-          <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-500">Đang nợ</p>
-                <p className="text-2xl font-bold text-red-600 mt-1">
-                  {summary?.debtorsWithDebt ?? 0}
-                </p>
-              </div>
-              <div className="w-12 h-12 rounded-xl bg-red-50 flex items-center justify-center">
-                <TrendingDown className="w-6 h-6 text-red-600" />
-              </div>
-            </div>
-          </div>
-          <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-500">Tổng nợ phải thu</p>
-                <p className="text-2xl font-bold text-orange-600 mt-1">
-                  {summary
-                    ? new Intl.NumberFormat("vi-VN", {
-                        notation: "compact",
-                        compactDisplay: "short",
-                      }).format(summary.totalOutstandingDebt)
-                    : "0"}
-                </p>
-              </div>
-              <div className="w-12 h-12 rounded-xl bg-orange-50 flex items-center justify-center">
-                <BadgeDollarSign className="w-6 h-6 text-orange-600" />
-              </div>
-            </div>
-          </div>
-          <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-500">Có dư (credit)</p>
-                <p className="text-2xl font-bold text-green-600 mt-1">
-                  {summary?.debtorsWithCredit ?? 0}
-                </p>
-              </div>
-              <div className="w-12 h-12 rounded-xl bg-green-50 flex items-center justify-center">
-                <TrendingUp className="w-6 h-6 text-green-600" />
-              </div>
-            </div>
-          </div>
-        </div>
-
         {/* Top Control Bar */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
-          <div>
-            <h2 className="text-xl font-semibold text-gray-800 mb-1">
-              Danh sách khách hàng
-            </h2>
-            <p className="text-gray-600">
-              Tìm kiếm, thêm mới và theo dõi công nợ khách hàng.
-            </p>
-          </div>
           <div className="flex gap-2">
-            <Button
-              variant="outline"
-              onClick={() => refetch()}
-              disabled={isRefetching}
-              className="gap-2"
-            >
-              <RefreshCw
-                className={`w-4 h-4 ${isRefetching ? "animate-spin" : ""}`}
-              />
-              Làm mới
-            </Button>
             <Link href="/dashboard/customers/create">
               {isOwner && (
                 <Button className="bg-[#23C4C1] hover:bg-[#1da8a5] text-white shadow-lg shadow-[#23C4C1]/20 transition-all">
@@ -637,19 +557,6 @@ export default function CustomersClient() {
                       setExpandedId(isExpanded ? null : debtor.debtorId)
                     }
                   >
-                    {/* Avatar */}
-                    <div
-                      className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold text-white shrink-0 mr-3 ${
-                        balanceStatus === "DEBT"
-                          ? "bg-red-500"
-                          : balanceStatus === "CREDIT"
-                            ? "bg-green-500"
-                            : "bg-gray-400"
-                      }`}
-                    >
-                      {debtor.name.charAt(0)}
-                    </div>
-
                     {/* Name */}
                     <span className="w-44 shrink-0 text-sm font-semibold text-gray-800 truncate">
                       {debtor.name}
@@ -747,21 +654,6 @@ export default function CustomersClient() {
                           </div>
                         </div>
 
-                        {/* Location */}
-                        <div className="flex items-start gap-3">
-                          <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center shrink-0 mt-0.5">
-                            <MapPin className="w-4 h-4 text-[#23C4C1]" />
-                          </div>
-                          <div>
-                            <p className="text-xs text-gray-400">
-                              Địa điểm kinh doanh
-                            </p>
-                            <p className="text-sm font-medium text-[#23C4C1]">
-                              {debtor.businessLocationName}
-                            </p>
-                          </div>
-                        </div>
-
                         {/* Credit Limit */}
                         <div className="flex items-start gap-3">
                           <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center shrink-0 mt-0.5">
@@ -771,36 +663,6 @@ export default function CustomersClient() {
                             <p className="text-xs text-gray-400">Giới hạn nợ</p>
                             <p className="text-sm font-medium text-gray-800">
                               {getCreditLimitLabel(debtor.creditLimit)}
-                            </p>
-                          </div>
-                        </div>
-
-                        {/* Last order */}
-                        <div className="flex items-start gap-3">
-                          <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center shrink-0 mt-0.5">
-                            <Calendar className="w-4 h-4 text-gray-500" />
-                          </div>
-                          <div>
-                            <p className="text-xs text-gray-400">
-                              Mua gần nhất
-                            </p>
-                            <p className="text-sm font-medium text-gray-800">
-                              {formatDate(debtor.lastOrderDate)}
-                            </p>
-                          </div>
-                        </div>
-
-                        {/* Last payment */}
-                        <div className="flex items-start gap-3">
-                          <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center shrink-0 mt-0.5">
-                            <Banknote className="w-4 h-4 text-gray-500" />
-                          </div>
-                          <div>
-                            <p className="text-xs text-gray-400">
-                              Trả nợ gần nhất
-                            </p>
-                            <p className="text-sm font-medium text-gray-800">
-                              {formatDate(debtor.lastPaymentDate)}
                             </p>
                           </div>
                         </div>
@@ -815,13 +677,9 @@ export default function CustomersClient() {
                             )}
                           </div>
                           <div>
-                            <p className="text-xs text-gray-400">
-                              Dùng khi tạo đơn ghi nợ
-                            </p>
+                            <p className="text-xs text-gray-400">Trạng thái</p>
                             <p className="text-sm font-medium text-gray-800">
-                              {debtor.isActive
-                                ? "Đang hoạt động (nhân viên nhìn thấy)"
-                                : "Tạm ngưng (nhân viên không nhìn thấy)"}
+                              {debtor.isActive ? "Đang hoạt động" : "Tạm ngưng"}
                             </p>
                           </div>
                         </div>
@@ -843,26 +701,6 @@ export default function CustomersClient() {
                       </div>
 
                       {/* Balance summary */}
-                      <div className="mx-5 mb-4 bg-gray-50 rounded-lg px-4 py-3 flex items-center justify-between">
-                        <span className="text-sm text-gray-600">
-                          Số dư hiện tại
-                        </span>
-                        <span
-                          className={`text-base font-bold ${
-                            balanceStatus === "DEBT"
-                              ? "text-red-600"
-                              : balanceStatus === "CREDIT"
-                                ? "text-green-600"
-                                : "text-gray-600"
-                          }`}
-                        >
-                          {balanceStatus === "DEBT"
-                            ? `Nợ ${formatCurrency(debtor.outstandingDebt)}`
-                            : balanceStatus === "CREDIT"
-                              ? `Dư ${formatCurrency(debtor.currentBalance)}`
-                              : "0 ₫"}
-                        </span>
-                      </div>
 
                       {/* Actions */}
                       <div className="px-5 pb-4 space-y-2">
