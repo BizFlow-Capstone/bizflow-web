@@ -80,6 +80,7 @@ interface DisplayRow {
   cells: Record<string, string>;
   isEmphasis?: boolean;
   isSectionHeader?: boolean;
+  explanation?: string;
 }
 
 function asString(value: unknown): string {
@@ -556,7 +557,14 @@ function renderLedgerTable(
                     key={`${row.id}-${column.key}`}
                     className={`border-r border-slate-900 last:border-r-0 p-3 ${column.align === "right" ? "text-right font-mono" : ""}`}
                   >
-                    {row.cells[column.key] ?? ""}
+                    <div>{row.cells[column.key] ?? ""}</div>
+                    {row.explanation &&
+                    (column.key === "dien_giai" ||
+                      column.key === "description") ? (
+                      <div className="text-[10px] text-gray-500 italic mt-1">
+                        {row.explanation}
+                      </div>
+                    ) : null}
                   </td>
                 ))}
               </tr>
@@ -677,6 +685,7 @@ function renderS1aTemplate(context: TemplateRenderContext): ReactElement {
 
   const displayRows: DisplayRow[] = rows.map((row, index) => ({
     id: `s1a-${index}`,
+    explanation: asString((row as Record<string, unknown>).explanation),
     cells: Object.fromEntries(
       displayColumns.map((column) => [
         column.key,
@@ -816,6 +825,7 @@ function buildS2MainRows(
     return {
       id: `s2-${index}`,
       isEmphasis: isEmphasisRowType(asString(row.rowType), referenceData),
+      explanation: asString((row as Record<string, unknown>).explanation),
       cells: {
         stt: formatValue(pickFirstRowValue(row, [sttColumn?.fieldCode, "stt"])),
         so_hieu: formatValue(
@@ -897,6 +907,7 @@ function appendDefinitionTotals(
       rows.push({
         id: `rowdef-total-notax-${index}`,
         isEmphasis: true,
+        explanation: asString((rowDef as Record<string, unknown>).explanation),
         cells: {
           stt: "",
           so_hieu: "",
@@ -923,6 +934,7 @@ function appendDefinitionTotals(
     rows.push({
       id: `rowdef-total-${taxType}-${index}`,
       isEmphasis: true,
+      explanation: asString((rowDef as Record<string, unknown>).explanation),
       cells: {
         stt: "",
         so_hieu: "",
@@ -969,6 +981,7 @@ function appendRemainingFormulaRows(
       rows.push({
         id: `formula-remaining-${rowDef.rowType}-${index}`,
         isEmphasis: true,
+        explanation: asString((rowDef as Record<string, unknown>).explanation),
         cells: {
           ...baseCells,
           dien_giai: label,
@@ -1076,6 +1089,7 @@ function appendS2cDefinitionRows(
     rows.push({
       id: `s2c-def-${rowDef.rowType}-${index}`,
       isEmphasis: true,
+      explanation: asString((rowDef as Record<string, unknown>).explanation),
       cells: {
         stt: "",
         so_hieu: "",
@@ -1123,6 +1137,7 @@ function appendS2dBalanceRows(
     const balanceRow: DisplayRow = {
       id: `s2d-balance-${index}`,
       isEmphasis: true,
+      explanation: asString((rowDef as Record<string, unknown>).explanation),
       cells: {
         so_hieu: "",
         ngay: "",
@@ -1743,6 +1758,7 @@ function renderS2eTemplate(context: TemplateRenderContext): ReactElement {
   const rows: DisplayRow[] = context.rows.map((row, index) => ({
     id: `s2e-${index}`,
     isEmphasis: isEmphasisRowType(asString(row.rowType), context.referenceData),
+    explanation: asString((row as Record<string, unknown>).explanation),
     cells: {
       stt: formatValue(row.stt),
       so_hieu: formatValue(
@@ -1804,6 +1820,7 @@ function renderFallbackTemplate(context: TemplateRenderContext): ReactElement {
   const displayRows: DisplayRow[] = rows.map((row, index) => ({
     id: `fallback-${index}`,
     isEmphasis: isEmphasisRowType(asString(row.rowType), context.referenceData),
+    explanation: asString((row as Record<string, unknown>).explanation),
     cells: Object.fromEntries(
       displayColumns.map((column) => [
         column.key,

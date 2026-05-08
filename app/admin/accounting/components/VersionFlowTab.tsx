@@ -3135,16 +3135,18 @@ export default function VersionTab(props: VersionTabProps) {
                   </button>
                 ))}
               </div>
-              <Button
-                size="sm"
-                variant="outline"
-                className="border-gray-300 text-gray-700 hover:bg-gray-50 whitespace-nowrap"
-                onClick={() => void handleActivateDraft()}
-                disabled={wizardBusy}
-              >
-                <Sparkles className="mr-1.5 h-4 w-4" />
-                Kích hoạt
-              </Button>
+              {!isConsultantMode ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="border-gray-300 text-gray-700 hover:bg-gray-50 whitespace-nowrap"
+                  onClick={() => void handleActivateDraft()}
+                  disabled={wizardBusy}
+                >
+                  <Sparkles className="mr-1.5 h-4 w-4" />
+                  Kích hoạt
+                </Button>
+              ) : null}
             </div>
           </div>
 
