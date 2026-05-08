@@ -907,7 +907,9 @@ function appendDefinitionTotals(
       rows.push({
         id: `rowdef-total-notax-${index}`,
         isEmphasis: true,
-        explanation: asString((rowDef as Record<string, unknown>).explanation),
+        explanation: asString(
+          (rowDef as unknown as Record<string, unknown>).explanation,
+        ),
         cells: {
           stt: "",
           so_hieu: "",
@@ -934,7 +936,9 @@ function appendDefinitionTotals(
     rows.push({
       id: `rowdef-total-${taxType}-${index}`,
       isEmphasis: true,
-      explanation: asString((rowDef as Record<string, unknown>).explanation),
+      explanation: asString(
+        (rowDef as unknown as Record<string, unknown>).explanation,
+      ),
       cells: {
         stt: "",
         so_hieu: "",
@@ -981,7 +985,9 @@ function appendRemainingFormulaRows(
       rows.push({
         id: `formula-remaining-${rowDef.rowType}-${index}`,
         isEmphasis: true,
-        explanation: asString((rowDef as Record<string, unknown>).explanation),
+        explanation: asString(
+          (rowDef as unknown as Record<string, unknown>).explanation,
+        ),
         cells: {
           ...baseCells,
           dien_giai: label,
@@ -1089,7 +1095,9 @@ function appendS2cDefinitionRows(
     rows.push({
       id: `s2c-def-${rowDef.rowType}-${index}`,
       isEmphasis: true,
-      explanation: asString((rowDef as Record<string, unknown>).explanation),
+      explanation: asString(
+        (rowDef as unknown as Record<string, unknown>).explanation,
+      ),
       cells: {
         stt: "",
         so_hieu: "",
@@ -1137,7 +1145,9 @@ function appendS2dBalanceRows(
     const balanceRow: DisplayRow = {
       id: `s2d-balance-${index}`,
       isEmphasis: true,
-      explanation: asString((rowDef as Record<string, unknown>).explanation),
+      explanation: asString(
+        (rowDef as unknown as Record<string, unknown>).explanation,
+      ),
       cells: {
         so_hieu: "",
         ngay: "",
